@@ -128,8 +128,15 @@ jobs:
             echo "CXX=$GCCBIN/g++.exe" >> "$GITHUB_ENV"
             echo "$QTBIN" >> "$GITHUB_PATH"
             echo "$GCCBIN" >> "$GITHUB_PATH"
-            "$GCCBIN/g++.exe" --version | head -1
-            "$QTBIN/qmake.exe" --version
+            echo "=== toolchain bin ==="
+            ls "$GCCBIN" | head -40
+            echo "=== gcc -v ==="
+            "$GCCBIN/gcc.exe" -v 2>&1 | head -5
+            echo "=== compile smoke test ==="
+            echo 'int main(){return 0;}' > smoke.cxx
+            "$GCCBIN/g++.exe" -v smoke.cxx -o smoke.exe 2>&1 | tail -15
+            echo "compile_exit=$?"
+            ls -la smoke.exe 2>&1 || true
           } 2>&1 | tee setup_qt.log
 
       - name: Configure
@@ -279,6 +286,8 @@ jobs:
             echo "=== pwd: $(pwd)"
             echo "=== ls ==="
             ls -la
+            echo "=== setup_qt.log ==="
+            cat setup_qt.log 2>&1 || true
             echo "=== configure.log ==="
             cat configure.log 2>&1 || true
             echo "=== build.log ==="
