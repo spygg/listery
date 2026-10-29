@@ -19,6 +19,8 @@ const char *kKeyRescanMinutes = "index/rescanIntervalMinutes";
 const char *kKeyHideOnFocusLost = "ui/hideWhenFocusLost";
 const char *kKeySmartSchedule = "index/smartSchedule";
 const char *kKeyUseLocate = "index/useLocateIndex";
+const char *kKeyAutoUpdate = "update/autoCheck";
+const char *kKeyLastUpdateCheck = "update/lastCheck";
 const char *kKeySchemaVersion = "meta/schemaVersion";
 
 QStringList defaultExtensions()
@@ -241,6 +243,28 @@ bool AppSettings::useLocateIndex() const
 void AppSettings::setUseLocateIndex(bool on)
 {
     m_settings->setValue(QString::fromLatin1(kKeyUseLocate), on);
+    m_settings->sync();
+}
+
+bool AppSettings::autoCheckUpdates() const
+{
+    return m_settings->value(QString::fromLatin1(kKeyAutoUpdate), true).toBool();
+}
+
+void AppSettings::setAutoCheckUpdates(bool on)
+{
+    m_settings->setValue(QString::fromLatin1(kKeyAutoUpdate), on);
+    m_settings->sync();
+}
+
+qint64 AppSettings::lastUpdateCheck() const
+{
+    return m_settings->value(QString::fromLatin1(kKeyLastUpdateCheck), 0).toLongLong();
+}
+
+void AppSettings::setLastUpdateCheck(qint64 timestampMs)
+{
+    m_settings->setValue(QString::fromLatin1(kKeyLastUpdateCheck), timestampMs);
     m_settings->sync();
 }
 

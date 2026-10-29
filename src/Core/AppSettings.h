@@ -72,6 +72,14 @@ public:
     QString pluginHotkey(const QString &pluginId) const;
     void setPluginHotkey(const QString &pluginId, const QString &hotkey);
 
+    // 在线升级
+    /** 启动时自动检查更新（每天至多一次）。 */
+    bool autoCheckUpdates() const;
+    void setAutoCheckUpdates(bool on);
+    /** 上次成功检查的时间戳（毫秒）；用于每天至多一次的限流。 */
+    qint64 lastUpdateCheck() const;
+    void setLastUpdateCheck(qint64 timestampMs);
+
     // 版本管理
     int schemaVersion() const;
     void setSchemaVersion(int version);

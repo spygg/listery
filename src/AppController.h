@@ -8,6 +8,8 @@
 class GlobalHotkeys;
 class LauncherWindow;
 class PluginHost;
+class Updater;
+struct ReleaseInfo;
 class QAction;
 class QLocalServer;
 class QMenu;
@@ -75,6 +77,14 @@ private:
     void setupHotkey();
     void setupPlugins();
     void refreshPluginHotkeys();
+    /** 初始化在线升级检查（创建 Updater、挂托盘菜单项、安排自动检查）。 */
+    void setupUpdater();
+    void checkForUpdatesNow();
+    void onUpdateAvailable(const ReleaseInfo &release, const QString &current);
+    void onUpdateUpToDate(const QString &current);
+    void onUpdateCheckFailed(const QString &error);
+    /** 托盘消息被点击时打开已缓存的更新发布页。 */
+    void openPendingUpdate();
     void setupScanSchedule();
     void setupConnections();
     void applySettings();
@@ -100,6 +110,7 @@ private:
     Scanner *m_scanner = nullptr;
     GlobalHotkeys *m_hook = nullptr;
     PluginHost *m_plugins = nullptr;
+    Updater *m_updater = nullptr;
     QSystemTrayIcon *m_tray = nullptr;
     QLocalServer *m_server = nullptr;
     QTimer *m_scanTimer = nullptr;
@@ -109,7 +120,10 @@ private:
     QThread *m_usageThread = nullptr;
 
     QAction *m_actionShow = nullptr;
+    QAction *m_actionCheckUpdate = nullptr;
     QMenu *m_pluginMenu = nullptr;
+    /** 点击托盘更新通知时要打开的发布页（仅一条，避免 messageClicked 串台）。 */
+    QString m_pendingUpdateUrl;
     QAction *m_actionRescan = nullptr;
     QAction *m_actionSettings = nullptr;
     QAction *m_actionQuit = nullptr;

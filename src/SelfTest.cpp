@@ -9,6 +9,7 @@
 #include "Core/Scanner.h"
 #include "Core/SearchEngine.h"
 #include "Core/SearchService.h"
+#include "Core/Updater.h"
 #include "Platform/DoubleCtrlDetector.h"
 #include "Platform/HotkeyHook.h"
 #include "Platform/WindowUtils.h"
@@ -294,6 +295,107 @@ int SelfTest::run()
           QStringLiteral("扫描完成后清除“扫描进行中”标记"));
     check(database.meta(QStringLiteral("last_scan_error")).isEmpty(),
           QStringLiteral("成功扫描后清空上次错误"));
+
+    // ---- 6. 拼音首字母前缀检索：输入 "wx" 必须命中 "微信" ----
+    // 这是用户真实反馈的问题：开始菜单里的微信快捷方式（displayName=微信）搜不到。
+    // 关键：searchByPrefix / searchByTokens 都要纳入拼音列，无论 FTS5 是否可用。
+    {
+        QTemporaryDir wxDir;
+        const QString wxRoot = wxDir.path();
+        QDir().mkpath(wxRoot + QStringLiteral("/bin"));
+        const QString wechatLnk = wxRoot + QStringLiteral("/bin/微信.lnk");
+        const bool onDisk = writeStub(wechatLnk);
+        const QString wxDbPath = wxRoot + QStringLiteral("/wx.db");
+        const QStringList wxExts = QStringList() << QStringLiteral("exe");
+
+        {
+            Scanner wxScanner(wxDbPath, wxExts, QStringList(), false, 7,
+                              QStringList() << wxRoot);
+            QObject::connect(&wxScanner, &Scanner::scanFinished,
+                             &wxScanner, [](int found, int, bool canceled, QString err) {
+                                 qInfo().noquote() << QStringLiteral("[DIAG] scanFinished found=")
+                                                  << found << "canceled=" << canceled
+                                                  << "err=" << err;
+                             });
+            wxScanner.start();
+            check(wxScanner.wait(20000), QStringLiteral("wx 测试扫描线程完成"));
+        }
+
+        // 与主测试一致：open+write 可能成功但文件被沙箱/杀软拦截落不了盘，
+        // 必须再用 exists 兜底判定；落不了盘时直接写一条带拼音的记录，验证检索路径本身。
+        // （用户真实机器上 .lnk 能正常落盘，扫描器会把它收进索引，这里只是测试环境的降级。）
+        const bool wechatOnDisk = onDisk && QFileInfo::exists(wechatLnk);
+
+        if (!wechatOnDisk) {
+            // .lnk 被沙箱拦截落不了盘时，直接写一条带拼音的记录，验证检索路径本身
+            Database altDb(wxDbPath);
+            QString e;
+            check(altDb.open(&e), QStringLiteral("打开 wx 兜底库：%1").arg(e));
+            ExecutableRecord rec;
+            rec.path = QDir::toNativeSeparators(wechatLnk);
+            rec.displayName = QStringLiteral("微信");
+            rec.dir = QDir::toNativeSeparators(QFileInfo(wechatLnk).absolutePath());
+            rec.ext = QStringLiteral("lnk");
+            rec.size = 4;
+            rec.mtime = 1;
+            Pinyin::buildSearchForms(rec.displayName, &rec.pinyin, &rec.pinyinInitials);
+            altDb.beginBulk();
+            altDb.upsertExecutable(rec, 7);
+            altDb.commitBulk();
+        }
+
+        Database wxDb(wxDbPath);
+        QString wxErr;
+        check(wxDb.open(&wxErr), QStringLiteral("打开 wx 测试库：%1").arg(wxErr));
+        SearchEngine wxEngine(&wxDb);
+
+        // 直接验证前缀检索覆盖拼音首字母（无需 FTS 也能命中）
+        const QVector<ExecutableRecord> prefixHits = wxDb.searchByPrefix(QStringLiteral("wx"), 10);
+        bool prefixOk = false;
+        for (const ExecutableRecord &r : prefixHits)
+            if (r.displayName == QStringLiteral("微信"))
+                prefixOk = true;
+
+        // 诊断：record 是否在库、拼音前缀能否命中
+        qInfo().noquote() << QStringLiteral("[DIAG] wechatOnDisk=") << wechatOnDisk
+                         << "total=" << wxDb.totalCount();
+        const QVector<ExecutableRecord> byName = wxDb.searchByPrefix(QStringLiteral("微信"), 10);
+        qInfo().noquote() << QStringLiteral("[DIAG] searchByPrefix(\"微信\") ->")
+                         << byName.size() << "rows";
+        for (const ExecutableRecord &r : byName)
+            qInfo().noquote() << QStringLiteral("[DIAG]   ") << r.displayName
+                             << "py=" << r.pinyin << "ini=" << r.pinyinInitials;
+        qInfo().noquote() << QStringLiteral("[DIAG] searchByPrefix(\"wx\") ->")
+                         << prefixHits.size() << "rows";
+
+        check(prefixOk, QStringLiteral("searchByPrefix(\"wx\") 命中微信（拼音首字母路径）"));
+
+        // 完整检索链路：与用户实际输入一致
+        const QVector<SearchResult> hits = wxEngine.search(QStringLiteral("wx"), 10);
+        bool ok = false;
+        for (const SearchResult &r : hits)
+            if (r.record.displayName == QStringLiteral("微信"))
+                ok = true;
+        check(ok, QStringLiteral("输入 wx 命中微信（完整检索链路）"));
+    }
+
+    // ---- 7. 版本比较：语义化大小比较，避开 1.2.0 被误判大于 1.10.0 的坑 ----
+    {
+        check(Updater::compareVersions(QStringLiteral("1.2.0"), QStringLiteral("1.10.0")) == -1,
+              QStringLiteral("1.2.0 < 1.10.0（逐段比较）"));
+        check(Updater::compareVersions(QStringLiteral("1.10.0"), QStringLiteral("1.2.0")) == 1,
+              QStringLiteral("1.10.0 > 1.2.0"));
+        check(Updater::compareVersions(QStringLiteral("1.2.0"), QStringLiteral("1.2.0")) == 0,
+              QStringLiteral("相等版本返回 0"));
+        check(Updater::compareVersions(QStringLiteral("2.0.0"), QStringLiteral("1.9.9")) == 1,
+              QStringLiteral("主版本号优先：2.0.0 > 1.9.9"));
+        check(Updater::compareVersions(QStringLiteral("1.2.0"), QStringLiteral("1.2")) == 0,
+              QStringLiteral("缺省低位的版本视作 0"));
+        check(Updater::stripTag(QStringLiteral("v1.2.0")) == QStringLiteral("1.2.0"),
+              QStringLiteral("去掉版本号前缀 v"));
+        check(Updater::compareVersions(Updater::currentVersion(), QStringLiteral("0.0.1")) >= 0,
+              QStringLiteral("当前版本 %1 不低于 0.0.1").arg(Updater::currentVersion()));
+    }
 
     // ---- 4. 空查询按最近使用 ----
     const QVector<SearchResult> recentHits = engine.search(QString(), 5);

@@ -4,6 +4,7 @@
 #include "Core/PluginHost.h"
 #include "Core/Scanner.h"
 #include "Core/SearchService.h"
+#include "Core/Updater.h"
 #include "Platform/Autostart.h"
 #include "Platform/Branding.h"
 #include "Platform/HotkeyHook.h"
@@ -44,6 +45,13 @@ namespace {
 const qint64 kMaxScanIntervalMs = 14LL * 24 * 60 * 60 * 1000;
 /** 调度器最长休眠时间：挂载的卷会变，至少每 3 小时重新评估一次。 */
 const qint64 kMaxPollIntervalMs = 3LL * 60 * 60 * 1000;
+
+/** 在线升级：GitHub Releases 最新版查询接口（仓库 spygg/listery）。 */
+const char *kGitHubReleasesApi = "https://api.github.com/repos/spygg/listery/releases/latest";
+/** 自动检查至少间隔一天，避免反复打扰 GitHub API 限流（匿名 60 次/小时/IP）。 */
+const qint64 kUpdateCheckIntervalMs = 24LL * 60 * 60 * 1000;
+/** 启动后延迟几秒再查，先把索引与界面跑顺。 */
+const int kUpdateCheckDelayMs = 8000;
 } // namespace
 
 AppController::AppController(QObject *parent)
@@ -94,7 +102,7 @@ bool AppController::initialize()
                                   .arg(error, m_settings.databasePath()));
         return false;
     }
-    m_database->setMeta(QStringLiteral("app_version"), QStringLiteral("1.0.0"));
+    m_database->setMeta(QStringLiteral("app_version"), Updater::currentVersion());
 
     // 检索在独立线程执行；首次升级时 FTS 索引的建立也发生在这里
     m_searchService = new SearchService(m_settings.databasePath(), this);
@@ -116,6 +124,7 @@ bool AppController::initialize()
 
     setupPlugins();
     createTrayIcon();
+    setupUpdater();
     setupHotkey();
     refreshPluginHotkeys(); // 钩子起来后才能真正注册组合键
     setupScanSchedule();
@@ -320,7 +329,72 @@ void AppController::createTrayIcon()
                 if (reason == QSystemTrayIcon::Trigger || reason == QSystemTrayIcon::DoubleClick)
                     showLauncher();
             });
+    connect(m_tray, &QSystemTrayIcon::messageClicked, this, &AppController::openPendingUpdate);
     m_tray->show();
+}
+
+void AppController::setupUpdater()
+{
+    m_updater = new Updater(this);
+    connect(m_updater, &Updater::updateAvailable,
+            this, &AppController::onUpdateAvailable);
+    connect(m_updater, &Updater::upToDate,
+            this, &AppController::onUpdateUpToDate);
+    connect(m_updater, &Updater::checkFailed,
+            this, &AppController::onUpdateCheckFailed);
+
+    // 托盘菜单里提供手动检查入口
+    if (m_tray && m_tray->contextMenu())
+        m_actionCheckUpdate = m_tray->contextMenu()->addAction(QStringLiteral("检查更新…"));
+    if (m_actionCheckUpdate) {
+        connect(m_actionCheckUpdate, &QAction::triggered, this,
+                &AppController::checkForUpdatesNow);
+    }
+
+    // 启动时按每天至多一次的频率自动检查；用户关掉开关或距上次不足一天则跳过
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    const bool due = now - m_settings.lastUpdateCheck() > kUpdateCheckIntervalMs;
+    if (m_settings.autoCheckUpdates() && due)
+        QTimer::singleShot(kUpdateCheckDelayMs, this, &AppController::checkForUpdatesNow);
+}
+
+void AppController::checkForUpdatesNow()
+{
+    if (!m_updater)
+        return;
+    m_updater->checkForUpdates(kGitHubReleasesApi);
+    m_settings.setLastUpdateCheck(QDateTime::currentMSecsSinceEpoch());
+}
+
+void AppController::onUpdateAvailable(const ReleaseInfo &release, const QString &current)
+{
+    m_pendingUpdateUrl = release.htmlUrl;
+    if (m_tray) {
+        m_tray->showMessage(QStringLiteral("Listery 有更新"),
+                            QStringLiteral("发现新版本 %1（当前 %2），点击前往下载")
+                                .arg(release.version, current),
+                            QSystemTrayIcon::Information, 10000);
+    }
+    qInfo("Listery: 新版本可用 %s（当前 %s），发布页 %s",
+          qPrintable(release.version), qPrintable(current), qPrintable(release.htmlUrl));
+}
+
+void AppController::onUpdateUpToDate(const QString &current)
+{
+    qInfo("Listery: 已是最新版本 %s", qPrintable(current));
+}
+
+void AppController::onUpdateCheckFailed(const QString &error)
+{
+    qWarning("Listery: 更新检查失败：%s", qPrintable(error));
+}
+
+void AppController::openPendingUpdate()
+{
+    if (!m_pendingUpdateUrl.isEmpty()) {
+        Updater::openUrl(m_pendingUpdateUrl);
+        m_pendingUpdateUrl.clear();
+    }
 }
 
 bool AppController::setupSingleInstance()

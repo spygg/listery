@@ -181,6 +181,8 @@ bool Database::createSchema(QString *errorMessage)
         << QStringLiteral("CREATE INDEX IF NOT EXISTS idx_exe_dir ON executables(dir)")
         << QStringLiteral("CREATE INDEX IF NOT EXISTS idx_exe_gen ON executables(gen)")
         << QStringLiteral("CREATE INDEX IF NOT EXISTS idx_exe_mtime ON executables(mtime)")
+        << QStringLiteral("CREATE INDEX IF NOT EXISTS idx_exe_pinyin ON executables(pinyin)")
+        << QStringLiteral("CREATE INDEX IF NOT EXISTS idx_exe_pinyin_initials ON executables(pinyin_initials)")
         << QStringLiteral(
                "CREATE TABLE IF NOT EXISTS usage_stats ("
                " path TEXT NOT NULL PRIMARY KEY,"
@@ -618,10 +620,17 @@ QVector<ExecutableRecord> Database::searchByPrefix(const QString &prefix, int li
     if (!isOpen() || prefix.isEmpty())
         return results;
 
+    // 拼音列也要参与前缀匹配：输入 “wx” 需要能命中 “微信”（pinyin_initials = "wx ws"）。
+    // 拼音列一律小写存储，与已转小写的 token 直接比前缀即可。
     QSqlQuery query(*m_db);
     query.prepare(QStringLiteral("SELECT ") + lightColumns() + lightFrom()
-                  + QStringLiteral(" WHERE e.name LIKE ? ESCAPE '\\' LIMIT ?"));
-    query.addBindValue(likeEscape(prefix) + QLatin1Char('%'));
+                  + QStringLiteral(" WHERE (e.name LIKE ? ESCAPE '\\'"
+                                  " OR e.pinyin_initials LIKE ? ESCAPE '\\'"
+                                  " OR e.pinyin LIKE ? ESCAPE '\\') LIMIT ?"));
+    const QString pattern = likeEscape(prefix) + QLatin1Char('%');
+    query.addBindValue(pattern);
+    query.addBindValue(pattern);
+    query.addBindValue(pattern);
     query.addBindValue(limit);
     if (!query.exec())
         return results;
@@ -721,7 +730,9 @@ QVector<ExecutableRecord> Database::searchByTokens(const QStringList &tokens, in
 
     QStringList clauses;
     for (int i = 0; i < tokens.size(); ++i)
-        clauses.append(QStringLiteral("(e.name LIKE ? ESCAPE '\\' OR e.dir LIKE ? ESCAPE '\\')"));
+        clauses.append(QStringLiteral(
+            "(e.name LIKE ? ESCAPE '\\' OR e.dir LIKE ? ESCAPE '\\'"
+            " OR e.pinyin LIKE ? ESCAPE '\\' OR e.pinyin_initials LIKE ? ESCAPE '\\')"));
 
     QSqlQuery query(*m_db);
     query.prepare(QStringLiteral("SELECT ") + lightColumns() + lightFrom()
@@ -730,6 +741,8 @@ QVector<ExecutableRecord> Database::searchByTokens(const QStringList &tokens, in
 
     for (const QString &token : tokens) {
         const QString pattern = QLatin1Char('%') + likeEscape(token) + QLatin1Char('%');
+        query.addBindValue(pattern);
+        query.addBindValue(pattern);
         query.addBindValue(pattern);
         query.addBindValue(pattern);
     }

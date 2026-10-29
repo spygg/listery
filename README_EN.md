@@ -34,6 +34,8 @@ A Listary-style quick launcher written in Qt / C++: index every executable → d
 | **Smart scanning** | Per-volume adaptive scheduling: volumes with no software back off automatically; on Linux it just reads the locate snapshot |
 | **EN↔ZH translator** | `Alt+E` opens the translator plugin: type English for Chinese, Chinese for English, press Enter to copy the result |
 | **Plugins** | Pure-C plugin ABI: plugins need no Qt and no OpenSSL, so anyone can extend Listery — see the [plugin guide](docs/PLUGINS_EN.md) |
+| **Auto-update** | Checks the latest GitHub Release automatically (semantic version compare, so `1.10.0 > 1.2.0` works); shows a tray notification and opens the release page on click |
+| **Log rotation** | Keeps only the last 3 days of logs, trimmed on startup — never grows without bound |
 | **Portable** | Index, config and logs live next to the executable. Copy the folder to a USB stick and go |
 
 ## Quick start

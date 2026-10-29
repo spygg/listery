@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(Listery VERSION 1.0.0 LANGUAGES CXX)
+project(Listery VERSION 1.2.0 LANGUAGES CXX)
 
 # XP 兼容目标（MinGW 5.3）只支持 C++14，可用 -DLISTERY_CXX_STANDARD=14 覆盖
 if(NOT LISTERY_CXX_STANDARD)
@@ -51,6 +51,8 @@ set(PROJECT_SOURCES
     src/Core/PinyinData.cpp
     src/Core/PluginHost.h
     src/Core/PluginHost.cpp
+    src/Core/Updater.h
+    src/Core/Updater.cpp
 
     src/Platform/HotkeyHook.h
     src/Platform/HotkeyHook.cpp
@@ -83,6 +85,9 @@ target_include_directories(listery PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/sdk
 )
+
+# 版本号从 project(VERSION) 注入，作为在线升级时与 GitHub Release 比较的基准
+target_compile_definitions(listery PRIVATE LISTERY_VERSION="${Listery_VERSION}")
 
 target_link_libraries(listery PRIVATE
     Qt${QT_VERSION_MAJOR}::Widgets
