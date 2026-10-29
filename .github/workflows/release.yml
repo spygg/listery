@@ -52,29 +52,19 @@ jobs:
       - name: Configure
         shell: bash
         run: |
+          set -o pipefail
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_PREFIX_PATH="${{ env.Qt5_DIR }}" 2>&1 | tee configure.log || true
+            -DCMAKE_PREFIX_PATH="${{ env.Qt5_DIR }}" 2>&1 | tee configure.log
 
       - name: Build
         shell: bash
         run: |
-          set +e
+          set -o pipefail
           cmake --build build --config Release --parallel 2>&1 | tee build.log
-          echo "BUILD_EXIT=$?" >> "$GITHUB_ENV"
-
-      - name: Upload build logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: logs-${{ matrix.config.name }}
-          path: |
-            configure.log
-            build.log
-          if-no-files-found: warn
 
       # ---------- Windows ----------
       - name: Deploy (Windows)
-        if: matrix.config.os == 'windows-latest' && env.BUILD_EXIT == '0'
+        if: matrix.config.os == 'windows-latest'
         shell: pwsh
         run: |
           windeployqt --release --no-translations --no-opengl-sw build\Release\listery.exe
@@ -88,11 +78,10 @@ jobs:
 
       # ---------- Linux ----------
       - name: Deploy (Linux)
-        if: matrix.config.os == 'ubuntu-22.04' && env.BUILD_EXIT == '0'
+        if: matrix.config.os == 'ubuntu-22.04'
         shell: bash
         run: |
-          set +e
-          {
+          set -o pipefail
           wget -q https://github.com/probonopd/linuxdeployqt/releases/download/continuous/linuxdeployqt-continuous-x86_64.AppImage -O linuxdeployqt.AppImage
           chmod +x linuxdeployqt.AppImage
           # runner 上无 FUSE：先解包再用 AppRun 运行
@@ -109,16 +98,14 @@ jobs:
           EOF
           VERSION=1.0.0 ./squashfs-root/AppRun app/usr/bin/listery -appimage -no-translations
           ls *.AppImage
-          } 2>&1 | tee deploy.log
           mv Listery-*.AppImage listery-linux.AppImage 2>/dev/null || mv listery-*.AppImage listery-linux.AppImage
 
       # ---------- macOS ----------
       - name: Deploy (macOS)
-        if: matrix.config.os == 'macos-latest' && env.BUILD_EXIT == '0'
+        if: matrix.config.os == 'macos-latest'
         shell: bash
         run: |
-          set +e
-          {
+          set -o pipefail
           mkdir -p listery.app/Contents/MacOS listery.app/Contents/Resources
           cp build/listery listery.app/Contents/MacOS/listery
           cat > listery.app/Contents/Info.plist <<'EOF'
@@ -134,18 +121,8 @@ jobs:
           EOF
           macdeployqt listery.app
           zip -r listery-macos.zip listery.app
-          } 2>&1 | tee deploy.log
 
-      - name: Upload deploy logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: deploy-log-${{ matrix.config.name }}
-          path: |
-            deploy.log
-          if-no-files-found: ignore
-
-      # 调试用：把构建/部署日志提交到各平台的 logs-* 分支（公开仓库可直接 git fetch 读取）
+      # 调试：失败时把日志写入各平台的 logs-* 分支（公开仓库可直接读）
       - name: Dump logs to logs branch
         if: failure()
         shell: bash
@@ -156,10 +133,19 @@ jobs:
           git fetch origin "$BR" 2>/dev/null || true
           git checkout -B "$BR" "origin/$BR" 2>/dev/null || git checkout -B "$BR"
           mkdir -p ci-logs
-          for f in configure.log build.log deploy.log; do
-            [ -f "$f" ] && cp "$f" ci-logs/ || true
-          done
-          git add -A
+          {
+            echo "=== pwd: $(pwd)"
+            echo "=== ls ==="
+            ls -la
+            echo "=== configure.log ==="
+            cat configure.log 2>&1
+            echo "=== build.log ==="
+            cat build.log 2>&1
+            echo "=== deploy.log ==="
+            cat deploy.log 2>&1
+          } > ci-logs/all.log
+          git add -f ci-logs/all.log
+          git status --porcelain
           git commit -m "ci logs: ${{ matrix.config.name }} run ${{ github.run_id }} $(date -u +%Y%m%d%H%M%S)" || true
           git push origin "$BR"
 
