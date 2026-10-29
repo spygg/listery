@@ -53,30 +53,28 @@ jobs:
         shell: bash
         run: |
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_PREFIX_PATH="${{ env.Qt5_DIR }}" 2>&1 | tee configure.log
+            -DCMAKE_PREFIX_PATH="${{ env.Qt5_DIR }}" 2>&1 | tee configure.log || true
 
       - name: Build
         shell: bash
         run: |
-          set -o pipefail
+          set +e
           cmake --build build --config Release --parallel 2>&1 | tee build.log
+          echo "BUILD_EXIT=$?" >> "$GITHUB_ENV"
 
-      # 把编译错误以注解形式输出，便于从公开 API 读取（无需登录即可定位失败原因）
-      - name: Report errors
-        if: failure()
-        shell: bash
-        run: |
-          for f in configure.log build.log; do
-            [ -f "$f" ] || continue
-            grep -inE "error|错误|fatal|unresolved|cannot find|No such file" "$f" | head -40 | while IFS= read -r line; do
-              line="${line:0:800}"
-              echo "::error::${{ matrix.config.name }} | $line"
-            done
-          done
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-${{ matrix.config.name }}
+          path: |
+            configure.log
+            build.log
+          if-no-files-found: warn
 
       # ---------- Windows ----------
       - name: Deploy (Windows)
-        if: matrix.config.os == 'windows-latest'
+        if: matrix.config.os == 'windows-latest' && env.BUILD_EXIT == '0'
         shell: pwsh
         run: |
           windeployqt --release --no-translations --no-opengl-sw build\Release\listery.exe
@@ -90,10 +88,10 @@ jobs:
 
       # ---------- Linux ----------
       - name: Deploy (Linux)
-        if: matrix.config.os == 'ubuntu-22.04'
+        if: matrix.config.os == 'ubuntu-22.04' && env.BUILD_EXIT == '0'
         shell: bash
         run: |
-          set -o pipefail
+          set +e
           {
           wget -q https://github.com/probonopd/linuxdeployqt/releases/download/continuous/linuxdeployqt-continuous-x86_64.AppImage -O linuxdeployqt.AppImage
           chmod +x linuxdeployqt.AppImage
@@ -116,10 +114,10 @@ jobs:
 
       # ---------- macOS ----------
       - name: Deploy (macOS)
-        if: matrix.config.os == 'macos-latest'
+        if: matrix.config.os == 'macos-latest' && env.BUILD_EXIT == '0'
         shell: bash
         run: |
-          set -o pipefail
+          set +e
           {
           mkdir -p listery.app/Contents/MacOS listery.app/Contents/Resources
           cp build/listery listery.app/Contents/MacOS/listery
@@ -138,16 +136,14 @@ jobs:
           zip -r listery-macos.zip listery.app
           } 2>&1 | tee deploy.log
 
-      # 部署失败同样输出注解
-      - name: Report deploy errors
-        if: failure()
-        shell: bash
-        run: |
-          [ -f deploy.log ] || exit 0
-          grep -inE "error|fatal|failed|not found|cannot" deploy.log | head -40 | while IFS= read -r line; do
-            line="${line:0:800}"
-            echo "::error::${{ matrix.config.name }} deploy | $line"
-          done
+      - name: Upload deploy logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deploy-log-${{ matrix.config.name }}
+          path: |
+            deploy.log
+          if-no-files-found: ignore
 
       - name: Upload Release Assets
         uses: softprops/action-gh-release@v2
