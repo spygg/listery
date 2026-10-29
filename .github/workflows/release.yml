@@ -66,6 +66,7 @@ jobs:
             -DCMAKE_PREFIX_PATH="${{ env.QT_ROOT_DIR }}" \
             ${{ matrix.config.cmake_extra }} 2>&1 | tee configure.log
           grep -E "Qt(5|6)Core_VERSION|Qt(5|6)_DIR" build/CMakeCache.txt || true
+          grep -E "Qt(5|6)Core_VERSION|Qt(5|6)_DIR" build/CMakeCache.txt || true
 
       - name: Build
         shell: bash
