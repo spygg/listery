@@ -65,7 +65,12 @@ jobs:
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_PREFIX_PATH="${{ env.QT_ROOT_DIR }}" \
             ${{ matrix.config.cmake_extra }} 2>&1 | tee configure.log
-          grep -E "Qt(5|6)Core_VERSION|Qt(5|6)_DIR" build/CMakeCache.txt || true
+          {
+            echo "=== selected Qt (from CMakeCache) ==="
+            grep -E "Qt(5|6)Core_DIR|Qt(5|6)Core_VERSION" build/CMakeCache.txt
+            echo "=== link command ==="
+            cat build/CMakeFiles/listery.dir/link.txt 2>/dev/null | tr ' ' '\n' | grep -iE "qt|AGL" | head -30
+          } >> configure.log 2>&1 || true
 
       - name: Build
         shell: bash
