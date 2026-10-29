@@ -46,8 +46,21 @@ inline QScreen *listeryScreenAtCursor()
 #endif // QT_VERSION < 5.10（screenAt）
 
 #include <QChar>
+#include <QDateTime>
 #include <QString>
 #include <QUuid>
+
+// Qt::ISODateWithMs 为 Qt 5.8 新增，旧版本用 ISODate + 手工补毫秒
+inline QString listeryIsoTimestamp()
+{
+    const QDateTime now = QDateTime::currentDateTime();
+#if QT_VERSION >= QT_VERSION_CHECK(5, 8, 0)
+    return now.toString(Qt::ISODateWithMs);
+#else
+    return now.toString(Qt::ISODate) + QChar('.')
+           + QString::number(now.time().msec()).rightJustified(3, QChar('0'));
+#endif
+}
 
 // QUuid::WithoutBraces 为 Qt 5.11 新增，旧版本手动去掉花括号
 inline QString listeryUuidString()

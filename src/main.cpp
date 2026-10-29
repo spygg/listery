@@ -1,4 +1,6 @@
 #include "AppController.h"
+
+#include "Core/QtCompat.h"
 #include "Core/AppSettings.h"
 #include "Core/Database.h"
 #include "Core/SearchService.h"
@@ -39,8 +41,7 @@ void logMessageHandler(QtMsgType type, const QMessageLogContext &context, const 
                         : (type == QtCriticalMsg)   ? QStringLiteral("ERROR")
                                                     : QStringLiteral("FATAL");
     const QString line = QStringLiteral("[%1] [%2] %3\n")
-                             .arg(QDateTime::currentDateTime().toString(Qt::ISODateWithMs),
-                                  level, message);
+                             .arg(listeryIsoTimestamp(), level, message);
 
     if (g_logFile && g_logFile->isOpen()) {
         g_logFile->write(line.toUtf8());

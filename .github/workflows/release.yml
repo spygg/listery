@@ -40,7 +40,7 @@ jobs:
             # runner 默认是 Visual Studio 生成器，XP 目标必须强制 Ninja + MinGW
             cmake_extra: >-
               -G Ninja
-              -DCMAKE_CXX_STANDARD=14
+              -DLISTERY_CXX_STANDARD=14
               -DCMAKE_EXE_LINKER_FLAGS="-static-libgcc -static-libstdc++"
           # ubuntu-22.04: 较旧的 glibc，兼容 linuxdeployqt（ubuntu-latest 的 glibc 过新会被拒绝）
           - name: Linux
@@ -173,10 +173,19 @@ jobs:
           } >> configure.log 2>&1 || true
 
       - name: Build
+        if: matrix.config.name != 'Windows XP'
         shell: bash
         run: |
           set -o pipefail
           cmake --build build --config Release --parallel 2>&1 | tee build.log
+
+      # XP 构建用 ninja 的 -k 0：一次暴露所有编译错误，减少调试轮次
+      - name: Build (Windows XP)
+        if: matrix.config.name == 'Windows XP'
+        shell: bash
+        run: |
+          set -o pipefail
+          cmake --build build --parallel -- -k 0 2>&1 | tee build.log
 
       # ---------- Windows ----------
       - name: Deploy (Windows)
