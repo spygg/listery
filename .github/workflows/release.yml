@@ -145,6 +145,24 @@ jobs:
             deploy.log
           if-no-files-found: ignore
 
+      # 调试用：把构建/部署日志提交到各平台的 logs-* 分支（公开仓库可直接 git fetch 读取）
+      - name: Dump logs to logs branch
+        if: failure()
+        shell: bash
+        run: |
+          BR="logs-${{ matrix.config.name }}"
+          git config user.email "ci@listery.local"
+          git config user.name "listery-ci"
+          git fetch origin "$BR" 2>/dev/null || true
+          git checkout -B "$BR" "origin/$BR" 2>/dev/null || git checkout -B "$BR"
+          mkdir -p ci-logs
+          for f in configure.log build.log deploy.log; do
+            [ -f "$f" ] && cp "$f" ci-logs/ || true
+          done
+          git add -A
+          git commit -m "ci logs: ${{ matrix.config.name }} run ${{ github.run_id }} $(date -u +%Y%m%d%H%M%S)" || true
+          git push origin "$BR"
+
       - name: Upload Release Assets
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
