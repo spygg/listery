@@ -34,15 +34,16 @@ jobs:
             target: desktop
             arch: gcc_64
             cmake_extra: ''
-          # macos-latest 是 arm64 机器，而 Qt 5.15.2 官方只有 x86_64 库，
-          # 必须统一目标架构为 x86_64（运行时走 Rosetta）
+          # macOS 用 Qt 6.8：Qt 5.15.2 的 macdeployqt 无法解析新版 Xcode 的 otool
+          # 输出（"Could not parse otool output"），Qt 6 的 macdeployqt 正常；
+          # 代码已通过 QT_VERSION_CHECK 宏兼容 Qt6，CMake 会自动选用 Qt6
           - name: macOS
             os: macos-latest
-            qt: '5.15.2'
+            qt: '6.8.3'
             host: mac
             target: desktop
             arch: clang_64
-            cmake_extra: '-DCMAKE_OSX_ARCHITECTURES=x86_64'
+            cmake_extra: ''
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -61,7 +62,7 @@ jobs:
         run: |
           set -o pipefail
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_PREFIX_PATH="${{ env.Qt5_DIR }}" \
+            -DCMAKE_PREFIX_PATH="${{ env.QT_ROOT_DIR }}" \
             ${{ matrix.config.cmake_extra }} 2>&1 | tee configure.log
 
       - name: Build
