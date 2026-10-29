@@ -23,8 +23,9 @@ jobs:
             host: windows
             target: desktop
             arch: win64_msvc2019_64
+          # ubuntu-22.04: 较旧的 glibc，兼容 linuxdeployqt（ubuntu-latest 的 glibc 过新会被拒绝）
           - name: Linux
-            os: ubuntu-latest
+            os: ubuntu-22.04
             qt: '5.15.2'
             host: linux
             target: desktop
@@ -50,11 +51,28 @@ jobs:
 
       - name: Configure
         shell: bash
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="${{ env.Qt5_DIR }}"
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="${{ env.Qt5_DIR }}" 2>&1 | tee configure.log
 
       - name: Build
         shell: bash
-        run: cmake --build build --config Release --parallel
+        run: |
+          set -o pipefail
+          cmake --build build --config Release --parallel 2>&1 | tee build.log
+
+      # 把编译错误以注解形式输出，便于从公开 API 读取（无需登录即可定位失败原因）
+      - name: Report errors
+        if: failure()
+        shell: bash
+        run: |
+          for f in configure.log build.log; do
+            [ -f "$f" ] || continue
+            grep -inE "error|错误|fatal|unresolved|cannot find|No such file" "$f" | head -40 | while IFS= read -r line; do
+              line="${line:0:800}"
+              echo "::error::${{ matrix.config.name }} | $line"
+            done
+          done
 
       # ---------- Windows ----------
       - name: Deploy (Windows)
@@ -72,11 +90,15 @@ jobs:
 
       # ---------- Linux ----------
       - name: Deploy (Linux)
-        if: matrix.config.os == 'ubuntu-latest'
+        if: matrix.config.os == 'ubuntu-22.04'
         shell: bash
         run: |
+          set -o pipefail
+          {
           wget -q https://github.com/probonopd/linuxdeployqt/releases/download/continuous/linuxdeployqt-continuous-x86_64.AppImage -O linuxdeployqt.AppImage
           chmod +x linuxdeployqt.AppImage
+          # runner 上无 FUSE：先解包再用 AppRun 运行
+          ./linuxdeployqt.AppImage --appimage-extract >/dev/null
           mkdir -p app/usr/bin
           cp build/listery app/usr/bin/
           cat > app/listery.desktop <<'EOF'
@@ -87,14 +109,18 @@ jobs:
           Icon=utilities-terminal
           Categories=Utility;
           EOF
-          ./linuxdeployqt.AppImage app/usr/bin/listery -appimage -no-translations
-          mv Listery-*.AppImage listery-linux.AppImage 2>/dev/null || mv listery-*.AppImage listery-linux.AppImage 2>/dev/null || true
+          VERSION=1.0.0 ./squashfs-root/AppRun app/usr/bin/listery -appimage -no-translations
+          ls *.AppImage
+          } 2>&1 | tee deploy.log
+          mv Listery-*.AppImage listery-linux.AppImage 2>/dev/null || mv listery-*.AppImage listery-linux.AppImage
 
       # ---------- macOS ----------
       - name: Deploy (macOS)
         if: matrix.config.os == 'macos-latest'
         shell: bash
         run: |
+          set -o pipefail
+          {
           mkdir -p listery.app/Contents/MacOS listery.app/Contents/Resources
           cp build/listery listery.app/Contents/MacOS/listery
           cat > listery.app/Contents/Info.plist <<'EOF'
@@ -108,8 +134,20 @@ jobs:
           <key>CFBundlePackageType</key><string>APPL</string>
           </dict></plist>
           EOF
-          "${{ env.Qt5_DIR }}/bin/macdeployqt" listery.app
+          macdeployqt listery.app
           zip -r listery-macos.zip listery.app
+          } 2>&1 | tee deploy.log
+
+      # 部署失败同样输出注解
+      - name: Report deploy errors
+        if: failure()
+        shell: bash
+        run: |
+          [ -f deploy.log ] || exit 0
+          grep -inE "error|fatal|failed|not found|cannot" deploy.log | head -40 | while IFS= read -r line; do
+            line="${line:0:800}"
+            echo "::error::${{ matrix.config.name }} deploy | $line"
+          done
 
       - name: Upload Release Assets
         uses: softprops/action-gh-release@v2
