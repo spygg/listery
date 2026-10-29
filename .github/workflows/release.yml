@@ -55,7 +55,8 @@ jobs:
           host: ${{ matrix.config.host }}
           target: ${{ matrix.config.target }}
           arch: ${{ matrix.config.arch }}
-          cache: true
+          # 禁用 Qt 安装缓存：曾出现缓存恢复了旧版本 Qt 导致链接错误
+          cache: false
 
       - name: Configure
         shell: bash
@@ -64,6 +65,7 @@ jobs:
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_PREFIX_PATH="${{ env.QT_ROOT_DIR }}" \
             ${{ matrix.config.cmake_extra }} 2>&1 | tee configure.log
+          grep -E "Qt(5|6)Core_VERSION|Qt(5|6)_DIR" build/CMakeCache.txt || true
 
       - name: Build
         shell: bash
