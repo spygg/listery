@@ -138,12 +138,13 @@ jobs:
             echo "=== ls ==="
             ls -la
             echo "=== configure.log ==="
-            cat configure.log 2>&1
+            cat configure.log 2>&1 || true
             echo "=== build.log ==="
-            cat build.log 2>&1
+            cat build.log 2>&1 || true
             echo "=== deploy.log ==="
-            cat deploy.log 2>&1
+            cat deploy.log 2>&1 || true
           } > ci-logs/all.log
+          # .gitignore 含 *.log，必须 -f 强制添加
           git add -f ci-logs/all.log
           git status --porcelain
           git commit -m "ci logs: ${{ matrix.config.name }} run ${{ github.run_id }} $(date -u +%Y%m%d%H%M%S)" || true
