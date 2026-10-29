@@ -25,6 +25,7 @@ jobs:
             host: windows
             target: desktop
             arch: win64_msvc2019_64
+            cmake_extra: ''
           # ubuntu-22.04: 较旧的 glibc，兼容 linuxdeployqt（ubuntu-latest 的 glibc 过新会被拒绝）
           - name: Linux
             os: ubuntu-22.04
@@ -32,12 +33,16 @@ jobs:
             host: linux
             target: desktop
             arch: gcc_64
+            cmake_extra: ''
+          # macos-latest 是 arm64 机器，而 Qt 5.15.2 官方只有 x86_64 库，
+          # 必须统一目标架构为 x86_64（运行时走 Rosetta）
           - name: macOS
             os: macos-latest
             qt: '5.15.2'
             host: mac
             target: desktop
             arch: clang_64
+            cmake_extra: '-DCMAKE_OSX_ARCHITECTURES=x86_64'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -56,7 +61,8 @@ jobs:
         run: |
           set -o pipefail
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_PREFIX_PATH="${{ env.Qt5_DIR }}" 2>&1 | tee configure.log
+            -DCMAKE_PREFIX_PATH="${{ env.Qt5_DIR }}" \
+            ${{ matrix.config.cmake_extra }} 2>&1 | tee configure.log
 
       - name: Build
         shell: bash
@@ -66,24 +72,28 @@ jobs:
 
       # ---------- Windows ----------
       - name: Deploy (Windows)
-        if: matrix.config.os == 'windows-latest'
+        if: matrix.config.name == 'Windows'
         shell: pwsh
         run: |
-          windeployqt --release --no-translations --no-opengl-sw build\Release\listery.exe
-          $redist = (Get-ChildItem "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Redist\MSVC" -Recurse -Filter vcruntime140.dll | Select-Object -First 1).DirectoryName
-          if ($redist) {
-            Copy-Item "$redist\vcruntime140.dll"      build\Release\
-            Copy-Item "$redist\msvcp140.dll"          build\Release\
-            Copy-Item "$redist\vcruntime140_1.dll"    build\Release\
-          }
-          Compress-Archive -Path build\Release\* -DestinationPath listery-windows.zip -Force
+          & {
+            windeployqt --release --no-translations --no-opengl-sw build\Release\listery.exe
+            $redist = (Get-ChildItem "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Redist\MSVC" -Recurse -Filter vcruntime140.dll | Select-Object -First 1).DirectoryName
+            if ($redist) {
+              Copy-Item "$redist\vcruntime140.dll"      build\Release\
+              Copy-Item "$redist\msvcp140.dll"          build\Release\
+              Copy-Item "$redist\vcruntime140_1.dll"    build\Release\
+            }
+            Compress-Archive -Path build\Release\* -DestinationPath listery-windows.zip -Force
+          } 2>&1 | Tee-Object -FilePath deploy.log
+          if (-not (Test-Path listery-windows.zip)) { exit 1 }
 
       # ---------- Linux ----------
       - name: Deploy (Linux)
-        if: matrix.config.os == 'ubuntu-22.04'
+        if: matrix.config.name == 'Linux'
         shell: bash
         run: |
-          set -o pipefail
+          set +e
+          {
           wget -q https://github.com/probonopd/linuxdeployqt/releases/download/continuous/linuxdeployqt-continuous-x86_64.AppImage -O linuxdeployqt.AppImage
           chmod +x linuxdeployqt.AppImage
           # runner 上无 FUSE：先解包再用 AppRun 运行
@@ -101,13 +111,16 @@ jobs:
           VERSION=1.0.0 ./squashfs-root/AppRun app/usr/bin/listery -appimage -no-translations
           ls *.AppImage
           mv Listery-*.AppImage listery-linux.AppImage 2>/dev/null || mv listery-*.AppImage listery-linux.AppImage
+          } 2>&1 | tee deploy.log
+          test -f listery-linux.AppImage
 
       # ---------- macOS ----------
       - name: Deploy (macOS)
-        if: matrix.config.os == 'macos-latest'
+        if: matrix.config.name == 'macOS'
         shell: bash
         run: |
-          set -o pipefail
+          set +e
+          {
           mkdir -p listery.app/Contents/MacOS listery.app/Contents/Resources
           cp build/listery listery.app/Contents/MacOS/listery
           cat > listery.app/Contents/Info.plist <<'EOF'
@@ -123,6 +136,8 @@ jobs:
           EOF
           macdeployqt listery.app
           zip -r listery-macos.zip listery.app
+          } 2>&1 | tee deploy.log
+          test -f listery-macos.zip
 
       # 调试：失败时把日志写入各平台的 logs-* 分支（公开仓库可直接读）
       - name: Dump logs to logs branch
@@ -149,7 +164,6 @@ jobs:
           } > ci-logs/all.log
           # .gitignore 含 *.log，必须 -f 强制添加
           git add -f ci-logs/all.log
-          git status --porcelain
           git commit -m "ci logs: ${{ matrix.config.name }} run ${{ github.run_id }} $(date -u +%Y%m%d%H%M%S)" || true
           git push --force origin "$BR"
 
