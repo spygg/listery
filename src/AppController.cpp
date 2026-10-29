@@ -2,7 +2,7 @@
 
 #include "Core/LaunchService.h"
 #include "Core/Scanner.h"
-#include "Core/SearchEngine.h"
+#include "Core/SearchService.h"
 #include "Platform/Autostart.h"
 #include "Platform/Branding.h"
 #include "Platform/HotkeyHook.h"
@@ -10,6 +10,7 @@
 #include "Ui/SettingsDialog.h"
 
 #include "Core/UsageRecorder.h"
+#include "Core/QtCompat.h"
 
 #include <QAction>
 #include <QApplication>
@@ -29,6 +30,11 @@
 
 #include <algorithm>
 
+namespace {
+/** 启动时自动更新索引的最小间隔：一天最多一次全盘扫描。 */
+const qint64 kAutoRescanAgeMs = 24LL * 60 * 60 * 1000;
+} // namespace
+
 AppController::AppController(QObject *parent)
     : QObject(parent)
 {
@@ -41,6 +47,8 @@ void AppController::setSilentStart(bool silent)
 
 AppController::~AppController()
 {
+    if (m_searchService)
+        m_searchService->stop();
     if (m_usageThread) {
         // finished 信号已在后台线程里触发 UsageRecorder::shutdown（关闭其连接），随后 deleteLater
         m_usageThread->quit();
@@ -60,6 +68,10 @@ AppController::~AppController()
 
 bool AppController::initialize()
 {
+    // 先抢单实例锁：第二个实例不该再去碰索引库或启动检索线程
+    if (!setupSingleInstance())
+        return false;
+
     QDir().mkpath(m_settings.dataDir());
 
     m_database.reset(new Database(m_settings.databasePath()));
@@ -73,7 +85,11 @@ bool AppController::initialize()
     }
     m_database->setMeta(QStringLiteral("app_version"), QStringLiteral("1.0.0"));
 
-    m_searchEngine.reset(new SearchEngine(m_database.get()));
+    // 检索在独立线程执行；首次升级时 FTS 索引的建立也发生在这里
+    m_searchService = new SearchService(m_settings.databasePath(), this);
+    QString searchError;
+    if (!m_searchService->start(&searchError))
+        qWarning("Listery: 检索线程启动失败，搜索功能不可用：%s", qPrintable(searchError));
 
     // 使用统计写入器：独立后台线程 + 独立连接，不占用 GUI 线程
     m_usageThread = new QThread(this);
@@ -83,12 +99,11 @@ bool AppController::initialize()
     connect(m_usageThread, &QThread::finished, m_usage, &QObject::deleteLater);
     m_usageThread->start();
 
-    m_window = new LauncherWindow(m_searchEngine.get(), m_settings.maxResults());
+    m_window = new LauncherWindow(m_searchService, m_settings.maxResults());
     m_window->setHideOnFocusLost(m_settings.hideWhenFocusLost());
     m_window->setStatusText(QStringLiteral("索引尚未建立"));
 
     createTrayIcon();
-    setupSingleInstance();
     setupHotkey();
     setupScanSchedule();
     setupConnections();
@@ -102,9 +117,19 @@ bool AppController::initialize()
     updateStatus();
     applyAutoStart();
 
-    if (count == 0 || m_settings.autoScanOnStart()) {
-        QTimer::singleShot(count == 0 ? 300 : 1500, this, [this, count]() {
-            startScan(count == 0);
+    // 索引缺失、上次扫描被中断或超过一天没更新时才在启动时扫描；否则只靠定时刷新，
+    // 避免每次开机都全盘重扫十几分钟、后几个磁盘长时间搜不到
+    const qint64 lastScan = m_database->meta(QStringLiteral("last_scan_time"),
+                                             QStringLiteral("0")).toLongLong();
+    const bool interrupted = !m_database->meta(QStringLiteral("scan_in_progress")).isEmpty();
+    const bool indexComplete = count > 0 && lastScan > 0 && !interrupted;
+    const qint64 ageMs = indexComplete
+        ? QDateTime::currentMSecsSinceEpoch() - lastScan
+        : 0;
+    const bool stale = !indexComplete || ageMs > kAutoRescanAgeMs;
+    if (!indexComplete || (m_settings.autoScanOnStart() && stale)) {
+        QTimer::singleShot(indexComplete ? 1500 : 300, this, [this, indexComplete]() {
+            startScan(!indexComplete);
         });
     }
 
@@ -159,7 +184,7 @@ void AppController::createTrayIcon()
     m_tray->show();
 }
 
-void AppController::setupSingleInstance()
+bool AppController::setupSingleInstance()
 {
     m_server = new QLocalServer(this);
     connect(m_server, &QLocalServer::newConnection, this, [this]() {
@@ -177,9 +202,11 @@ void AppController::setupSingleInstance()
 
     QLocalServer::removeServer(QString::fromLatin1(AppConstants::kSingleInstanceKey));
     if (!m_server->listen(QString::fromLatin1(AppConstants::kSingleInstanceKey))) {
-        // 拿不到单实例锁通常说明已有实例在运行，此时保持静默，避免反复弹窗
-        qWarning("Listery: 单实例监听失败：%s", qPrintable(m_server->errorString()));
+        // 拿不到单实例锁说明已有实例在运行：只能退出，否则会出现两个钩子和两个扫描线程写同一索引库
+        qWarning("Listery: 单实例监听失败，退出：%s", qPrintable(m_server->errorString()));
+        return false;
     }
+    return true;
 }
 
 void AppController::setupHotkey()
@@ -267,35 +294,39 @@ void AppController::startScan(bool notifyUser)
     if (!m_database)
         return;
 
-    if (m_scanner && m_scanner->isRunning()) {
-        m_scanPending = true;
-        if (notifyUser && m_tray)
-            m_tray->showMessage(QStringLiteral("Listery"),
-                                QStringLiteral("已有扫描在进行，完成后会自动再扫一遍"),
-                                QSystemTrayIcon::Information, 3000);
-        return;
-    }
-
     if (m_scanner) {
-        m_scanner->requestStop();
-        m_scanner->wait(2500);
-        m_scanner->deleteLater();
+        if (m_scanner->isRunning()) {
+            m_scanPending = true;
+            if (notifyUser && m_tray)
+                m_tray->showMessage(QStringLiteral("Listery"),
+                                    QStringLiteral("已有扫描在进行，完成后会自动再扫一遍"),
+                                    QSystemTrayIcon::Information, 3000);
+            return;
+        }
+        // run() 已结束、finished 尚未派发：放弃指针即可，对象由 finished 连接负责 deleteLater
         m_scanner = nullptr;
     }
 
     const qint64 generation = QDateTime::currentMSecsSinceEpoch();
     m_scanNotify = notifyUser;
 
-    m_scanner = new Scanner(m_settings.databasePath(),
-                            m_settings.executableExtensions(),
-                            m_settings.skipDirectoryPatterns(),
-                            m_settings.includeRemovableDrives(),
-                            generation,
-                            QStringList(),
-                            this);
-    connect(m_scanner, &Scanner::progressChanged, this, &AppController::onScanProgress);
-    connect(m_scanner, &Scanner::scanFinished, this, &AppController::onScanFinished);
-    m_scanner->start();
+    Scanner *scanner = new Scanner(m_settings.databasePath(),
+                                   m_settings.executableExtensions(),
+                                   m_settings.skipDirectoryPatterns(),
+                                   m_settings.includeRemovableDrives(),
+                                   generation,
+                                   QStringList(),
+                                   this);
+    m_scanner = scanner;
+    connect(scanner, &Scanner::progressChanged, this, &AppController::onScanProgress);
+    connect(scanner, &Scanner::scanFinished, this, &AppController::onScanFinished);
+    // QThread 必须等 run() 真正返回后再删；同时在这里清掉指针，避免悬垂
+    connect(scanner, &QThread::finished, this, [this, scanner]() {
+        if (m_scanner == scanner)
+            m_scanner = nullptr;
+        scanner->deleteLater();
+    });
+    scanner->start();
 
     m_window->setStatusText(QStringLiteral("正在准备扫描…"));
     if (notifyUser && m_tray)
@@ -316,10 +347,10 @@ void AppController::onScanProgress(const QString &root, int directories, int fil
 
 void AppController::onScanFinished(int filesFound, int removed, bool canceled, const QString &error)
 {
-    if (m_scanner) {
-        m_scanner->deleteLater();
-        m_scanner = nullptr;
-    }
+    Scanner *scanner = qobject_cast<Scanner *>(sender());
+    // 上一次扫描迟到的完成信号不能影响当前这次扫描
+    if (!scanner || (m_scanner && scanner != m_scanner))
+        return;
 
     if (!error.isEmpty()) {
         if (m_window)

@@ -20,14 +20,29 @@ jobs:
           # windows-2022: VS2022/v143 工具集。windows-latest 已升级 VS2026，
           # 其 STL 移除了 stdext::make_checked_array_iterator，与 Qt 5.15.2 头文件不兼容
           - name: Windows
+            key: windows
             os: windows-2022
             qt: '5.15.2'
             host: windows
             target: desktop
             arch: win64_msvc2019_64
             cmake_extra: ''
+          # Windows XP：Qt 5.7 是最后官方支持 XP 的版本，MSVC 运行库在 XP 上装不上，
+          # 因此用 MinGW 5.3 32 位工具链（产物为纯 XP 可运行、无 VC 运行时依赖）。
+          # Qt 5.7 在线仓库已下架，CI 从离线安装包按 7z 三层结构解包并缓存
+          - name: Windows XP
+            key: windows-xp
+            os: windows-2022
+            qt: '5.7.1'
+            host: windows
+            target: desktop
+            arch: win32_mingw53
+            cmake_extra: >-
+              -DCMAKE_CXX_STANDARD=14
+              -DCMAKE_EXE_LINKER_FLAGS="-static-libgcc -static-libstdc++"
           # ubuntu-22.04: 较旧的 glibc，兼容 linuxdeployqt（ubuntu-latest 的 glibc 过新会被拒绝）
           - name: Linux
+            key: linux
             os: ubuntu-22.04
             qt: '5.15.2'
             host: linux
@@ -41,6 +56,7 @@ jobs:
           # 而 Qt 6.8.3 的 QtGui 仍链接 -framework AGL，导致链接失败；
           # 固定 macos-15（Xcode 16，SDK 仍带 AGL）
           - name: macOS
+            key: macos
             os: macos-15
             qt: '6.8.3'
             host: mac
@@ -52,6 +68,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install Qt
+        if: matrix.config.name != 'Windows XP'
         uses: jurplel/install-qt-action@v4
         with:
           version: ${{ matrix.config.qt }}
@@ -60,6 +77,56 @@ jobs:
           arch: ${{ matrix.config.arch }}
           # 禁用 Qt 安装缓存：曾出现缓存恢复了旧版本 Qt 导致链接错误
           cache: false
+
+      - name: Restore Qt 5.7 cache
+        if: matrix.config.name == 'Windows XP'
+        uses: actions/cache@v4
+        with:
+          path: D:/qt571
+          key: qt571-win32-mingw53-v1
+
+      # Qt 5.7.1 的在线安装仓库已下架，且 aqtinstall 不再支持 5.9 以下版本；
+      # 从官方离线安装包按 7-Zip 三层结构解包（exe → [0] 流 → 编号 7z 组件载荷），
+      # 只抽取含 mingw53 的 Qt 库与 MinGW 5.3 工具链组件，跳过文档/示例
+      - name: Setup Qt 5.7 + MinGW 5.3 (Windows XP)
+        if: matrix.config.name == 'Windows XP'
+        shell: bash
+        run: |
+          set -o pipefail
+          {
+            mkdir -p /d/qt571 && cd /d/qt571
+            QMAKE=$(find /d/qt571 -type f -name qmake.exe 2>/dev/null | head -1)
+            if [ -z "$QMAKE" ]; then
+              echo "=== cache miss: downloading offline installer ==="
+              curl -sL --retry 3 -o qt571.exe \
+                "https://download.qt.io/archive/qt/5.7/5.7.1/qt-opensource-windows-x86-mingw530-5.7.1.exe"
+              ls -la qt571.exe
+              mkdir -p stage && cd stage
+              echo "=== layer 1: extract [0] payload container from exe ==="
+              7z x -y "../qt571.exe" -t'*' -i'![0]' > /dev/null
+              ls -la
+              echo "=== layer 2: split numbered component archives ==="
+              7z x -y "[0]" -t'#' -i'!*.7z' > /dev/null
+              echo "=== layer 3: extract components containing mingw53 ==="
+              for f in [0-9]*.7z; do
+                if 7z l "$f" 2>/dev/null | grep -q "mingw53"; then
+                  echo "HIT: $f"
+                  7z x -y -o/d/qt571 "$f" | tail -1
+                else
+                  echo "skip: $f ($(7z l "$f" 2>/dev/null | grep -c ' [A-Z]:' ) entries)"
+                fi
+              done
+            fi
+            QTBIN=$(find /d/qt571 -type f -name qmake.exe | head -1 | xargs dirname)
+            GCCBIN=$(find /d/qt571 -type f -name "g++.exe" | head -1 | xargs dirname)
+            echo "QTBIN=$QTBIN"
+            echo "GCCBIN=$GCCBIN"
+            echo "QT_ROOT_DIR=$(dirname "$QTBIN")" >> "$GITHUB_ENV"
+            echo "$QTBIN" >> "$GITHUB_PATH"
+            echo "$GCCBIN" >> "$GITHUB_PATH"
+            "$GCCBIN/g++.exe" --version | head -1
+            "$QTBIN/qmake.exe" --version
+          } 2>&1 | tee setup_qt.log
 
       - name: Configure
         shell: bash
@@ -97,6 +164,26 @@ jobs:
             Compress-Archive -Path build\Release\* -DestinationPath listery-windows.zip -Force
           } 2>&1 | Tee-Object -FilePath deploy.log
           if (-not (Test-Path listery-windows.zip)) { exit 1 }
+
+      # ---------- Windows XP (MinGW 5.3 / Qt 5.7) ----------
+      - name: Deploy (Windows XP)
+        if: matrix.config.name == 'Windows XP'
+        shell: bash
+        run: |
+          set +e
+          {
+            # 冒烟测试：确认 Qt 5.7 运行库能加载、核心逻辑正常
+            QT_QPA_PLATFORM=offscreen ./build/listery.exe --selftest | tail -5 || true
+            windeployqt --release --no-translations build/listery.exe
+            GCCBIN=$(dirname "$(command -v g++.exe)")
+            # MinGW 运行库随包（避免目标机缺 DLL）
+            for f in libgcc_s_sjlj-1.dll libgcc_s_dw2-1.dll libstdc++-6.dll libwinpthread-1.dll; do
+              cp "$GCCBIN/$f" build/ 2>/dev/null && echo "copied $f"
+            done
+            ls build
+            cd build && 7z a -tzip ../listery-windows-xp.zip . > /dev/null
+          } 2>&1 | tee deploy.log
+          test -f listery-windows-xp.zip
 
       # ---------- Linux ----------
       - name: Deploy (Linux)
@@ -178,7 +265,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          BR="logs-${{ matrix.config.name }}"
+          BR="logs-${{ matrix.config.key }}"
           git config user.email "ci@listery.local"
           git config user.name "listery-ci"
           git fetch origin "$BR" 2>/dev/null || true
@@ -206,6 +293,7 @@ jobs:
         with:
           files: |
             listery-windows.zip
+            listery-windows-xp.zip
             listery-linux.AppImage
             listery-macos.zip
         env:

@@ -1,6 +1,7 @@
 #include "Platform/HotkeyHook.h"
 
 #include "Platform/DoubleCtrlDetector.h"
+#include "Core/QtCompat.h"
 
 #include <QDebug>
 #include <QThread>

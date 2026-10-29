@@ -1,6 +1,8 @@
 #include "Core/Scanner.h"
 
 #include "Core/Database.h"
+#include "Core/Pinyin.h"
+#include "Core/QtCompat.h"
 
 #include <QDateTime>
 #include <QDir>
@@ -24,6 +26,28 @@ UINT windowsDriveType(const QString &root)
     const QString native = QDir::toNativeSeparators(root);
     return GetDriveTypeW(reinterpret_cast<const wchar_t *>(native.utf16()));
 }
+
+/** 所有用户 + 当前用户开始菜单。两者都在隐藏目录下，全盘遍历进不去。 */
+QStringList startMenuRoots()
+{
+    QStringList roots;
+    const QString programData = qEnvironmentVariable("ProgramData");
+    if (!programData.isEmpty()) {
+        roots.append(QDir::toNativeSeparators(
+            programData + QStringLiteral("/Microsoft/Windows/Start Menu/Programs")));
+    }
+    const QString appData = qEnvironmentVariable("APPDATA");
+    if (!appData.isEmpty()) {
+        roots.append(QDir::toNativeSeparators(
+            appData + QStringLiteral("/Microsoft/Windows/Start Menu/Programs")));
+    }
+    return roots;
+}
+#else
+QStringList startMenuRoots()
+{
+    return QStringList();
+}
 #endif
 } // namespace
 
@@ -44,6 +68,10 @@ Scanner::Scanner(const QString &databasePath,
 {
     for (const QString &ext : m_extensions)
         m_extensionSet.insert(ext.toLower());
+
+    // 开始菜单 / 桌面上的快捷方式就是最常用的启动入口，不受扩展名设置影响，始终索引
+    m_extensionSet.insert(QStringLiteral("lnk"));
+    m_extensionSet.insert(QStringLiteral("url"));
 }
 
 Scanner::~Scanner()
@@ -125,7 +153,21 @@ void Scanner::run()
         return;
     }
 
+    // 标记“扫描进行中”：进程被中途杀掉时，下次启动能识别出索引不完整并补扫
+    db.setMeta(QStringLiteral("scan_in_progress"), QStringLiteral("1"));
     db.beginBulk();
+
+    // 开始菜单位于隐藏目录（ProgramData / AppData）下，全盘遍历的 QDir::Dirs 过滤不会进入，
+    // 但那里的快捷方式恰恰是最常用的入口，单独扫一遍
+    const QStringList menus = m_rootsOverride.isEmpty() ? startMenuRoots() : QStringList();
+    for (const QString &menu : menus) {
+        if (isStopping())
+            break;
+        m_currentRoot = menu;
+        emitProgress(menu, true);
+        scanDirectory(menu, 0, db);
+    }
+
     for (const QString &root : roots) {
         if (isStopping())
             break;
@@ -149,12 +191,14 @@ void Scanner::run()
             m_error = QStringLiteral("清理旧索引失败：%1").arg(error);
     }
 
-    db.setMeta(QStringLiteral("last_scan_time"),
-               QString::number(QDateTime::currentMSecsSinceEpoch()));
-    db.setMeta(QStringLiteral("last_scan_count"), QString::number(m_filesFound));
-    if (!m_error.isEmpty())
-        db.setMeta(QStringLiteral("last_scan_error"), m_error);
-
+    // 只有完整跑完且清理成功才算“已更新”；取消或失败时索引是半新半旧的
+    if (m_error.isEmpty() && !canceled) {
+        db.setMeta(QStringLiteral("last_scan_time"),
+                   QString::number(QDateTime::currentMSecsSinceEpoch()));
+        db.setMeta(QStringLiteral("last_scan_count"), QString::number(m_filesFound));
+        db.setMeta(QStringLiteral("scan_in_progress"), QString());
+    }
+    db.setMeta(QStringLiteral("last_scan_error"), m_error);
     emit scanFinished(m_filesFound, removed, canceled, m_error);
 }
 
@@ -167,8 +211,9 @@ void Scanner::scanDirectory(const QString &path, int depth, Database &db)
     if (!dir.exists())
         return;
 
+    // 不能加 QDir::NoSymLinks：开始菜单里的 .lnk 带重解析点属性，会被当作符号链接整批滤掉
     const QFileInfoList entries = dir.entryInfoList(
-        QDir::Dirs | QDir::Files | QDir::NoDotAndDotDot | QDir::NoSymLinks, QDir::NoSort);
+        QDir::Dirs | QDir::Files | QDir::NoDotAndDotDot, QDir::NoSort);
 
     for (const QFileInfo &info : entries) {
         if (isStopping())
@@ -195,11 +240,15 @@ void Scanner::scanDirectory(const QString &path, int depth, Database &db)
 
         ExecutableRecord record;
         record.path = QDir::toNativeSeparators(info.absoluteFilePath());
-        record.displayName = info.fileName();
+        // 快捷方式显示原名（"腾讯会议"），带上 .lnk 只是噪音
+        record.displayName = (suffix == QLatin1String("lnk") || suffix == QLatin1String("url"))
+            ? info.completeBaseName()
+            : info.fileName();
         record.dir = QDir::toNativeSeparators(info.absolutePath());
         record.ext = suffix;
         record.size = info.size();
         record.mtime = info.lastModified().toMSecsSinceEpoch();
+        Pinyin::buildSearchForms(record.displayName, &record.pinyin, &record.pinyinInitials);
 
         if (!db.upsertExecutable(record, m_generation)) {
             m_error = QStringLiteral("写入索引失败：%1").arg(record.path);

@@ -34,10 +34,17 @@ set(PROJECT_SOURCES
     src/Core/Scanner.cpp
     src/Core/SearchEngine.h
     src/Core/SearchEngine.cpp
+    src/Core/SearchService.h
+    src/Core/SearchService.cpp
     src/Core/LaunchService.h
     src/Core/LaunchService.cpp
+    src/Core/QtCompat.h
     src/Core/UsageRecorder.h
     src/Core/UsageRecorder.cpp
+    src/Core/Pinyin.h
+    src/Core/Pinyin.cpp
+    src/Core/PinyinData.h
+    src/Core/PinyinData.cpp
 
     src/Platform/HotkeyHook.h
     src/Platform/HotkeyHook.cpp

@@ -1,5 +1,7 @@
 #include "Platform/WindowUtils.h"
 
+#include "Core/QtCompat.h"
+
 #include <QCursor>
 #include <QGuiApplication>
 #include <QRect>
@@ -47,7 +49,7 @@ void placeCenterTop(QWidget *widget)
     if (!widget)
         return;
 
-    QScreen *screen = QGuiApplication::screenAt(QCursor::pos());
+    QScreen *screen = listeryScreenAtCursor();
     if (!screen)
         screen = QGuiApplication::primaryScreen();
     if (!screen)
