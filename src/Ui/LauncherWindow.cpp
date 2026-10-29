@@ -1,6 +1,7 @@
 #include "Ui/LauncherWindow.h"
 
 #include "Core/LaunchService.h"
+#include "Core/SearchService.h"
 #include "Platform/WindowUtils.h"
 #include "Ui/ResultDelegate.h"
 #include "Ui/ResultModel.h"
@@ -10,6 +11,7 @@
 #include <QApplication>
 #include <QClipboard>
 #include <QCursor>
+#include <QEventLoop>
 #include <QFontMetrics>
 #include <QGraphicsDropShadowEffect>
 #include <QHBoxLayout>
@@ -32,9 +34,9 @@ const int kShadowMarginBottom = 26;
 const int kFooterHeight = 36;
 } // namespace
 
-LauncherWindow::LauncherWindow(SearchEngine *engine, int maxResults, QWidget *parent)
+LauncherWindow::LauncherWindow(SearchService *service, int maxResults, QWidget *parent)
     : QWidget(parent)
-    , m_engine(engine)
+    , m_service(service)
     , m_maxResults(maxResults)
 {
     setWindowFlags(Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint
@@ -47,6 +49,9 @@ LauncherWindow::LauncherWindow(SearchEngine *engine, int maxResults, QWidget *pa
     m_debounce->setSingleShot(true);
     m_debounce->setInterval(35);
     connect(m_debounce, &QTimer::timeout, this, &LauncherWindow::performSearch);
+
+    if (m_service)
+        connect(m_service, &SearchService::resultsReady, this, &LauncherWindow::applyResults);
 
     buildUi();
     qApp->installEventFilter(this);
@@ -251,21 +256,32 @@ void LauncherWindow::scheduleSearch()
 
 void LauncherWindow::performSearch()
 {
-    if (!m_engine)
-        return;
-
     const QString query = m_edit->text().trimmed();
-    const int previousRow = m_list->currentIndex().row();
 
     // 没有输入时不展示任何候选：面板只保留输入框
     if (query.isEmpty()) {
+        m_pendingSequence = 0;
+        m_appliedSequence = 0;
         m_model->clearResults();
         m_list->setCurrentIndex(QModelIndex());
         updateGeometryForResults(0, true);
         return;
     }
 
-    const QVector<SearchResult> results = m_engine->search(query, m_maxResults);
+    if (!m_service)
+        return;
+    m_pendingSequence = m_service->search(query, m_maxResults);
+}
+
+void LauncherWindow::applyResults(quint64 sequence, const QString &query,
+                                  const QVector<SearchResult> &results, qint64 elapsedMs)
+{
+    Q_UNUSED(elapsedMs)
+    // 输入已经变了：只认最新一次请求的结果，过期结果直接丢弃
+    if (sequence != m_pendingSequence || query != m_edit->text().trimmed())
+        return;
+
+    const int previousRow = m_list->currentIndex().row();
     m_model->setResults(results);
 
     if (!results.isEmpty()) {
@@ -277,6 +293,24 @@ void LauncherWindow::performSearch()
     }
 
     updateGeometryForResults(results.size(), false);
+    m_appliedSequence = sequence;
+    emit searchApplied();
+}
+
+bool LauncherWindow::waitForSearch(int timeoutMs)
+{
+    if (m_pendingSequence == 0 || m_appliedSequence == m_pendingSequence)
+        return true;
+
+    QEventLoop loop;
+    QTimer timer;
+    timer.setSingleShot(true);
+    connect(&timer, &QTimer::timeout, &loop, &QEventLoop::quit);
+    connect(this, &LauncherWindow::searchApplied, &loop, &QEventLoop::quit);
+    timer.start(timeoutMs);
+    loop.exec();
+
+    return m_appliedSequence == m_pendingSequence;
 }
 
 QMenu *LauncherWindow::createResultMenu(const SearchResult &result,
@@ -305,7 +339,8 @@ void LauncherWindow::showContextMenu(const QPoint &position)
         return;
 
     m_list->setCurrentIndex(index);
-    const SearchResult &result = m_model->resultAt(index.row());
+    // exec() 会跑嵌套事件循环，期间扫描结束刷新或窗口失焦隐藏都可能清空模型，必须持有副本
+    const SearchResult result = m_model->resultAt(index.row());
     if (result.record.path.isEmpty())
         return;
 
@@ -313,7 +348,9 @@ void LauncherWindow::showContextMenu(const QPoint &position)
     QAction *revealAction = nullptr;
     QAction *copyAction = nullptr;
     QMenu *menu = createResultMenu(result, &adminAction, &revealAction, &copyAction);
+    m_contextMenuOpen = true;
     QAction *chosen = menu->exec(m_list->viewport()->mapToGlobal(position));
+    m_contextMenuOpen = false;
     delete menu;
 
     if (chosen == adminAction) {
@@ -413,6 +450,8 @@ bool LauncherWindow::eventFilter(QObject *watched, QEvent *event)
     }
 
     if (event->type() == QEvent::WindowDeactivate && m_hideOnFocusLost) {
+        if (m_contextMenuOpen)
+            return QWidget::eventFilter(watched, event);
         QWidget *widget = qobject_cast<QWidget *>(watched);
         if (widget == this) {
             QTimer::singleShot(90, this, [this]() {

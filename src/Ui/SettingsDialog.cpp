@@ -53,7 +53,7 @@ void SettingsDialog::buildUi()
     indexForm->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
 
     m_extensions = new QLineEdit(indexGroup);
-    m_extensions->setPlaceholderText(QStringLiteral("exe, com, bat, cmd, sh, ps1"));
+    m_extensions->setPlaceholderText(QStringLiteral("exe, com, bat, cmd, sh, ps1（lnk/url 快捷方式始终索引）"));
     indexForm->addRow(QStringLiteral("可执行后缀"), m_extensions);
 
     m_skipDirectories = new QLineEdit(indexGroup);
@@ -63,7 +63,7 @@ void SettingsDialog::buildUi()
     m_includeRemovable = new QCheckBox(QStringLiteral("索引可移动磁盘（U 盘、移动硬盘）"), indexGroup);
     indexForm->addRow(QString(), m_includeRemovable);
 
-    m_autoScan = new QCheckBox(QStringLiteral("启动时自动重建索引"), indexGroup);
+    m_autoScan = new QCheckBox(QStringLiteral("启动时自动更新索引（每天最多一次全盘扫描）"), indexGroup);
     indexForm->addRow(QString(), m_autoScan);
 
     m_rescanMinutes = new QSpinBox(indexGroup);
@@ -87,6 +87,9 @@ void SettingsDialog::buildUi()
     m_maxResults = new QSpinBox(uiGroup);
     m_maxResults->setRange(5, 30);
     uiForm->addRow(QStringLiteral("最大候选数"), m_maxResults);
+
+    m_hideOnFocusLost = new QCheckBox(QStringLiteral("窗口失去焦点时自动隐藏"), uiGroup);
+    uiForm->addRow(QString(), m_hideOnFocusLost);
 
     m_autoStart = new QCheckBox(QStringLiteral("开机自启动（登录后静默运行，默认开启）"), uiGroup);
     uiForm->addRow(QString(), m_autoStart);
@@ -140,6 +143,7 @@ void SettingsDialog::loadValues()
     m_extensions->setText(m_settings->executableExtensions().join(QStringLiteral(", ")));
     m_skipDirectories->setText(m_settings->skipDirectoryPatterns().join(QStringLiteral(", ")));
     m_autoStart->setChecked(m_settings->autoStart());
+    m_hideOnFocusLost->setChecked(m_settings->hideWhenFocusLost());
 }
 
 void SettingsDialog::saveValues()
@@ -153,6 +157,7 @@ void SettingsDialog::saveValues()
     m_settings->setIncludeRemovableDrives(m_includeRemovable->isChecked());
     m_settings->setAutoStart(m_autoStart->isChecked());
     m_settings->setAutoScanOnStart(m_autoScan->isChecked());
+    m_settings->setHideWhenFocusLost(m_hideOnFocusLost->isChecked());
     m_settings->setRescanIntervalMinutes(m_rescanMinutes->value());
     m_settings->setHotkeyIntervalMs(m_hotkeyInterval->value());
     m_settings->setMaxResults(m_maxResults->value());

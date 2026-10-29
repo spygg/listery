@@ -1,7 +1,7 @@
 #include "AppController.h"
 #include "Core/AppSettings.h"
 #include "Core/Database.h"
-#include "Core/SearchEngine.h"
+#include "Core/SearchService.h"
 #include "Platform/Branding.h"
 #include "Platform/WindowUtils.h"
 #include "SelfTest.h"
@@ -57,7 +57,8 @@ int renderPreview(const QString &outputPath, const QString &query)
     if (!tempDir.isValid())
         return 2;
 
-    Database database(tempDir.path() + QStringLiteral("/preview.db"));
+    const QString previewDatabasePath = tempDir.path() + QStringLiteral("/preview.db");
+    Database database(previewDatabasePath);
     QString error;
     if (!database.open(&error)) {
         qWarning("preview: 无法打开预览库：%s", qPrintable(error));
@@ -101,14 +102,22 @@ int renderPreview(const QString &outputPath, const QString &query)
     }
     database.commitBulk();
 
-    SearchEngine engine(&database);
-    LauncherWindow window(&engine, 10);
+    SearchService service(previewDatabasePath);
+    QString searchError;
+    if (!service.start(&searchError)) {
+        qWarning("preview: 无法启动检索线程：%s", qPrintable(searchError));
+        return 6;
+    }
+
+    LauncherWindow window(&service, 10);
     window.setStatusText(QStringLiteral("已索引 128,436 个可执行文件 · 更新于 10-29 21:00"));
 
     // 只做逻辑上的“显示”，不真正映射到屏幕，避免打扰当前桌面
     window.setAttribute(Qt::WA_DontShowOnScreen, true);
     window.show();
     window.setQueryForPreview(query);
+    if (!window.waitForSearch(3000))
+        qWarning("preview: 等待检索结果超时");
     QApplication::processEvents();
 
     const QPixmap shot = window.grab();

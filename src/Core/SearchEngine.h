@@ -2,6 +2,7 @@
 
 #include "Core/Database.h"
 
+#include <QMetaType>
 #include <QString>
 #include <QStringList>
 #include <QVector>
@@ -13,6 +14,9 @@ struct SearchResult
     double score = 0.0;
     QVector<int> highlights;
 };
+
+Q_DECLARE_METATYPE(SearchResult)
+Q_DECLARE_METATYPE(QVector<SearchResult>)
 
 /**
  * 检索引擎：先由 SQLite 做粗筛，再在内存里按“名称匹配度 + 使用习惯”精排。

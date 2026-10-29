@@ -13,7 +13,7 @@ class QSystemTrayIcon;
 class QThread;
 class QTimer;
 class Scanner;
-class SearchEngine;
+class SearchService;
 class UsageRecorder;
 struct ExecutableRecord;
 
@@ -51,7 +51,7 @@ private slots:
 
 private:
     void createTrayIcon();
-    void setupSingleInstance();
+    bool setupSingleInstance();
     void setupHotkey();
     void setupScanSchedule();
     void setupConnections();
@@ -61,7 +61,7 @@ private:
 
     AppSettings m_settings;
     std::unique_ptr<Database> m_database;
-    std::unique_ptr<SearchEngine> m_searchEngine;
+    SearchService *m_searchService = nullptr;
 
     LauncherWindow *m_window = nullptr;
     Scanner *m_scanner = nullptr;

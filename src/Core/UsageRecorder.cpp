@@ -26,6 +26,8 @@ void UsageRecorder::shutdown()
 {
     if (m_db.isOpen())
         m_db.close();
+    // removeDatabase 要求没有其它句柄引用该连接，先放掉自己的副本
+    m_db = QSqlDatabase();
     if (QSqlDatabase::contains(m_connectionName))
         QSqlDatabase::removeDatabase(m_connectionName);
 }
@@ -39,6 +41,7 @@ bool UsageRecorder::ensureOpen()
     m_db.setDatabaseName(m_databasePath);
     if (!m_db.open()) {
         qWarning("Listery: 使用统计库打开失败：%s", qPrintable(m_db.lastError().text()));
+        m_db = QSqlDatabase();
         QSqlDatabase::removeDatabase(m_connectionName);
         return false;
     }
