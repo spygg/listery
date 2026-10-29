@@ -135,6 +135,7 @@ jobs:
         shell: bash
         run: |
           set +e
+          ok=1
           {
           mkdir -p listery.app/Contents/MacOS listery.app/Contents/Resources
           cp build/listery listery.app/Contents/MacOS/listery
@@ -149,10 +150,14 @@ jobs:
           <key>CFBundlePackageType</key><string>APPL</string>
           </dict></plist>
           EOF
-          macdeployqt listery.app
+          macdeployqt listery.app -verbose=1 || ok=0
+          echo "=== .app contents ==="
+          ls -laR listery.app/Contents | head -60
+          # macdeployqt 必须把 Qt 框架拷进 .app，否则产物不可用
+          [ -d listery.app/Contents/Frameworks ] || ok=0
           zip -r listery-macos.zip listery.app
           } 2>&1 | tee deploy.log
-          test -f listery-macos.zip
+          test -f listery-macos.zip -a "$ok" = "1"
 
       # 调试：失败时把日志写入各平台的 logs-* 分支（公开仓库可直接读）
       - name: Dump logs to logs branch
