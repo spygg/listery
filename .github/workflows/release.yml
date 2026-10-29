@@ -136,12 +136,17 @@ jobs:
             for f in libstdc++-6.dll libwinpthread-1.dll libgcc_s_dw2-1.dll libiconv-2.dll libintl-8.dll; do
               [ -f "$GCCBIN/$f" ] && echo "present: $f" || echo "MISSING: $f"
             done
-            echo "=== cc1plus ==="
-            CC1="$GCCBIN/../libexec/gcc/i686-w64-mingw32/5.3.0/cc1plus.exe"
-            ls -la "$CC1" 2>&1 || true
-            objdump -p "$CC1" 2>/dev/null | grep -i "DLL Name" | head -10
-            "$CC1" --version 2>&1 | head -3
-            echo "cc1plus_exit=$?"
+            # 当前步骤内 GITHUB_PATH 尚未生效，先显式把工具链放进 PATH 再验证
+            export PATH="$GCCBIN:$QTBIN:$PATH"
+            echo "=== cc1plus --version ==="
+            "$GCCBIN/../libexec/gcc/i686-w64-mingw32/5.3.0/cc1plus.exe" --version 2>&1 | head -3
+            echo "cc1plus_status=${PIPESTATUS[0]}"
+            echo "=== compile smoke test ==="
+            echo 'int main(){return 0;}' > smoke.cxx
+            "$GCCBIN/g++.exe" smoke.cxx -o smoke.exe 2>&1 | head -20
+            echo "compile_status=${PIPESTATUS[0]}"
+            ls -la smoke.exe 2>&1 || true
+            ./smoke.exe; echo "run_status=$?"
           } 2>&1 | tee setup_qt.log
 
       - name: Configure
