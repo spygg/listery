@@ -136,7 +136,12 @@ jobs:
             for f in libstdc++-6.dll libwinpthread-1.dll libgcc_s_dw2-1.dll libiconv-2.dll libintl-8.dll; do
               [ -f "$GCCBIN/$f" ] && echo "present: $f" || echo "MISSING: $f"
             done
-            # cc1plus/collect2 等位于 libexec 目录，运行时按「程序目录 → PATH」查找
+            # 解包出来的 Qt 里 qmake/windeployqt 仍带着构建机路径
+            # (c:/Users/qt/work/install)，用 qt.conf 把前缀重定向到解包目录
+            printf '[Paths]\nPrefix=..\n' > "$QTBIN/qt.conf"
+            cat "$QTBIN/qt.conf"
+            echo "qmake prefix: $("$QTBIN/qmake.exe" -query QT_INSTALL_PREFIX)"
+            # cc1plus 等位于 libexec 目录，运行时按「程序目录 → PATH」查找
             # libwinpthread-1.dll；PATH 里 Git 自带的 64 位同名 DLL 会让 32 位
             # cc1plus 静默加载失败，因此把运行库复制到程序目录（优先级最高）
             for d in "$GCCBIN/../libexec/gcc/i686-w64-mingw32/5.3.0" \
@@ -216,7 +221,19 @@ jobs:
             mkdir -p dist-xp
             cp build/listery.exe dist-xp/
             windeployqt --release --no-translations --no-compiler-runtime dist-xp/listery.exe
-            echo "windeployqt_status=$?"
+            WDEPLOY=$?
+            echo "windeployqt_status=$WDEPLOY"
+            if [ "$WDEPLOY" != "0" ]; then
+              echo "=== windeployqt failed, copying Qt runtime manually ==="
+              QMAKE=$(command -v qmake.exe)
+              QTDIR=$(cd "$(dirname "$QMAKE")/.." && pwd)
+              echo "QTDIR=$QTDIR"
+              cp "$QTDIR"/bin/Qt5Core.dll "$QTDIR"/bin/Qt5Gui.dll "$QTDIR"/bin/Qt5Widgets.dll \
+                 "$QTDIR"/bin/Qt5Sql.dll "$QTDIR"/bin/Qt5Network.dll dist-xp/ 2>&1
+              mkdir -p dist-xp/platforms dist-xp/sqldrivers
+              cp "$QTDIR"/plugins/platforms/qwindows.dll dist-xp/platforms/ 2>&1
+              cp "$QTDIR"/plugins/sqldrivers/qsqlite.dll dist-xp/sqldrivers/ 2>&1
+            fi
             GCCBIN=$(dirname "$(command -v g++.exe)")
             # MinGW 运行库随包（避免目标机缺 DLL）
             for f in libgcc_s_sjlj-1.dll libgcc_s_dw2-1.dll libstdc++-6.dll libwinpthread-1.dll; do
