@@ -42,7 +42,8 @@ CloseApplications=yes
 RestartApplications=no
 
 [Languages]
-Name: "chinesesimplified"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
+; 只声明一定存在的官方语言包：不同 Inno Setup 版本的中文语言文件名不一致
+; （ChineseSimplified.isl 在部分版本里缺失），缺文件会直接导致编译中止
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
