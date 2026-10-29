@@ -132,11 +132,16 @@ jobs:
             ls "$GCCBIN" | head -40
             echo "=== gcc -v ==="
             "$GCCBIN/gcc.exe" -v 2>&1 | head -5
-            echo "=== compile smoke test ==="
-            echo 'int main(){return 0;}' > smoke.cxx
-            "$GCCBIN/g++.exe" -v smoke.cxx -o smoke.exe 2>&1 | tail -15
-            echo "compile_exit=$?"
-            ls -la smoke.exe 2>&1 || true
+            echo "=== runtime dll check ==="
+            for f in libstdc++-6.dll libwinpthread-1.dll libgcc_s_dw2-1.dll libiconv-2.dll libintl-8.dll; do
+              [ -f "$GCCBIN/$f" ] && echo "present: $f" || echo "MISSING: $f"
+            done
+            echo "=== cc1plus ==="
+            CC1="$GCCBIN/../libexec/gcc/i686-w64-mingw32/5.3.0/cc1plus.exe"
+            ls -la "$CC1" 2>&1 || true
+            objdump -p "$CC1" 2>/dev/null | grep -i "DLL Name" | head -10
+            "$CC1" --version 2>&1 | head -3
+            echo "cc1plus_exit=$?"
           } 2>&1 | tee setup_qt.log
 
       - name: Configure
