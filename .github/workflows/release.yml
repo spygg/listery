@@ -17,8 +17,10 @@ jobs:
       fail-fast: false
       matrix:
         config:
+          # windows-2022: VS2022/v143 工具集。windows-latest 已升级 VS2026，
+          # 其 STL 移除了 stdext::make_checked_array_iterator，与 Qt 5.15.2 头文件不兼容
           - name: Windows
-            os: windows-latest
+            os: windows-2022
             qt: '5.15.2'
             host: windows
             target: desktop
@@ -127,6 +129,7 @@ jobs:
         if: failure()
         shell: bash
         run: |
+          set +e
           BR="logs-${{ matrix.config.name }}"
           git config user.email "ci@listery.local"
           git config user.name "listery-ci"
@@ -148,7 +151,7 @@ jobs:
           git add -f ci-logs/all.log
           git status --porcelain
           git commit -m "ci logs: ${{ matrix.config.name }} run ${{ github.run_id }} $(date -u +%Y%m%d%H%M%S)" || true
-          git push origin "$BR"
+          git push --force origin "$BR"
 
       - name: Upload Release Assets
         uses: softprops/action-gh-release@v2
