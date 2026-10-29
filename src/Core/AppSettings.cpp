@@ -17,6 +17,8 @@ const char *kKeyMaxResults = "ui/maxResults";
 const char *kKeyAutoScan = "index/autoScanOnStartup";
 const char *kKeyRescanMinutes = "index/rescanIntervalMinutes";
 const char *kKeyHideOnFocusLost = "ui/hideWhenFocusLost";
+const char *kKeySmartSchedule = "index/smartSchedule";
+const char *kKeyUseLocate = "index/useLocateIndex";
 const char *kKeySchemaVersion = "meta/schemaVersion";
 
 QStringList defaultExtensions()
@@ -217,6 +219,28 @@ bool AppSettings::hideWhenFocusLost() const
 void AppSettings::setHideWhenFocusLost(bool on)
 {
     m_settings->setValue(QString::fromLatin1(kKeyHideOnFocusLost), on);
+    m_settings->sync();
+}
+
+bool AppSettings::smartSchedule() const
+{
+    return m_settings->value(QString::fromLatin1(kKeySmartSchedule), true).toBool();
+}
+
+void AppSettings::setSmartSchedule(bool on)
+{
+    m_settings->setValue(QString::fromLatin1(kKeySmartSchedule), on);
+    m_settings->sync();
+}
+
+bool AppSettings::useLocateIndex() const
+{
+    return m_settings->value(QString::fromLatin1(kKeyUseLocate), true).toBool();
+}
+
+void AppSettings::setUseLocateIndex(bool on)
+{
+    m_settings->setValue(QString::fromLatin1(kKeyUseLocate), on);
     m_settings->sync();
 }
 

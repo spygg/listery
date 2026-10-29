@@ -31,8 +31,15 @@
 #include <algorithm>
 
 namespace {
-/** 启动时自动更新索引的最小间隔：一天最多一次全盘扫描。 */
-const qint64 kAutoRescanAgeMs = 24LL * 60 * 60 * 1000;
+/**
+ * 智能调度的档位基线（毫秒）。
+ *  - 有可执行文件的卷：用户配置的刷新间隔（默认 12 小时）；
+ *  - 只有零星几个：2 倍；
+ *  - 一个都没有：4 倍起步，每空扫一轮再翻倍，最多放宽到 14 天。
+ */
+const qint64 kMaxScanIntervalMs = 14LL * 24 * 60 * 60 * 1000;
+/** 调度器最长休眠时间：挂载的卷会变，至少每 3 小时重新评估一次。 */
+const qint64 kMaxPollIntervalMs = 3LL * 60 * 60 * 1000;
 } // namespace
 
 AppController::AppController(QObject *parent)
@@ -109,6 +116,11 @@ bool AppController::initialize()
     setupConnections();
 
     const int count = indexCount();
+    const qint64 lastScan = m_database->meta(QStringLiteral("last_scan_time"),
+                                             QStringLiteral("0")).toLongLong();
+    const bool interrupted = !m_database->meta(QStringLiteral("scan_in_progress")).isEmpty();
+    const bool indexComplete = count > 0 && lastScan > 0 && !interrupted;
+
     if (count == 0) {
         m_window->setStatusText(QStringLiteral("索引尚未建立 · 首次扫描进行中"));
         if (!m_silentStart)
@@ -117,20 +129,17 @@ bool AppController::initialize()
     updateStatus();
     applyAutoStart();
 
-    // 索引缺失、上次扫描被中断或超过一天没更新时才在启动时扫描；否则只靠定时刷新，
-    // 避免每次开机都全盘重扫十几分钟、后几个磁盘长时间搜不到
-    const qint64 lastScan = m_database->meta(QStringLiteral("last_scan_time"),
-                                             QStringLiteral("0")).toLongLong();
-    const bool interrupted = !m_database->meta(QStringLiteral("scan_in_progress")).isEmpty();
-    const bool indexComplete = count > 0 && lastScan > 0 && !interrupted;
-    const qint64 ageMs = indexComplete
-        ? QDateTime::currentMSecsSinceEpoch() - lastScan
-        : 0;
-    const bool stale = !indexComplete || ageMs > kAutoRescanAgeMs;
-    if (!indexComplete || (m_settings.autoScanOnStart() && stale)) {
-        QTimer::singleShot(indexComplete ? 1500 : 300, this, [this, indexComplete]() {
-            startScan(!indexComplete);
+    // 索引缺失、上次扫描被中断时立刻补扫；否则交给调度器按“每个卷各自的到期时间”决定
+    if (!indexComplete) {
+        QTimer::singleShot(300, this, [this]() {
+            startScan(false);
         });
+        scheduleNextScan(10000);
+    } else if (m_settings.autoScanOnStart()) {
+        scheduleNextScan(1500);
+    } else {
+        // 用户关掉了开机扫描：等到下一个卷自然到期再动（最多 3 小时后重新评估）
+        scheduleNextScan(static_cast<int>(kMaxPollIntervalMs));
     }
 
     if (m_tray && !QSystemTrayIcon::isSystemTrayAvailable())
@@ -171,7 +180,8 @@ void AppController::createTrayIcon()
     m_actionQuit = menu->addAction(QStringLiteral("退出"));
 
     connect(m_actionShow, &QAction::triggered, this, &AppController::showLauncher);
-    connect(m_actionRescan, &QAction::triggered, this, [this]() { startScan(true); });
+    connect(m_actionRescan, &QAction::triggered, this,
+            [this]() { startScan(true, true); }); // 人工重建：强制全量遍历
     connect(m_actionSettings, &QAction::triggered, this, &AppController::openSettings);
     connect(m_actionQuit, &QAction::triggered, qApp, &QApplication::quit);
 
@@ -243,12 +253,130 @@ void AppController::setupHotkey()
 void AppController::setupScanSchedule()
 {
     m_scanTimer = new QTimer(this);
-    connect(m_scanTimer, &QTimer::timeout, this, [this]() { startScan(false); });
+    m_scanTimer->setSingleShot(true);
+    connect(m_scanTimer, &QTimer::timeout, this, &AppController::runScheduledScan);
+    scheduleNextScan(1500);
+}
 
-    if (m_settings.rescanIntervalMinutes() > 0) {
-        const qint64 interval = static_cast<qint64>(m_settings.rescanIntervalMinutes()) * 60 * 1000;
-        m_scanTimer->start(static_cast<int>(qMin<qint64>(interval, 2147483647LL)));
+void AppController::runScheduledScan()
+{
+    if (!m_database)
+        return;
+
+    const QStringList due = dueVolumes();
+    if (due.isEmpty()) {
+        scheduleNextScan();
+        return;
     }
+    // 一次只扫到期的卷：没装过软件的分区不会被反复遍历
+    startScan(false, needsDeepScan(due), due);
+}
+
+void AppController::scheduleNextScan(int immediateDelayMs)
+{
+    if (!m_scanTimer)
+        return;
+
+    m_scanTimer->stop();
+    if (m_settings.rescanIntervalMinutes() <= 0)
+        return; // 用户关掉了定时刷新
+
+    const qint64 wait = nextScanDelayMs();
+    // 已经到期 → 稍等一会就扫；还没到期 → 睡到下一个到期点（但不超过 3 小时，便于感知新挂载的卷）
+    const qint64 delay = wait > 0 ? qMin(wait, kMaxPollIntervalMs) : qMax<qint64>(500, immediateDelayMs);
+    m_scanTimer->start(static_cast<int>(qMin<qint64>(delay, kMaxPollIntervalMs)));
+}
+
+QStringList AppController::dueVolumes() const
+{
+    if (!m_database)
+        return QStringList();
+
+    const QStringList roots = Scanner::availableRoots(m_settings.includeRemovableDrives());
+    if (roots.isEmpty())
+        return QStringList();
+
+    const qint64 baseMs = qMax(30, m_settings.rescanIntervalMinutes()) * 60LL * 1000LL;
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+
+    QStringList due;
+    for (const QString &root : roots) {
+        const VolumeStat stat = m_database->volumeStat(root);
+        if (stat.lastScan <= 0 || stat.deepPending) {
+            due.append(root); // 从没扫过，或上一轮快速通道的结果需要用全量遍历复核
+            continue;
+        }
+        if (now - stat.lastScan >= intervalForVolume(stat, baseMs))
+            due.append(root);
+    }
+
+    // 关掉智能调度时回到老行为：一次把所有卷都扫一遍
+    if (!m_settings.smartSchedule() && !due.isEmpty())
+        return roots;
+
+    return due;
+}
+
+qint64 AppController::nextScanDelayMs() const
+{
+    if (!m_database)
+        return kMaxPollIntervalMs;
+
+    const QStringList roots = Scanner::availableRoots(m_settings.includeRemovableDrives());
+    if (roots.isEmpty())
+        return kMaxPollIntervalMs;
+
+    const qint64 baseMs = qMax(30, m_settings.rescanIntervalMinutes()) * 60LL * 1000LL;
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+
+    qint64 best = kMaxPollIntervalMs;
+    for (const QString &root : roots) {
+        const VolumeStat stat = m_database->volumeStat(root);
+        if (stat.lastScan <= 0 || stat.deepPending)
+            return 0;
+
+        const qint64 wait = stat.lastScan + intervalForVolume(stat, baseMs) - now;
+        best = qMin(best, qMax<qint64>(0, wait));
+    }
+    return best;
+}
+
+qint64 AppController::intervalForVolume(const VolumeStat &stat, qint64 baseMs) const
+{
+    return scanIntervalForVolume(stat, baseMs, m_settings.smartSchedule());
+}
+
+qint64 AppController::scanIntervalForVolume(const VolumeStat &stat, qint64 baseMs, bool smart)
+{
+    if (!smart)
+        return baseMs;
+
+    if (stat.exeCount <= 0) {
+        // 一个可执行文件都没有的分区（纯数据盘、备份盘）：4 倍起步，每空一轮翻倍
+        qint64 multiplier = 4;
+        for (int i = 1; i < qMin(stat.emptyRounds, 5); ++i)
+            multiplier *= 2;
+        return qMin(baseMs * multiplier, kMaxScanIntervalMs);
+    }
+    if (stat.exeCount <= 5)
+        return qMin(baseMs * 2, kMaxScanIntervalMs); // 只有零星几个，不必勤快
+
+    return baseMs;
+}
+
+bool AppController::needsDeepScan(const QStringList &volumes) const
+{
+    if (!m_database)
+        return true;
+    if (!m_settings.useLocateIndex())
+        return true; // 用户要求每次都真遍历
+
+    for (const QString &root : volumes) {
+        const VolumeStat stat = m_database->volumeStat(root);
+        if (stat.lastScan <= 0 || stat.deepPending)
+            return true;
+    }
+    return false;
 }
 
 void AppController::showLauncher()
@@ -289,7 +417,7 @@ void AppController::updateStatus()
         m_tray->setToolTip(QStringLiteral("Listery · 已索引 %1 个可执行文件").arg(QLocale().toString(count)));
 }
 
-void AppController::startScan(bool notifyUser)
+void AppController::startScan(bool notifyUser, bool deep, const QStringList &volumes)
 {
     if (!m_database)
         return;
@@ -297,6 +425,8 @@ void AppController::startScan(bool notifyUser)
     if (m_scanner) {
         if (m_scanner->isRunning()) {
             m_scanPending = true;
+            m_pendingDeep = deep;
+            m_pendingVolumes = volumes;
             if (notifyUser && m_tray)
                 m_tray->showMessage(QStringLiteral("Listery"),
                                     QStringLiteral("已有扫描在进行，完成后会自动再扫一遍"),
@@ -307,6 +437,16 @@ void AppController::startScan(bool notifyUser)
         m_scanner = nullptr;
     }
 
+    // 面板正在被使用时不要抢磁盘 IO，等用户搜完再说（最多让三次）
+    if (!notifyUser && isLauncherVisible() && m_scanDeferred < 3) {
+        ++m_scanDeferred;
+        QTimer::singleShot(4000, this, [this, deep, volumes]() {
+            startScan(false, deep, volumes);
+        });
+        return;
+    }
+    m_scanDeferred = 0;
+
     const qint64 generation = QDateTime::currentMSecsSinceEpoch();
     m_scanNotify = notifyUser;
 
@@ -315,7 +455,8 @@ void AppController::startScan(bool notifyUser)
                                    m_settings.skipDirectoryPatterns(),
                                    m_settings.includeRemovableDrives(),
                                    generation,
-                                   QStringList(),
+                                   volumes,
+                                   deep,
                                    this);
     m_scanner = scanner;
     connect(scanner, &Scanner::progressChanged, this, &AppController::onScanProgress);
@@ -376,8 +517,13 @@ void AppController::onScanFinished(int filesFound, int removed, bool canceled, c
 
     if (m_scanPending) {
         m_scanPending = false;
-        QTimer::singleShot(200, this, [this]() { startScan(true); });
+        const bool deep = m_pendingDeep;
+        const QStringList volumes = m_pendingVolumes;
+        m_pendingVolumes.clear();
+        QTimer::singleShot(200, this, [this, deep, volumes]() { startScan(true, deep, volumes); });
+        return;
     }
+    scheduleNextScan();
 }
 
 void AppController::onLaunchRequested(const ExecutableRecord &record, bool asAdmin)
@@ -431,7 +577,7 @@ void AppController::openSettings()
         const bool extensionsChanged = previousExtensions != m_settings.executableExtensions();
         applySettings();
         if (extensionsChanged && !(m_scanner && m_scanner->isRunning()))
-            startScan(false);
+            startScan(false, true); // 后缀变了要重新遍历，不能用 locate 快照
     }
 }
 
@@ -445,13 +591,8 @@ void AppController::applySettings()
     if (m_hook)
         m_hook->setIntervalMs(m_settings.hotkeyIntervalMs());
 
-    if (m_scanTimer) {
-        m_scanTimer->stop();
-        if (m_settings.rescanIntervalMinutes() > 0) {
-            const qint64 interval = static_cast<qint64>(m_settings.rescanIntervalMinutes()) * 60 * 1000;
-            m_scanTimer->start(static_cast<int>(qMin<qint64>(interval, 2147483647LL)));
-        }
-    }
+    // 刷新间隔/智能调度改了：按新策略重新排下一次扫描
+    scheduleNextScan();
 
     applyAutoStart();
 }

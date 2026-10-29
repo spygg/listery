@@ -32,6 +32,8 @@ const int kShadowMarginX = 26;
 const int kShadowMarginTop = 22;
 const int kShadowMarginBottom = 26;
 const int kFooterHeight = 36;
+/** 卡片自身的上下边框（QFrame 1px × 2）：布局的最小高度会把它算进去，手算时也要计入。 */
+const int kCardBorder = 2;
 } // namespace
 
 LauncherWindow::LauncherWindow(SearchService *service, int maxResults, QWidget *parent)
@@ -69,6 +71,10 @@ void LauncherWindow::buildUi()
     outerLayout->setContentsMargins(kShadowMarginX, kShadowMarginTop,
                                     kShadowMarginX, kShadowMarginBottom);
     outerLayout->setSpacing(0);
+    // 默认的 SetDefaultConstraint 会把窗口 minimumHeight 抬到布局当前的最小高度，
+    // 而这个值只会随展开状态上抬、不会随列表隐藏回落，之后 resize() 会被它钳住，
+    // 表现就是“Enter 启动后再唤起面板缩不回输入框高度”。改由我们自己算高度。
+    outerLayout->setSizeConstraint(QLayout::SetNoConstraint);
 
     m_card = new QFrame(this);
     m_card->setObjectName(QStringLiteral("launcherCard"));
@@ -214,6 +220,12 @@ void LauncherWindow::dismiss()
         return;
     hide();
     m_model->clearResults();
+    {
+        QSignalBlocker blocker(m_edit);
+        m_edit->clear();
+    }
+    // 隐藏前把面板收回输入框高度：否则下次唤起会带着上一次展开的尺寸出现
+    updateGeometryForResults(0, true);
 }
 
 void LauncherWindow::refreshResults()
@@ -405,7 +417,7 @@ void LauncherWindow::updateGeometryForResults(int rowCount, bool emptyQuery)
     m_separator->setVisible(!noRows);
     m_footer->setVisible(!emptyQuery);
 
-    int contentHeight = kEditHeight;
+    int contentHeight = kEditHeight + kCardBorder;
     if (noRows) {
         m_list->setFixedHeight(0);
     } else {
@@ -416,6 +428,8 @@ void LauncherWindow::updateGeometryForResults(int rowCount, bool emptyQuery)
     if (!emptyQuery)
         contentHeight += kFooterHeight;
 
+    // 先清掉最小高度再 resize：布局一旦把 minimumHeight 抬起来，resize() 会被钳住
+    setMinimumHeight(0);
     resize(kPanelWidth, contentHeight + kShadowMarginTop + kShadowMarginBottom);
 }
 

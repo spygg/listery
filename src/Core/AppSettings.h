@@ -55,6 +55,13 @@ public:
     bool hideWhenFocusLost() const;
     void setHideWhenFocusLost(bool on);
 
+    /** 智能调度：可执行程序很少或没有的分区自动降低扫描频率。 */
+    bool smartSchedule() const;
+    void setSmartSchedule(bool on);
+    /** Linux 下优先用 locate 快照建索引（秒级），关闭则每次都真遍历。 */
+    bool useLocateIndex() const;
+    void setUseLocateIndex(bool on);
+
     // 版本管理
     int schemaVersion() const;
     void setSchemaVersion(int version);

@@ -37,9 +37,19 @@ public:
     QString dataDirectory() const;
     bool isLauncherVisible() const;
 
+    /**
+     * 单个卷的刷新间隔（纯函数，便于自检）：
+     * 有程序的卷按用户配置的间隔，程序很少的卷放宽，一个都没有的卷指数退避，最多 14 天。
+     */
+    static qint64 scanIntervalForVolume(const VolumeStat &stat, qint64 baseMs, bool smart);
+
 public slots:
     void showLauncher();
-    void startScan(bool notifyUser);
+    /** @param deep true 表示强制全量遍历（人工重建索引、或快速通道结果可疑时复核）。 */
+    void startScan(bool notifyUser, bool deep = false, const QStringList &volumes = QStringList());
+
+private slots:
+    void runScheduledScan();
 
 private slots:
     void onLaunchRequested(const ExecutableRecord &record, bool asAdmin);
@@ -58,6 +68,17 @@ private:
     void applySettings();
     void applyAutoStart();
     int indexCount() const;
+
+    // ----- 智能调度 -----
+    /** 到期的卷：没扫过、到点了、或需要全量复核的。 */
+    QStringList dueVolumes() const;
+    /** 距离下一个到期卷还有多少毫秒；<=0 表示已经到期。 */
+    qint64 nextScanDelayMs() const;
+    /** 单个卷的刷新间隔：没有可执行文件的卷按指数退避，最多放宽到 14 天。 */
+    qint64 intervalForVolume(const VolumeStat &stat, qint64 baseMs) const;
+    /** 这些卷里是否有任何一个需要全量遍历。 */
+    bool needsDeepScan(const QStringList &volumes) const;
+    void scheduleNextScan(int immediateDelayMs = 2000);
 
     AppSettings m_settings;
     std::unique_ptr<Database> m_database;
@@ -81,5 +102,9 @@ private:
 
     bool m_scanNotify = false;
     bool m_scanPending = false;
+    bool m_pendingDeep = false;
+    QStringList m_pendingVolumes;
+    /** 面板正在使用时推迟扫描的次数上限，避免无限让位。 */
+    int m_scanDeferred = 0;
     bool m_silentStart = false;
 };

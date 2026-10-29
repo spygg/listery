@@ -35,6 +35,22 @@ struct UsageStat
 };
 
 /**
+ * 单个磁盘卷的索引概况，供“智能调度”决定下一次什么时候值得再扫它。
+ *
+ * 一个从没装过软件的分区（例如纯数据盘、备份盘）每次全盘遍历都要几分钟 IO，
+ * 却一条结果都贡献不了；记录连续空扫的轮次后就可以把它的扫描频率指数级降下来。
+ */
+struct VolumeStat
+{
+    QString root;         // 卷根路径，例如 C:/、/home
+    int exeCount = 0;     // 上次扫描结束时该卷的条目数
+    qint64 lastScan = 0;  // 上次扫描完成时间（毫秒）
+    int emptyRounds = 0;  // 连续“一条都没扫到”的轮次
+    /** 快速通道（locate）结果可疑：下一轮必须用全量遍历复核。 */
+    bool deepPending = false;
+};
+
+/**
  * SQLite 索引库。
  *
  * 设计要点：
@@ -58,8 +74,24 @@ public:
     bool commitBulk();
     bool rollbackBulk();
     int removeStale(qint64 generation, QString *errorMessage = nullptr);
+    /**
+     * 删除本轮没再见到的旧记录。
+     *
+     * @param volumes        只清理这些卷（按路径前缀匹配）；为空表示清理整库。
+     *                       只扫部分卷时必须传，否则会把没扫到的卷的记录一起删掉。
+     * @param keepNewerThan  大于 0 时，保留 mtime 晚于该时间的记录。locate 快照早于文件系统
+     *                       现状，刚装上、还没进 locate 库的程序不能被误删。
+     */
+    int removeStale(qint64 generation, const QStringList &volumes, qint64 keepNewerThan,
+                    QString *errorMessage = nullptr);
     int totalCount() const;
     bool clearAll();
+
+    // ----- 卷级别统计（智能调度用） -----
+    VolumeStat volumeStat(const QString &root) const;
+    void setVolumeStat(const VolumeStat &stat);
+    /** 该卷当前收录的条目数（按路径前缀统计）。 */
+    int countInVolume(const QString &root) const;
 
     // ----- 查询端 -----
     bool ftsAvailable() const;

@@ -1,5 +1,7 @@
 #include "SelfTest.h"
 
+#include "AppController.h"
+
 #include "Core/AppSettings.h"
 #include "Core/Database.h"
 #include "Core/Pinyin.h"
@@ -228,6 +230,62 @@ int SelfTest::run()
               && fullNameHits.first().record.displayName.startsWith(QStringLiteral("toolB")),
           QStringLiteral("输入完整文件名 toolb.exe 精确命中"));
 
+    // ---- 卷级别统计：智能调度据此决定下一次什么时候再扫 ----
+    const int expectedVolumeCount = 4 + (lnkStubOnDisk ? 1 : 0);
+    const VolumeStat rootStat = database.volumeStat(root);
+    check(rootStat.exeCount == expectedVolumeCount && rootStat.lastScan > 0,
+          QStringLiteral("扫描后写入卷统计：%1 条（期望 %2）")
+              .arg(rootStat.exeCount).arg(expectedVolumeCount));
+    check(database.countInVolume(root) == database.totalCount(),
+          QStringLiteral("按路径前缀统计卷内条目：%1 条").arg(database.countInVolume(root)));
+
+    // 只扫一个“从没装过软件”的卷：它自己的统计要记为连续空扫，其它卷的记录不能被清理
+    const int beforePartial = database.totalCount();
+    const QString emptyVolume = root + QStringLiteral("/other/empty-bin");
+    QDir().mkpath(emptyVolume);
+    Scanner emptyScanner(databasePath, extensions, QStringList(), false, 43,
+                         QStringList() << emptyVolume);
+    emptyScanner.start();
+    check(emptyScanner.wait(20000), QStringLiteral("只扫单个卷的扫描线程完成"));
+
+    const VolumeStat emptyStat = database.volumeStat(emptyVolume);
+    check(emptyStat.exeCount == 0 && emptyStat.emptyRounds == 1 && emptyStat.lastScan > 0,
+          QStringLiteral("空卷记录为连续 0 条（rounds=%1）").arg(emptyStat.emptyRounds));
+    check(database.totalCount() == beforePartial,
+          QStringLiteral("只扫空卷时其它卷的 %1 条记录仍然保留（扫描前 %2 条）")
+              .arg(database.totalCount()).arg(beforePartial));
+
+    // ---- 智能调度的间隔策略 ----
+    const qint64 base = 720LL * 60 * 1000; // 12 小时
+    VolumeStat busy;
+    busy.exeCount = 1200;
+    check(AppController::scanIntervalForVolume(busy, base, true) == base,
+          QStringLiteral("装满程序的卷按用户配置的间隔刷新"));
+
+    VolumeStat few;
+    few.exeCount = 3;
+    check(AppController::scanIntervalForVolume(few, base, true) == base * 2,
+          QStringLiteral("只有零星几个程序的卷放宽到 2 倍"));
+
+    VolumeStat none1;
+    none1.exeCount = 0;
+    none1.emptyRounds = 1;
+    check(AppController::scanIntervalForVolume(none1, base, true) == base * 4,
+          QStringLiteral("空卷第一次放宽到 4 倍（2 天）"));
+
+    VolumeStat none3 = none1;
+    none3.emptyRounds = 3;
+    check(AppController::scanIntervalForVolume(none3, base, true) == base * 16,
+          QStringLiteral("连续空扫 3 轮放宽到 16 倍（8 天）"));
+
+    VolumeStat none9 = none1;
+    none9.emptyRounds = 9;
+    check(AppController::scanIntervalForVolume(none9, base, true) <= 14LL * 24 * 60 * 60 * 1000,
+          QStringLiteral("再空扫也不会超过 14 天"));
+
+    check(AppController::scanIntervalForVolume(none9, base, false) == base,
+          QStringLiteral("关闭智能调度后所有卷一视同仁"));
+
     // ---- 扫描元信息 ----
     check(database.meta(QStringLiteral("scan_in_progress")).isEmpty(),
           QStringLiteral("扫描完成后清除“扫描进行中”标记"));
@@ -274,17 +332,34 @@ int SelfTest::run()
     const int expandedHeight = window.height();
     window.setQueryForPreview(QString());
     const int inputOnlyHeight = window.height();
-    check(compactHeight == 146,
-          QStringLiteral("无候选时不展开列表，窗口高度 %1（期望 146）").arg(compactHeight));
-    check(expandedHeight == 201,
-          QStringLiteral("有候选时展开列表，窗口高度 %1（期望 201）").arg(expandedHeight));
-    check(inputOnlyHeight == 110,
-          QStringLiteral("空输入只保留输入框，窗口高度 %1（期望 110）").arg(inputOnlyHeight));
+    check(compactHeight == 148,
+          QStringLiteral("无候选时不展开列表，窗口高度 %1（期望 148）").arg(compactHeight));
+    check(expandedHeight == 203,
+          QStringLiteral("有候选时展开列表，窗口高度 %1（期望 203）").arg(expandedHeight));
+    check(inputOnlyHeight == 112,
+          QStringLiteral("空输入只保留输入框，窗口高度 %1（期望 112）").arg(inputOnlyHeight));
+
+    // ---- 窗口几何：真实“显示过”的窗口展开后必须能缩回 ----
+    // 顶层窗口 show() 后，布局的 SetDefaultConstraint 会把 minimumHeight 抬到展开高度，
+    // 之后 resize() 会被最小高度钳住 —— 这正是“Enter 启动后再唤起面板变高”的原因。
+    LauncherWindow shownWindow(&service, 10);
+    shownWindow.setAttribute(Qt::WA_DontShowOnScreen, true);
+    shownWindow.show();
+    shownWindow.setQueryForPreview(QStringLiteral("alpha"));
+    shownWindow.waitForSearch(3000);
+    const int shownExpanded = shownWindow.height();
+    shownWindow.dismiss();
+    shownWindow.popup();
+    const int shownCompact = shownWindow.height();
+    check(shownExpanded == 203,
+          QStringLiteral("显示后的窗口展开到 %1（期望 203）").arg(shownExpanded));
+    check(shownCompact == 112,
+          QStringLiteral("展开后再唤起缩回输入框高度 %1（期望 112）").arg(shownCompact));
 
     // 连续输入两次：只允许最新一次请求的结果落进列表
     window.setQueryForPreview(QStringLiteral("alpha"));
     window.setQueryForPreview(QStringLiteral("zzzzzz"));
-    check(window.waitForSearch(3000) && window.height() == 146,
+    check(window.waitForSearch(3000) && window.height() == 148,
           QStringLiteral("连续输入时丢弃过期的检索结果"));
 
     SearchResult menuResult;

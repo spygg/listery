@@ -10,3 +10,6 @@ CMakeUserPresets.json
 
 # 临时日志
 *.log
+
+# 本地助手工作区
+.workbuddy/

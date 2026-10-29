@@ -12,6 +12,7 @@
 #include <QSqlRecord>
 #include <QUuid>
 #include <QVariant>
+#include <QVariantList>
 
 namespace {
 QString selectColumns()
@@ -71,6 +72,22 @@ bool isAsciiWord(const QString &term)
             return false;
     }
     return true;
+}
+
+/**
+ * 卷根路径 → 路径前缀。QStorageInfo 给的是 "C:/"、"/home"，
+ * 而库里存的是原生分隔符的绝对路径，比较前统一成 ".../"/ "...\" 结尾的前缀。
+ */
+QString volumePrefix(const QString &root)
+{
+    if (root.isEmpty())
+        return root;
+
+    QString prefix = QDir::toNativeSeparators(root);
+    const QChar last = prefix.at(prefix.size() - 1);
+    if (last != QLatin1Char('/') && last != QLatin1Char('\\'))
+        prefix.append(QDir::toNativeSeparators(QStringLiteral("/")));
+    return prefix;
 }
 
 bool isCommonExtensionTerm(const QString &term)
@@ -177,6 +194,15 @@ bool Database::createSchema(QString *errorMessage)
                "CREATE TABLE IF NOT EXISTS app_meta ("
                " key TEXT NOT NULL PRIMARY KEY,"
                " value TEXT NOT NULL DEFAULT ''"
+               ")")
+        // 每个磁盘卷的索引概况：智能调度据此决定这个卷什么时候值得再扫
+        << QStringLiteral(
+               "CREATE TABLE IF NOT EXISTS volume_stats ("
+               " root TEXT NOT NULL PRIMARY KEY,"
+               " exe_count INTEGER NOT NULL DEFAULT 0,"
+               " last_scan INTEGER NOT NULL DEFAULT 0,"
+               " empty_rounds INTEGER NOT NULL DEFAULT 0,"
+               " deep_pending INTEGER NOT NULL DEFAULT 0"
                ")");
 
     for (const QString &statement : statements) {
@@ -395,18 +421,107 @@ bool Database::rollbackBulk()
 
 int Database::removeStale(qint64 generation, QString *errorMessage)
 {
+    return removeStale(generation, QStringList(), 0, errorMessage);
+}
+
+int Database::removeStale(qint64 generation, const QStringList &volumes, qint64 keepNewerThan,
+                          QString *errorMessage)
+{
     if (!isOpen())
         return 0;
 
+    QStringList conditions;
+    QVariantList binds;
+    conditions.append(QStringLiteral("gen <> ?"));
+    binds.append(QVariant::fromValue(generation));
+
+    if (!volumes.isEmpty()) {
+        QStringList volumeClauses;
+        for (const QString &volume : volumes) {
+            const QString prefix = volumePrefix(volume);
+            if (prefix.isEmpty())
+                continue;
+            // path 是主键（BINARY 排序）且开启了 case_sensitive_like，前缀 LIKE 可以走索引范围扫描
+            volumeClauses.append(QStringLiteral("path LIKE ? ESCAPE '\\'"));
+            binds.append(likeEscape(prefix) + QLatin1Char('%'));
+        }
+        if (volumeClauses.isEmpty())
+            return 0;
+        conditions.append(QStringLiteral("(%1)").arg(volumeClauses.join(QStringLiteral(" OR "))));
+    }
+
+    if (keepNewerThan > 0) {
+        conditions.append(QStringLiteral("mtime < ?"));
+        binds.append(QVariant::fromValue(keepNewerThan));
+    }
+
     QSqlQuery query(*m_db);
-    query.prepare(QStringLiteral("DELETE FROM executables WHERE gen <> ?"));
-    query.addBindValue(generation);
+    query.prepare(QStringLiteral("DELETE FROM executables WHERE ")
+                  + conditions.join(QStringLiteral(" AND ")));
+    for (const QVariant &bind : binds)
+        query.addBindValue(bind);
+
     if (!query.exec()) {
         if (errorMessage)
             *errorMessage = query.lastError().text();
         return -1;
     }
     return query.numRowsAffected();
+}
+
+VolumeStat Database::volumeStat(const QString &root) const
+{
+    VolumeStat stat;
+    stat.root = root;
+    if (!isOpen() || root.isEmpty())
+        return stat;
+
+    QSqlQuery query(*m_db);
+    query.prepare(QStringLiteral("SELECT exe_count, last_scan, empty_rounds, deep_pending"
+                                 " FROM volume_stats WHERE root = ?"));
+    query.addBindValue(root);
+    if (!query.exec() || !query.next())
+        return stat;
+
+    stat.exeCount = query.value(0).toInt();
+    stat.lastScan = query.value(1).toLongLong();
+    stat.emptyRounds = query.value(2).toInt();
+    stat.deepPending = query.value(3).toInt() != 0;
+    return stat;
+}
+
+void Database::setVolumeStat(const VolumeStat &stat)
+{
+    if (!isOpen() || stat.root.isEmpty())
+        return;
+
+    QSqlQuery query(*m_db);
+    query.prepare(QStringLiteral("INSERT OR REPLACE INTO volume_stats"
+                                 " (root, exe_count, last_scan, empty_rounds, deep_pending)"
+                                 " VALUES (?, ?, ?, ?, ?)"));
+    query.addBindValue(stat.root);
+    query.addBindValue(stat.exeCount);
+    query.addBindValue(QVariant::fromValue(stat.lastScan));
+    query.addBindValue(stat.emptyRounds);
+    query.addBindValue(stat.deepPending ? 1 : 0);
+    query.exec();
+}
+
+int Database::countInVolume(const QString &root) const
+{
+    if (!isOpen())
+        return 0;
+
+    const QString prefix = volumePrefix(root);
+    if (prefix.isEmpty())
+        return 0;
+
+    QSqlQuery query(*m_db);
+    query.prepare(QStringLiteral("SELECT COUNT(*) FROM executables WHERE path LIKE ? ESCAPE '\\'"));
+    query.addBindValue(likeEscape(prefix) + QLatin1Char('%'));
+    if (!query.exec() || !query.next())
+        return 0;
+    return query.value(0).toInt();
 }
 
 int Database::totalCount() const

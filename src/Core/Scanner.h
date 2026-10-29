@@ -2,21 +2,28 @@
 
 #include <QAtomicInt>
 #include <QElapsedTimer>
+#include <QHash>
 #include <QSet>
+#include <QFileInfo>
 #include <QString>
 #include <QStringList>
 #include <QThread>
 
 class Database;
+struct VolumeStat;
 
 /**
  * 全盘扫描线程。
  *
  * 扫描策略：
  *  - 逐个卷递归遍历，命中后缀白名单的文件写入 SQLite；
+ *  - 遍历用 QDirIterator，先把名字过滤掉再 stat，绝大多数无关文件不产生系统调用；
+ *  - Linux 上优先读 locate/mlocate/plocate 的快照（秒级完成），只有它不可用或需要复核时才真遍历；
  *  - 跳过系统缓存目录（WinSxS、SoftwareDistribution 等），避免无谓 IO；
  *  - 每 2000 条提交一次事务，兼顾速度与内存；
- *  - 本轮记录打上 generation 标记，整轮跑完后删除没再见到的旧记录。
+ *  - 本轮记录打上 generation 标记，整轮跑完后删除没再见到的旧记录（只删本次扫到的卷）；
+ *  - 每个卷单独统计条目数，供调度器决定下一轮何时再扫它；
+ *  - 线程以最低优先级运行，不与前台抢 CPU。
  */
 class Scanner : public QThread
 {
@@ -28,7 +35,10 @@ public:
             const QStringList &skipPatterns,
             bool includeRemovable,
             qint64 generation,
-            const QStringList &rootsOverride = QStringList(),
+            /** 要扫描的卷；为空表示扫描所有本地卷。只扫部分卷时不会清理其它卷的记录。 */
+            const QStringList &volumes = QStringList(),
+            /** true = 强制全量遍历（不使用 locate 快照，用于人工重建索引与可疑结果复核）。 */
+            bool deep = false,
             QObject *parent = nullptr);
     ~Scanner() override;
 
@@ -36,6 +46,8 @@ public:
     bool isStopping() const;
 
     static QStringList availableRoots(bool includeRemovable);
+    /** locate 是否可用（仅 Unix）：用于向用户解释为什么这一轮这么快。 */
+    static bool locateAvailable();
 
 signals:
     void progressChanged(const QString &root, int directories, int filesFound);
@@ -47,7 +59,17 @@ protected:
 private:
     void scanDirectory(const QString &path, int depth, Database &db);
     bool isSkippedDirectory(const QString &name) const;
+    bool isSkippedPath(const QString &path) const;
     void emitProgress(const QString &root, bool force = false);
+    /** 收下一份候选文件：白名单后缀命中，或（Unix 快速通道）带可执行位。 */
+    bool ingestFile(const QFileInfo &info, Database &db, bool allowExtensionless);
+
+    // Linux 快速通道：直接读 locate 快照
+    bool scanViaLocate(const QStringList &roots, Database &db);
+    static QString locateProgram();
+    static qint64 locateDatabaseMtime();
+    static QString extensionPattern(const QStringList &extensions);
+    void recordVolumeStat(const QString &root, Database &db);
 
     QString m_databasePath;
     QStringList m_extensions;
@@ -55,8 +77,8 @@ private:
     QStringList m_skipPatterns;
     bool m_includeRemovable = true;
     qint64 m_generation = 0;
-    /** 仅自检/测试用于限定目录；正常运行保持为空，表示扫描所有本地磁盘。 */
-    QStringList m_rootsOverride;
+    QStringList m_volumes;
+    bool m_deep = false;
 
     QAtomicInt m_stop;
     int m_directories = 0;
@@ -65,4 +87,7 @@ private:
     QString m_currentRoot;
     QElapsedTimer m_progressTimer;
     QString m_error;
+    /** 本轮是否走了 locate 快照；为 true 时清理旧记录要保护比快照更新的文件。 */
+    bool m_usedLocate = false;
+    qint64 m_locateDbMtime = 0;
 };

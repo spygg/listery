@@ -32,6 +32,8 @@ private:
     QCheckBox *m_includeRemovable = nullptr;
     QCheckBox *m_autoStart = nullptr;
     QCheckBox *m_hideOnFocusLost = nullptr;
+    QCheckBox *m_smartSchedule = nullptr;
+    QCheckBox *m_useLocate = nullptr;
     QLineEdit *m_extensions = nullptr;
     QLineEdit *m_skipDirectories = nullptr;
 };
