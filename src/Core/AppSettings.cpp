@@ -1,0 +1,255 @@
+#include "Core/AppSettings.h"
+
+#include <QCoreApplication>
+#include <QDir>
+#include <QFile>
+#include <QSettings>
+#include <QStandardPaths>
+#include <QtGlobal>
+
+namespace {
+const char *kKeyExtensions = "index/extensions";
+const char *kKeySkipDirs = "index/skipDirectories";
+const char *kKeyIncludeRemovable = "index/includeRemovableDrives";
+const char *kKeyAutoStart = "general/autoStart";
+const char *kKeyHotkeyInterval = "ui/hotkeyIntervalMs";
+const char *kKeyMaxResults = "ui/maxResults";
+const char *kKeyAutoScan = "index/autoScanOnStartup";
+const char *kKeyRescanMinutes = "index/rescanIntervalMinutes";
+const char *kKeyHideOnFocusLost = "ui/hideWhenFocusLost";
+const char *kKeySchemaVersion = "meta/schemaVersion";
+
+QStringList defaultExtensions()
+{
+    return QStringList() << QStringLiteral("exe") << QStringLiteral("com")
+                         << QStringLiteral("bat") << QStringLiteral("cmd")
+                         << QStringLiteral("sh") << QStringLiteral("ps1");
+}
+
+QStringList defaultSkipPatterns()
+{
+    return QStringList() << QStringLiteral("WinSxS")
+                         << QStringLiteral("$Recycle.Bin")
+                         << QStringLiteral("System Volume Information")
+                         << QStringLiteral("node_modules")
+                         << QStringLiteral(".git")
+                         << QStringLiteral("SoftwareDistribution")
+                         << QStringLiteral("DriverStore")
+                         << QStringLiteral("WindowsApps")
+                         << QStringLiteral("Temp")
+                         << QStringLiteral("__pycache__");
+}
+
+/** 实际写一个探针文件，避免把只读目录误判为可写。 */
+bool isDirectoryWritable(const QString &dir)
+{
+    QDir directory(dir);
+    if (!directory.exists())
+        return false;
+
+    QFile probe(directory.filePath(QStringLiteral(".listery-write-test")));
+    if (!probe.open(QIODevice::WriteOnly | QIODevice::Truncate))
+        return false;
+    probe.close();
+    probe.remove();
+    return true;
+}
+} // namespace
+
+QString AppSettings::resolveDataDir()
+{
+    const QString exeDir = QCoreApplication::applicationDirPath();
+    if (!exeDir.isEmpty() && isDirectoryWritable(exeDir))
+        return exeDir;
+
+    QString fallback = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    if (fallback.isEmpty())
+        fallback = QDir::homePath() + QStringLiteral("/.listery");
+    return fallback;
+}
+
+AppSettings::AppSettings()
+{
+    m_dataDir = resolveDataDir();
+    ensureDirectory(m_dataDir);
+
+    m_settings = new QSettings(settingsFilePath(), QSettings::IniFormat);
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+    m_settings->setIniCodec("UTF-8");
+#endif
+    ensureDefaults();
+}
+
+AppSettings::~AppSettings()
+{
+    delete m_settings;
+}
+
+void AppSettings::reload()
+{
+    m_settings->sync();
+}
+
+QString AppSettings::dataDir() const
+{
+    return m_dataDir;
+}
+
+QString AppSettings::databasePath() const
+{
+    return m_dataDir + QStringLiteral("/index.db");
+}
+
+QString AppSettings::logFilePath() const
+{
+    return m_dataDir + QStringLiteral("/listery.log");
+}
+
+QString AppSettings::settingsFilePath() const
+{
+    return m_dataDir + QStringLiteral("/settings.ini");
+}
+
+QStringList AppSettings::executableExtensions() const
+{
+    QStringList exts = m_settings->value(QString::fromLatin1(kKeyExtensions),
+                                         defaultExtensions()).toStringList();
+    QStringList cleaned;
+    for (const QString &ext : exts) {
+        QString value = ext.trimmed().toLower();
+        if (value.startsWith(QLatin1Char('.')))
+            value.remove(0, 1);
+        if (!value.isEmpty() && !cleaned.contains(value))
+            cleaned.append(value);
+    }
+    return cleaned.isEmpty() ? defaultExtensions() : cleaned;
+}
+
+void AppSettings::setExecutableExtensions(const QStringList &exts)
+{
+    m_settings->setValue(QString::fromLatin1(kKeyExtensions), exts);
+    m_settings->sync();
+}
+
+QStringList AppSettings::skipDirectoryPatterns() const
+{
+    return m_settings->value(QString::fromLatin1(kKeySkipDirs),
+                             defaultSkipPatterns()).toStringList();
+}
+
+void AppSettings::setSkipDirectoryPatterns(const QStringList &patterns)
+{
+    m_settings->setValue(QString::fromLatin1(kKeySkipDirs), patterns);
+    m_settings->sync();
+}
+
+bool AppSettings::includeRemovableDrives() const
+{
+    return m_settings->value(QString::fromLatin1(kKeyIncludeRemovable), true).toBool();
+}
+
+void AppSettings::setIncludeRemovableDrives(bool on)
+{
+    m_settings->setValue(QString::fromLatin1(kKeyIncludeRemovable), on);
+    m_settings->sync();
+}
+
+bool AppSettings::autoStart() const
+{
+    return m_settings->value(QString::fromLatin1(kKeyAutoStart), true).toBool();
+}
+
+void AppSettings::setAutoStart(bool on)
+{
+    m_settings->setValue(QString::fromLatin1(kKeyAutoStart), on);
+    m_settings->sync();
+}
+
+int AppSettings::hotkeyIntervalMs() const
+{
+    return qBound(150, m_settings->value(QString::fromLatin1(kKeyHotkeyInterval), 300).toInt(), 800);
+}
+
+void AppSettings::setHotkeyIntervalMs(int ms)
+{
+    m_settings->setValue(QString::fromLatin1(kKeyHotkeyInterval), qBound(150, ms, 800));
+    m_settings->sync();
+}
+
+int AppSettings::maxResults() const
+{
+    return qBound(5, m_settings->value(QString::fromLatin1(kKeyMaxResults), 12).toInt(), 30);
+}
+
+void AppSettings::setMaxResults(int count)
+{
+    m_settings->setValue(QString::fromLatin1(kKeyMaxResults), qBound(5, count, 30));
+    m_settings->sync();
+}
+
+bool AppSettings::autoScanOnStart() const
+{
+    return m_settings->value(QString::fromLatin1(kKeyAutoScan), true).toBool();
+}
+
+void AppSettings::setAutoScanOnStart(bool on)
+{
+    m_settings->setValue(QString::fromLatin1(kKeyAutoScan), on);
+    m_settings->sync();
+}
+
+int AppSettings::rescanIntervalMinutes() const
+{
+    return qBound(0, m_settings->value(QString::fromLatin1(kKeyRescanMinutes), 720).toInt(), 10080);
+}
+
+void AppSettings::setRescanIntervalMinutes(int minutes)
+{
+    m_settings->setValue(QString::fromLatin1(kKeyRescanMinutes), qBound(0, minutes, 10080));
+    m_settings->sync();
+}
+
+bool AppSettings::hideWhenFocusLost() const
+{
+    return m_settings->value(QString::fromLatin1(kKeyHideOnFocusLost), true).toBool();
+}
+
+void AppSettings::setHideWhenFocusLost(bool on)
+{
+    m_settings->setValue(QString::fromLatin1(kKeyHideOnFocusLost), on);
+    m_settings->sync();
+}
+
+int AppSettings::schemaVersion() const
+{
+    return m_settings->value(QString::fromLatin1(kKeySchemaVersion), 1).toInt();
+}
+
+void AppSettings::setSchemaVersion(int version)
+{
+    m_settings->setValue(QString::fromLatin1(kKeySchemaVersion), version);
+    m_settings->sync();
+}
+
+void AppSettings::ensureDefaults()
+{
+    if (!m_settings->contains(QString::fromLatin1(kKeyExtensions)))
+        m_settings->setValue(QString::fromLatin1(kKeyExtensions), defaultExtensions());
+    if (!m_settings->contains(QString::fromLatin1(kKeySkipDirs)))
+        m_settings->setValue(QString::fromLatin1(kKeySkipDirs), defaultSkipPatterns());
+    if (!m_settings->contains(QString::fromLatin1(kKeySchemaVersion)))
+        m_settings->setValue(QString::fromLatin1(kKeySchemaVersion), 1);
+
+    // 旧版本遗留的“扫描根目录”配置已废弃，统一改为全盘扫描
+    if (m_settings->contains(QStringLiteral("index/roots")))
+        m_settings->remove(QStringLiteral("index/roots"));
+
+    m_settings->sync();
+}
+
+void AppSettings::ensureDirectory(const QString &path) const
+{
+    QDir dir;
+    if (!dir.exists(path))
+        dir.mkpath(path);
+}

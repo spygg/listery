@@ -1,0 +1,12 @@
+# 构建产物
+build/
+build-*/
+dist/
+*.user
+CMakeUserPresets.json
+
+# 本地测试数据
+.testdata/
+
+# 临时日志
+*.log
