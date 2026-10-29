@@ -1,6 +1,7 @@
 #include "Ui/SettingsDialog.h"
 
 #include "Core/AppSettings.h"
+#include "Core/QtCompat.h"
 
 #include <QCheckBox>
 #include <QDesktopServices>
@@ -35,7 +36,7 @@ SettingsDialog::SettingsDialog(AppSettings *settings, QWidget *parent)
     , m_settings(settings)
 {
     setWindowTitle(QStringLiteral("Listery 设置"));
-    setWindowFlag(Qt::WindowContextHelpButtonHint, false);
+    listerySetWindowFlag(this, Qt::WindowContextHelpButtonHint, false);
     setMinimumWidth(520);
 
     buildUi();

@@ -1,5 +1,7 @@
 #include "Core/UsageRecorder.h"
 
+#include "Core/QtCompat.h"
+
 #include <QDateTime>
 #include <QDir>
 #include <QSqlDatabase>
@@ -11,8 +13,7 @@
 UsageRecorder::UsageRecorder(const QString &databasePath, QObject *parent)
     : QObject(parent)
     , m_databasePath(databasePath)
-    , m_connectionName(QStringLiteral("listery_usage_")
-                      + QUuid::createUuid().toString(QUuid::WithoutBraces))
+    , m_connectionName(QStringLiteral("listery_usage_") + listeryUuidString())
 {
 }
 

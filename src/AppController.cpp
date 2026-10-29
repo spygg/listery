@@ -424,7 +424,7 @@ void AppController::openSettings()
     const QStringList previousExtensions = m_settings.executableExtensions();
 
     SettingsDialog dialog(&m_settings);
-    dialog.setWindowFlag(Qt::WindowStaysOnTopHint, true);
+    listerySetWindowFlag(&dialog, Qt::WindowStaysOnTopHint, true);
     connect(&dialog, &SettingsDialog::rescanRequested, this, [this]() { startScan(true); });
 
     if (dialog.exec() == QDialog::Accepted) {

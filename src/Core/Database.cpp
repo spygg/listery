@@ -1,5 +1,7 @@
 #include "Core/Database.h"
 
+#include "Core/QtCompat.h"
+
 #include <QDateTime>
 #include <QDebug>
 #include <QDir>
@@ -101,8 +103,7 @@ QStringList ftsTerms(const QString &token)
 
 Database::Database(const QString &databasePath)
     : m_databasePath(databasePath)
-    , m_connectionName(QStringLiteral("listery_%1")
-                           .arg(QUuid::createUuid().toString(QUuid::WithoutBraces)))
+    , m_connectionName(QStringLiteral("listery_%1").arg(listeryUuidString()))
 {
 }
 

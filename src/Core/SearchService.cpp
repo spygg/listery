@@ -1,11 +1,14 @@
 #include "Core/SearchService.h"
 
 #include "Core/Database.h"
+#include "Core/QtCompat.h"
 
 #include <QDebug>
 #include <QElapsedTimer>
+#include <QEventLoop>
 #include <QMetaObject>
 #include <QThread>
+#include <QTimer>
 #include <QVariant>
 
 #include <memory>
@@ -113,8 +116,19 @@ bool SearchService::start(QString *errorMessage)
 
     bool ok = false;
     QString error;
+#if QT_VERSION >= QT_VERSION_CHECK(5, 10, 0)
     QMetaObject::invokeMethod(m_worker, [this, &ok, &error]() { ok = m_worker->initialize(&error); },
                               Qt::BlockingQueuedConnection);
+#else
+    // Qt 5.7 没有 functor 版 invokeMethod：用 QTimer::singleShot 投递到工作线程，
+    // 再用事件循环阻塞等待结果（语义等价 BlockingQueuedConnection）
+    QEventLoop loop;
+    QTimer::singleShot(0, m_worker, [this, &ok, &error, &loop]() {
+        ok = m_worker->initialize(&error);
+        loop.quit();
+    });
+    loop.exec();
+#endif
     if (!ok) {
         stop();
         if (errorMessage)

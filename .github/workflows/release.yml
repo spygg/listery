@@ -37,7 +37,9 @@ jobs:
             host: windows
             target: desktop
             arch: win32_mingw53
+            # runner 默认是 Visual Studio 生成器，XP 目标必须强制 Ninja + MinGW
             cmake_extra: >-
+              -G Ninja
               -DCMAKE_CXX_STANDARD=14
               -DCMAKE_EXE_LINKER_FLAGS="-static-libgcc -static-libstdc++"
           # ubuntu-22.04: 较旧的 glibc，兼容 linuxdeployqt（ubuntu-latest 的 glibc 过新会被拒绝）
@@ -122,6 +124,8 @@ jobs:
             echo "QTBIN=$QTBIN"
             echo "GCCBIN=$GCCBIN"
             echo "QT_ROOT_DIR=$(dirname "$QTBIN")" >> "$GITHUB_ENV"
+            echo "CC=$GCCBIN/gcc.exe" >> "$GITHUB_ENV"
+            echo "CXX=$GCCBIN/g++.exe" >> "$GITHUB_ENV"
             echo "$QTBIN" >> "$GITHUB_PATH"
             echo "$GCCBIN" >> "$GITHUB_PATH"
             "$GCCBIN/g++.exe" --version | head -1
