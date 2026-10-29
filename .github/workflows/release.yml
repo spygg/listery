@@ -150,14 +150,16 @@ jobs:
           <key>CFBundlePackageType</key><string>APPL</string>
           </dict></plist>
           EOF
-          macdeployqt listery.app -verbose=1 || ok=0
+          macdeployqt listery.app -verbose=1 && echo 1 > deploy_ok || echo 0 > deploy_ok
           echo "=== .app contents ==="
           ls -laR listery.app/Contents | head -60
           # macdeployqt 必须把 Qt 框架拷进 .app，否则产物不可用
-          [ -d listery.app/Contents/Frameworks ] || ok=0
+          [ -d listery.app/Contents/Frameworks ] || echo 0 > deploy_ok
           zip -r listery-macos.zip listery.app
           } 2>&1 | tee deploy.log
-          test -f listery-macos.zip -a "$ok" = "1"
+          # 注意：braces 在管道子 shell 里执行，内部变量传不出来，所以用文件传状态
+          test -f listery-macos.zip && test "$(cat deploy_ok)" = "1" \
+            && unzip -l listery-macos.zip | grep -q Frameworks
 
       # 调试：失败时把日志写入各平台的 logs-* 分支（公开仓库可直接读）
       - name: Dump logs to logs branch
