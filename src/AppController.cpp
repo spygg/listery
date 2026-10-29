@@ -1,6 +1,7 @@
 #include "AppController.h"
 
 #include "Core/LaunchService.h"
+#include "Core/PluginHost.h"
 #include "Core/Scanner.h"
 #include "Core/SearchService.h"
 #include "Platform/Autostart.h"
@@ -14,6 +15,8 @@
 
 #include <QAction>
 #include <QApplication>
+#include <QClipboard>
+#include <QDesktopServices>
 #include <QDateTime>
 #include <QDir>
 #include <QLocalServer>
@@ -27,6 +30,7 @@
 #include <QSystemTrayIcon>
 #include <QThread>
 #include <QTimer>
+#include <QUrl>
 
 #include <algorithm>
 
@@ -110,8 +114,10 @@ bool AppController::initialize()
     m_window->setHideOnFocusLost(m_settings.hideWhenFocusLost());
     m_window->setStatusText(QStringLiteral("索引尚未建立"));
 
+    setupPlugins();
     createTrayIcon();
     setupHotkey();
+    refreshPluginHotkeys(); // 钩子起来后才能真正注册组合键
     setupScanSchedule();
     setupConnections();
 
@@ -165,6 +171,110 @@ void AppController::setupConnections()
     connect(m_window, &LauncherWindow::launchRequested, this, &AppController::onLaunchRequested);
     connect(m_window, &LauncherWindow::revealRequested, this, &AppController::onRevealRequested);
     connect(m_window, &LauncherWindow::settingsRequested, this, &AppController::openSettings);
+    connect(m_window, &LauncherWindow::pluginActionRequested, this, &AppController::onPluginAction);
+    connect(m_window, &LauncherWindow::pluginSessionClosed, this, &AppController::onPluginSessionClosed);
+}
+
+void AppController::setupPlugins()
+{
+    m_plugins = new PluginHost(this);
+    m_window->setPluginHost(m_plugins);
+
+    QDir().mkpath(m_settings.pluginDir());
+    QString error;
+    const int loaded = m_plugins->loadFromDirectory(m_settings.pluginDir(), &error);
+    if (loaded > 0) {
+        qInfo("Listery: 已加载 %d 个插件", loaded);
+    } else if (!error.isEmpty()) {
+        qWarning("Listery: %s", qPrintable(error));
+    }
+
+    // 应用用户设置：启用状态与自定义热键
+    for (const PluginInfo &info : m_plugins->plugins()) {
+        m_plugins->setEnabled(info.id, m_settings.pluginEnabled(info.id));
+        const QString custom = m_settings.pluginHotkey(info.id);
+        m_plugins->setHotkey(info.id, custom.isEmpty() ? info.defaultHotkey : custom);
+    }
+    refreshPluginHotkeys();
+}
+
+void AppController::refreshPluginHotkeys()
+{
+    if (!m_plugins || !m_hook)
+        return;
+
+    QVector<HotkeySpec> specs;
+    for (const PluginInfo &info : m_plugins->plugins()) {
+        if (!info.enabled || info.hotkey.isEmpty() || !info.loaded)
+            continue;
+        HotkeySpec spec = parseHotkey(info.hotkey);
+        if (!spec.valid()) {
+            qWarning("Listery: 插件 %s 的热键“%s”无法识别，已忽略",
+                     qPrintable(info.id), qPrintable(info.hotkey));
+            continue;
+        }
+        spec.text = info.hotkey;
+        specs.append(spec);
+    }
+    m_hook->setHotkeys(specs);
+}
+
+void AppController::onHotkeyTriggered(const QString &hotkey)
+{
+    if (!m_plugins)
+        return;
+    const QString pluginId = m_plugins->pluginForHotkey(hotkey);
+    if (pluginId.isEmpty())
+        return;
+
+    const PluginInfo info = m_plugins->info(pluginId);
+    if (!info.loaded)
+        return;
+    m_window->beginPluginSession(pluginId, info.name,
+                                 QStringLiteral("输入要%1的内容，Enter 复制结果").arg(info.name));
+}
+
+void AppController::onPluginAction(const QString &action)
+{
+    if (action.isEmpty())
+        return;
+
+    if (action.startsWith(QStringLiteral("copy:"))) {
+        const QString text = action.mid(5);
+        QGuiApplication::clipboard()->setText(text);
+        if (m_tray)
+            m_tray->showMessage(QStringLiteral("Listery"),
+                                QStringLiteral("已复制：%1").arg(text),
+                                QSystemTrayIcon::Information, 2500);
+        return;
+    }
+    if (action.startsWith(QStringLiteral("url:"))) {
+        QDesktopServices::openUrl(QUrl(action.mid(4)));
+        return;
+    }
+    if (action.startsWith(QStringLiteral("run:"))) {
+        const QString path = action.mid(4);
+        // 交给系统默认处理方式，避免在这里猜测目标类型
+        if (!QDesktopServices::openUrl(QUrl::fromLocalFile(path)) && m_tray)
+            m_tray->showMessage(QStringLiteral("Listery"),
+                                QStringLiteral("无法打开：%1").arg(path),
+                                QSystemTrayIcon::Warning, 3000);
+        return;
+    }
+    if (action.startsWith(QStringLiteral("open:"))) {
+        const QString path = action.mid(5);
+        QString error;
+        if (!LaunchService::revealInFolder(path, &error) && m_tray)
+            m_tray->showMessage(QStringLiteral("Listery"), error,
+                                QSystemTrayIcon::Warning, 3000);
+        return;
+    }
+    qWarning("Listery: 无法识别的插件动作：%s", qPrintable(action));
+}
+
+void AppController::onPluginSessionClosed()
+{
+    updateStatus();
 }
 
 void AppController::createTrayIcon()
@@ -176,6 +286,25 @@ void AppController::createTrayIcon()
     m_actionShow = menu->addAction(QStringLiteral("打开搜索框"));
     m_actionRescan = menu->addAction(QStringLiteral("重新扫描全盘"));
     m_actionSettings = menu->addAction(QStringLiteral("设置…"));
+    if (m_plugins) {
+        m_pluginMenu = menu->addMenu(QStringLiteral("插件"));
+        for (const PluginInfo &info : m_plugins->plugins()) {
+            if (!info.loaded)
+                continue;
+            const QString label = info.hotkey.isEmpty()
+                                      ? info.name
+                                      : QStringLiteral("%1（%2）").arg(info.name, info.hotkey);
+            QAction *action = m_pluginMenu->addAction(label);
+            const QString pluginId = info.id;
+            connect(action, &QAction::triggered, this, [this, pluginId]() {
+                const PluginInfo target = m_plugins->info(pluginId);
+                m_window->beginPluginSession(pluginId, target.name,
+                                             QStringLiteral("输入内容，交给 %1").arg(target.name));
+            });
+        }
+        if (m_pluginMenu->isEmpty())
+            m_pluginMenu->setEnabled(false);
+    }
     menu->addSeparator();
     m_actionQuit = menu->addAction(QStringLiteral("退出"));
 
@@ -221,7 +350,7 @@ bool AppController::setupSingleInstance()
 
 void AppController::setupHotkey()
 {
-    if (!DoubleCtrlHook::isSupported()) {
+    if (!GlobalHotkeys::isSupported()) {
         QString hint = QStringLiteral("当前平台未实现全局双击 Ctrl，请用托盘菜单打开搜索框");
 #if defined(Q_OS_LINUX)
         const QString session = qEnvironmentVariable("XDG_SESSION_TYPE");
@@ -236,10 +365,11 @@ void AppController::setupHotkey()
         return;
     }
 
-    m_hook = new DoubleCtrlHook(this);
+    m_hook = new GlobalHotkeys(this);
     m_hook->setIntervalMs(m_settings.hotkeyIntervalMs());
-    connect(m_hook, &DoubleCtrlHook::activated, this, &AppController::showLauncher);
-    connect(m_hook, &DoubleCtrlHook::failed, this, [this](const QString &reason) {
+    connect(m_hook, &GlobalHotkeys::activated, this, &AppController::showLauncher);
+    connect(m_hook, &GlobalHotkeys::hotkeyTriggered, this, &AppController::onHotkeyTriggered);
+    connect(m_hook, &GlobalHotkeys::failed, this, [this](const QString &reason) {
         qWarning("Listery: %s", qPrintable(reason));
         if (m_tray)
             m_tray->showMessage(QStringLiteral("Listery"),
@@ -569,13 +699,15 @@ void AppController::openSettings()
 
     const QStringList previousExtensions = m_settings.executableExtensions();
 
-    SettingsDialog dialog(&m_settings);
+    SettingsDialog dialog(&m_settings, m_plugins);
     listerySetWindowFlag(&dialog, Qt::WindowStaysOnTopHint, true);
     connect(&dialog, &SettingsDialog::rescanRequested, this, [this]() { startScan(true); });
 
     if (dialog.exec() == QDialog::Accepted) {
         const bool extensionsChanged = previousExtensions != m_settings.executableExtensions();
         applySettings();
+        // 插件的启用状态 / 热键可能改了：重新注册全局热键
+        refreshPluginHotkeys();
         if (extensionsChanged && !(m_scanner && m_scanner->isRunning()))
             startScan(false, true); // 后缀变了要重新遍历，不能用 locate 快照
     }

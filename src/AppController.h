@@ -5,10 +5,12 @@
 
 #include <QObject>
 
-class DoubleCtrlHook;
+class GlobalHotkeys;
 class LauncherWindow;
+class PluginHost;
 class QAction;
 class QLocalServer;
+class QMenu;
 class QSystemTrayIcon;
 class QThread;
 class QTimer;
@@ -43,6 +45,9 @@ public:
      */
     static qint64 scanIntervalForVolume(const VolumeStat &stat, qint64 baseMs, bool smart);
 
+    /** 插件宿主（设置界面与托盘菜单要用）。 */
+    PluginHost *pluginHost() const { return m_plugins; }
+
 public slots:
     void showLauncher();
     /** @param deep true 表示强制全量遍历（人工重建索引、或快速通道结果可疑时复核）。 */
@@ -53,6 +58,11 @@ private slots:
 
 private slots:
     void onLaunchRequested(const ExecutableRecord &record, bool asAdmin);
+    /** 全局组合键命中：找到对应插件并进入插件模式。 */
+    void onHotkeyTriggered(const QString &hotkey);
+    /** 插件行的 Enter 动作：copy: / url: / run: / open:。 */
+    void onPluginAction(const QString &action);
+    void onPluginSessionClosed();
     void onRevealRequested(const ExecutableRecord &record);
     void onScanProgress(const QString &root, int directories, int filesFound);
     void onScanFinished(int filesFound, int removed, bool canceled, const QString &error);
@@ -63,6 +73,8 @@ private:
     void createTrayIcon();
     bool setupSingleInstance();
     void setupHotkey();
+    void setupPlugins();
+    void refreshPluginHotkeys();
     void setupScanSchedule();
     void setupConnections();
     void applySettings();
@@ -86,7 +98,8 @@ private:
 
     LauncherWindow *m_window = nullptr;
     Scanner *m_scanner = nullptr;
-    DoubleCtrlHook *m_hook = nullptr;
+    GlobalHotkeys *m_hook = nullptr;
+    PluginHost *m_plugins = nullptr;
     QSystemTrayIcon *m_tray = nullptr;
     QLocalServer *m_server = nullptr;
     QTimer *m_scanTimer = nullptr;
@@ -96,6 +109,7 @@ private:
     QThread *m_usageThread = nullptr;
 
     QAction *m_actionShow = nullptr;
+    QMenu *m_pluginMenu = nullptr;
     QAction *m_actionRescan = nullptr;
     QAction *m_actionSettings = nullptr;
     QAction *m_actionQuit = nullptr;

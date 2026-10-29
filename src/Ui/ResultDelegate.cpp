@@ -113,8 +113,24 @@ void ResultDelegate::paint(QPainter *painter,
     const int iconLeft = rowRect.left() + 20;
     const QRect iconRect(iconLeft, rowRect.top() + (rowRect.height() - kIconSize) / 2,
                          kIconSize, kIconSize);
-    iconForPath(result.record.path).paint(painter, iconRect, Qt::AlignCenter,
-                                          QIcon::Normal, QIcon::Off);
+
+    const bool pluginRow = result.isPluginResult();
+    if (pluginRow) {
+        // 插件行没有文件图标：画一个带徽标文字的圆角色块（如“译”）
+        painter->setPen(Qt::NoPen);
+        painter->setBrush(QColor(0x1A, 0x6C, 0xF0));
+        painter->drawRoundedRect(iconRect, 8, 8);
+        QFont badgeFont(option.font);
+        badgeFont.setPixelSize(14);
+        badgeFont.setWeight(QFont::Bold);
+        painter->setFont(badgeFont);
+        painter->setPen(Qt::white);
+        painter->drawText(iconRect, Qt::AlignCenter,
+                          result.pluginBadge.isEmpty() ? QStringLiteral("·") : result.pluginBadge);
+    } else {
+        iconForPath(result.record.path).paint(painter, iconRect, Qt::AlignCenter,
+                                              QIcon::Normal, QIcon::Off);
+    }
 
     const int textLeft = iconRect.right() + 14;
     const int rightReserved = result.record.launchCount > 0 ? 96 : 28;
@@ -124,8 +140,9 @@ void ResultDelegate::paint(QPainter *painter,
     nameFont.setPixelSize(15);
     nameFont.setWeight(QFont::DemiBold);
 
+    const QString title = pluginRow ? result.pluginTitle : result.record.displayName;
     const QRect nameRect(textLeft, rowRect.top() + 6, textWidthAvailable, 22);
-    drawHighlightedText(painter, nameRect, result.record.displayName, result.highlights,
+    drawHighlightedText(painter, nameRect, title, pluginRow ? QVector<int>() : result.highlights,
                         QColor(0x1F, 0x23, 0x29), QColor(0x1A, 0x6C, 0xF0), nameFont);
 
     QFont pathFont(option.font);
@@ -134,12 +151,27 @@ void ResultDelegate::paint(QPainter *painter,
     painter->setFont(pathFont);
     painter->setPen(QColor(0x8A, 0x91, 0x9B));
     const QRect pathRect(textLeft, rowRect.top() + 27, textWidthAvailable, 18);
-    const QString direction = QFileInfo(result.record.path).absolutePath();
+    const QString subtitle = pluginRow
+                                 ? result.pluginSubtitle
+                                 : QDir::toNativeSeparators(QFileInfo(result.record.path).absolutePath());
     painter->drawText(pathRect, Qt::AlignLeft | Qt::AlignVCenter,
-                      pathMetrics.elidedText(QDir::toNativeSeparators(direction),
-                                             Qt::ElideMiddle, pathRect.width()));
+                      pathMetrics.elidedText(subtitle, Qt::ElideMiddle, pathRect.width()));
 
-    if (result.record.launchCount > 0) {
+    if (pluginRow) {
+        // 右侧提示这一行回车会做什么
+        QFont actionFont(option.font);
+        actionFont.setPixelSize(11);
+        painter->setFont(actionFont);
+        painter->setPen(QColor(0x9A, 0xA1, 0xAB));
+        const QRect actionRect(rowRect.right() - 108, rowRect.top(), 92, rowRect.height());
+        painter->drawText(actionRect, Qt::AlignRight | Qt::AlignVCenter,
+                          result.pluginAction.startsWith(QStringLiteral("copy:"))
+                              ? QStringLiteral("Enter 复制")
+                              : QString());
+        painter->setPen(QColor(0x8A, 0x91, 0x9B));
+    }
+
+    if (!pluginRow && result.record.launchCount > 0) {
         QFont usageFont(option.font);
         usageFont.setPixelSize(11);
         painter->setFont(usageFont);

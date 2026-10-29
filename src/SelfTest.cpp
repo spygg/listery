@@ -4,6 +4,7 @@
 
 #include "Core/AppSettings.h"
 #include "Core/Database.h"
+#include "Core/PluginHost.h"
 #include "Core/Pinyin.h"
 #include "Core/Scanner.h"
 #include "Core/SearchEngine.h"
@@ -18,12 +19,14 @@
 #include <QApplication>
 #include <QCursor>
 #include <QDir>
+#include <QEventLoop>
 #include <QFile>
 #include <QFileInfo>
 #include <QMenu>
 #include <QScreen>
 #include <QTemporaryDir>
 #include <QThread>
+#include <QTimer>
 #include <QWidget>
 #include <QtGlobal>
 
@@ -411,9 +414,118 @@ int SelfTest::run()
     detector.handleKey(true, true, 5100);
     check(!detector.handleKey(true, true, 5110), QStringLiteral("按住不放产生的重复 keydown 不触发"));
 
+    // ---- 6.5 插件宿主与组合键 ----
+    {
+        const HotkeySpec altE = parseHotkey(QStringLiteral("Alt+E"));
+        check(altE.valid() && altE.alt && !altE.ctrl && altE.key == Qt::Key_E,
+              QStringLiteral("解析组合键 Alt+E：key=%1 alt=%2").arg(altE.key).arg(altE.alt));
+        check(normalizeHotkey(QStringLiteral("alt + e")) == QStringLiteral("Alt+E"),
+              QStringLiteral("热键写法归一化：%1").arg(normalizeHotkey(QStringLiteral("alt + e"))));
+        check(hotkeyMatches(altE, HotkeyModifier::ModAlt, Qt::Key_E)
+                  && !hotkeyMatches(altE, HotkeyModifier::ModAlt | HotkeyModifier::ModCtrl, Qt::Key_E)
+                  && !hotkeyMatches(altE, HotkeyModifier::ModAlt, Qt::Key_F)
+                  && !hotkeyMatches(altE, 0, Qt::Key_E),
+              QStringLiteral("组合键命中判定：修饰键严格相等，多按 Ctrl 或多按其它键都不触发"));
+        check(!parseHotkey(QStringLiteral("Alt+")).valid()
+                  && normalizeHotkey(QStringLiteral("Ctrl+")).isEmpty()
+                  && normalizeHotkey(QStringLiteral("Hello")).isEmpty(),
+              QStringLiteral("无法识别的热键组合被拒绝"));
+
+        PluginHost host;
+        const QString pluginDir = QCoreApplication::applicationDirPath()
+                                  + QStringLiteral("/plugins");
+        QString loadError;
+        const int loaded = host.loadFromDirectory(pluginDir, &loadError);
+        const QVector<PluginInfo> plugins = host.plugins();
+        bool translatorFound = false;
+        bool translatorLoaded = false;
+        QString translatorHotkey;
+        for (const PluginInfo &info : plugins) {
+            if (info.id == QStringLiteral("com.listery.translator")) {
+                translatorFound = true;
+                translatorLoaded = info.loaded;
+                translatorHotkey = info.defaultHotkey;
+            }
+        }
+        check(translatorFound,
+              QStringLiteral("plugins 目录里发现翻译插件（已加载 %1 个，目录 %2）")
+                  .arg(loaded).arg(pluginDir));
+        check(translatorLoaded, QStringLiteral("翻译插件初始化成功"));
+        check(translatorHotkey.compare(QStringLiteral("Alt+E"), Qt::CaseInsensitive) == 0,
+              QStringLiteral("翻译插件默认热键为 Alt+E（实际 %1）").arg(translatorHotkey));
+        check(host.pluginForHotkey(QStringLiteral("Alt+E"))
+                  == QStringLiteral("com.listery.translator"),
+              QStringLiteral("按热键能反查到插件"));
+        host.setEnabled(QStringLiteral("com.listery.translator"), false);
+        check(host.pluginForHotkey(QStringLiteral("Alt+E")).isEmpty(),
+              QStringLiteral("禁用后热键不再命中该插件"));
+        host.setEnabled(QStringLiteral("com.listery.translator"), true);
+
+        // 真实网络查询：拿不到结果不算失败（离线/CI 无外网时只做记录）
+        if (translatorLoaded) {
+            quint64 sequence = 0;
+            QVector<PluginRow> rows;
+            QString queryError;
+            bool finished = false;
+            QObject::connect(&host, &PluginHost::queryFinished,
+                             &host, [&](quint64 seq, QString, QString, QVector<PluginRow> result,
+                                        QString error) {
+                        sequence = seq;
+                        rows = result;
+                        queryError = error;
+                        finished = true;
+                    });
+            const quint64 issued = host.beginQuery(QStringLiteral("com.listery.translator"),
+                                                   QStringLiteral("hello"), 5);
+            QEventLoop loop;
+            QTimer timer;
+            timer.setSingleShot(true);
+            QObject::connect(&timer, &QTimer::timeout, &loop, &QEventLoop::quit);
+            QObject::connect(&host, &PluginHost::queryFinished, &loop, &QEventLoop::quit);
+            timer.start(8000);
+            if (issued == 0)
+                finished = true; // 插件没接受请求：直接跳过等待
+            else
+                loop.exec();
+
+            check(issued != 0, QStringLiteral("插件受理了查询请求"));
+            check(finished && sequence == issued,
+                  QStringLiteral("插件回调 finish 且序号一致（seq=%1）").arg(sequence));
+            if (!rows.isEmpty()) {
+                bool hasTitle = true;
+                bool hasCopyAction = true;
+                for (const PluginRow &row : rows) {
+                    if (row.title.isEmpty())
+                        hasTitle = false;
+                    if (!row.action.startsWith(QStringLiteral("copy:")))
+                        hasCopyAction = false;
+                }
+                check(hasTitle && hasCopyAction,
+                      QStringLiteral("翻译结果 %1 条，均带标题与 copy 动作（首条：%2）")
+                          .arg(rows.size()).arg(rows.first().title));
+            } else {
+                qInfo().noquote() << QStringLiteral("[INFO] 翻译插件本次没有返回结果（%1），"
+                                                     "离线或被限流时属正常")
+                                         .arg(queryError.isEmpty() ? QStringLiteral("无错误信息")
+                                                                  : queryError);
+            }
+        }
+
+        // 面板插件模式：进入后提示语改变，Esc 后回到程序模式
+        LauncherWindow window(nullptr, 10);
+        window.setAttribute(Qt::WA_DontShowOnScreen, true);
+        window.setPluginHost(&host);
+        window.beginPluginSession(QStringLiteral("com.listery.translator"),
+                                  QStringLiteral("英汉翻译"),
+                                  QStringLiteral("输入要翻译的内容"));
+        check(window.mode() == LauncherMode::Plugin, QStringLiteral("面板进入插件模式"));
+        window.endPluginSession();
+        check(window.mode() == LauncherMode::Programs, QStringLiteral("退出插件模式回到程序模式"));
+    }
+
     // ---- 7. 全局键盘钩子 ----
 #ifdef Q_OS_WIN
-    DoubleCtrlHook hook;
+    GlobalHotkeys hook;
     hook.setIntervalMs(300);
     hook.start();
     QThread::msleep(500);
@@ -423,7 +535,7 @@ int SelfTest::run()
     check(hookRunning, QStringLiteral("WH_KEYBOARD_LL 全局钩子安装成功并保持运行"));
 #else
     // 非 Windows 平台：全局钩子分别走 XRecord / CGEventTap，校验“可用性判断”与运行环境一致
-    const bool supported = DoubleCtrlHook::isSupported();
+    const bool supported = GlobalHotkeys::isSupported();
 #  if defined(Q_OS_LINUX)
     const bool expectSupported = !qEnvironmentVariableIsEmpty("DISPLAY")
         && qEnvironmentVariable("XDG_SESSION_TYPE").compare(QStringLiteral("wayland"), Qt::CaseInsensitive) != 0;

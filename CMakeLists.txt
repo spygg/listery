@@ -49,6 +49,8 @@ set(PROJECT_SOURCES
     src/Core/Pinyin.cpp
     src/Core/PinyinData.h
     src/Core/PinyinData.cpp
+    src/Core/PluginHost.h
+    src/Core/PluginHost.cpp
 
     src/Platform/HotkeyHook.h
     src/Platform/HotkeyHook.cpp
@@ -77,7 +79,10 @@ set_target_properties(listery PROPERTIES
     MACOSX_BUNDLE FALSE
 )
 
-target_include_directories(listery PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_include_directories(listery PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/sdk
+)
 
 target_link_libraries(listery PRIVATE
     Qt${QT_VERSION_MAJOR}::Widgets
@@ -107,5 +112,10 @@ else()
     target_compile_options(listery PRIVATE -Wall -Wextra -Wno-unused-parameter)
 endif()
 
+# 插件与主程序一起构建（输出到 build/plugins/，主程序从 exe 同目录的 plugins/ 加载）
+add_subdirectory(plugins)
+
 include(GNUInstallDirs)
 install(TARGETS listery RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(DIRECTORY "${CMAKE_BINARY_DIR}/plugins/" DESTINATION "${CMAKE_INSTALL_BINDIR}/plugins"
+        FILES_MATCHING PATTERN "*.dll" PATTERN "*.so" PATTERN "*.dylib")

@@ -21,11 +21,11 @@ QVariant ResultModel::data(const QModelIndex &index, int role) const
     switch (role) {
     case Qt::DisplayRole:
     case NameRole:
-        return result.record.displayName;
+        return result.isPluginResult() ? result.pluginTitle : result.record.displayName;
     case PathRole:
-        return result.record.path;
+        return result.isPluginResult() ? result.pluginAction : result.record.path;
     case DirRole:
-        return result.record.dir;
+        return result.isPluginResult() ? result.pluginSubtitle : result.record.dir;
     case ExtRole:
         return result.record.ext;
     case UsageRole:
@@ -33,7 +33,7 @@ QVariant ResultModel::data(const QModelIndex &index, int role) const
     case ScoreRole:
         return result.score;
     case Qt::ToolTipRole:
-        return result.record.path;
+        return result.isPluginResult() ? result.pluginSubtitle : result.record.path;
     default:
         break;
     }

@@ -62,6 +62,16 @@ public:
     bool useLocateIndex() const;
     void setUseLocateIndex(bool on);
 
+    // 插件
+    /** 插件目录：可执行文件同目录下的 plugins/。 */
+    static QString resolvePluginDir();
+    QString pluginDir() const;
+    bool pluginEnabled(const QString &pluginId) const;
+    void setPluginEnabled(const QString &pluginId, bool enabled);
+    /** 用户自定义热键，空串表示沿用插件默认值。 */
+    QString pluginHotkey(const QString &pluginId) const;
+    void setPluginHotkey(const QString &pluginId, const QString &hotkey);
+
     // 版本管理
     int schemaVersion() const;
     void setSchemaVersion(int version);

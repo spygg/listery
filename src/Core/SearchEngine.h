@@ -13,6 +13,16 @@ struct SearchResult
     ExecutableRecord record;
     double score = 0.0;
     QVector<int> highlights;
+
+    // ---- 插件结果（四个字段任一非空即视为插件行，此时不走可执行文件逻辑）----
+    QString pluginTitle;
+    QString pluginSubtitle;
+    /** 行首徽标文字，如“译”。 */
+    QString pluginBadge;
+    /** Enter 执行的动作，见 sdk/listery_plugin_api.h 的 action 协议。 */
+    QString pluginAction;
+
+    bool isPluginResult() const { return !pluginTitle.isEmpty() || !pluginAction.isEmpty(); }
 };
 
 Q_DECLARE_METATYPE(SearchResult)

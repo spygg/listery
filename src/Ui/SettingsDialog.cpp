@@ -1,7 +1,9 @@
 #include "Ui/SettingsDialog.h"
 
 #include "Core/AppSettings.h"
+#include "Core/PluginHost.h"
 #include "Core/QtCompat.h"
+#include "Platform/HotkeyHook.h"
 
 #include <QCheckBox>
 #include <QDesktopServices>
@@ -9,6 +11,8 @@
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
+#include <QKeySequence>
+#include <QKeySequenceEdit>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
@@ -31,9 +35,10 @@ QStringList splitList(const QString &text)
 }
 } // namespace
 
-SettingsDialog::SettingsDialog(AppSettings *settings, QWidget *parent)
+SettingsDialog::SettingsDialog(AppSettings *settings, PluginHost *plugins, QWidget *parent)
     : QDialog(parent)
     , m_settings(settings)
+    , m_plugins(plugins)
 {
     setWindowTitle(QStringLiteral("Listery 设置"));
     listerySetWindowFlag(this, Qt::WindowContextHelpButtonHint, false);
@@ -111,6 +116,8 @@ void SettingsDialog::buildUi()
 
     mainLayout->addWidget(uiGroup);
 
+    buildPluginGroup(mainLayout);
+
     auto *dataRow = new QHBoxLayout();
     auto *dataLabel = new QLabel(QStringLiteral("数据目录：%1").arg(m_settings->dataDir()), this);
     dataLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
@@ -148,6 +155,80 @@ void SettingsDialog::buildUi()
     mainLayout->addWidget(buttonBox);
 }
 
+void SettingsDialog::buildPluginGroup(QVBoxLayout *mainLayout)
+{
+    auto *pluginGroup = new QGroupBox(QStringLiteral("插件"), this);
+    auto *pluginLayout = new QVBoxLayout(pluginGroup);
+    pluginLayout->setSpacing(8);
+
+    const QString pluginDir = m_settings->pluginDir();
+    auto *dirLabel = new QLabel(QStringLiteral("插件目录：%1").arg(pluginDir), pluginGroup);
+    dirLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    dirLabel->setWordWrap(true);
+    pluginLayout->addWidget(dirLabel);
+
+    const QVector<PluginInfo> plugins = m_plugins ? m_plugins->plugins() : QVector<PluginInfo>();
+    if (plugins.isEmpty()) {
+        auto *empty = new QLabel(QStringLiteral("未发现插件。把 .dll / .so 放进上面的目录，重启 Listery 即可加载。"),
+                                 pluginGroup);
+        empty->setWordWrap(true);
+        empty->setStyleSheet(QStringLiteral("color: #8A919B;"));
+        pluginLayout->addWidget(empty);
+        mainLayout->addWidget(pluginGroup);
+        return;
+    }
+
+    for (const PluginInfo &info : plugins) {
+        auto *row = new QHBoxLayout();
+        auto *enabled = new QCheckBox(info.name, pluginGroup);
+        enabled->setChecked(info.enabled && info.loaded);
+        enabled->setEnabled(info.loaded);
+        enabled->setToolTip(info.loaded
+                                ? info.filePath
+                                : QStringLiteral("加载失败：%1").arg(info.error));
+        row->addWidget(enabled, 1);
+
+        auto *version = new QLabel(info.loaded ? info.version : QStringLiteral("加载失败"), pluginGroup);
+        version->setStyleSheet(QStringLiteral("color: #8A919B;"));
+        row->addWidget(version);
+
+        auto *hotkey = new QKeySequenceEdit(QKeySequence::fromString(info.hotkey, QKeySequence::PortableText),
+                                            pluginGroup);
+        hotkey->setMaximumWidth(110);
+        hotkey->setToolTip(QStringLiteral("留空表示不占用全局热键（仍可从托盘菜单进入）"));
+        row->addWidget(hotkey);
+
+        if (info.hasConfigUi && info.loaded) {
+            auto *configure = new QPushButton(QStringLiteral("配置…"), pluginGroup);
+            const QString pluginId = info.id;
+            connect(configure, &QPushButton::clicked, this, [this, pluginId]() {
+                if (m_plugins)
+                    m_plugins->configure(pluginId, reinterpret_cast<void *>(winId()));
+            });
+            row->addWidget(configure);
+        }
+
+        pluginLayout->addLayout(row);
+
+        if (!info.description.isEmpty()) {
+            auto *description = new QLabel(info.description, pluginGroup);
+            description->setWordWrap(true);
+            description->setStyleSheet(QStringLiteral("color: #8A919B; margin-left: 22px;"));
+            pluginLayout->addWidget(description);
+        }
+        if (!info.loaded && !info.error.isEmpty()) {
+            auto *reason = new QLabel(info.error, pluginGroup);
+            reason->setWordWrap(true);
+            reason->setStyleSheet(QStringLiteral("color: #C0504D; margin-left: 22px;"));
+            pluginLayout->addWidget(reason);
+        }
+
+        m_pluginWidgets.append(PluginWidgets{info.id, enabled, hotkey});
+    }
+
+    mainLayout->addWidget(pluginGroup);
+}
+
 void SettingsDialog::loadValues()
 {
     m_hotkeyInterval->setValue(m_settings->hotkeyIntervalMs());
@@ -180,4 +261,26 @@ void SettingsDialog::saveValues()
     m_settings->setUseLocateIndex(m_useLocate->isChecked());
     m_settings->setHotkeyIntervalMs(m_hotkeyInterval->value());
     m_settings->setMaxResults(m_maxResults->value());
+
+    // 插件：写回设置并同步给宿主（热键由 AppController 在对话框关闭后重新注册）
+    for (const PluginWidgets &widget : m_pluginWidgets) {
+        const bool enabled = widget.enabled->isChecked();
+        m_settings->setPluginEnabled(widget.id, enabled);
+
+        QString hotkey = widget.hotkey->keySequence().toString(QKeySequence::PortableText);
+        const QString normalized = normalizeHotkey(hotkey);
+        if (!hotkey.isEmpty() && normalized.isEmpty()) {
+            // 用户按了无法识别的组合：保留插件默认值，避免注册出一个永远触发不了的热键
+            hotkey = m_plugins ? m_plugins->info(widget.id).defaultHotkey : QString();
+        } else {
+            hotkey = normalized;
+        }
+        m_settings->setPluginHotkey(widget.id, hotkey);
+        if (m_plugins) {
+            m_plugins->setEnabled(widget.id, enabled);
+            m_plugins->setHotkey(widget.id, hotkey.isEmpty()
+                                                 ? m_plugins->info(widget.id).defaultHotkey
+                                                 : hotkey);
+        }
+    }
 }

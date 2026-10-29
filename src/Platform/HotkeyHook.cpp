@@ -4,6 +4,9 @@
 #include "Core/QtCompat.h"
 
 #include <QDebug>
+#include <QMutex>
+#include <QMutexLocker>
+#include <QStringList>
 #include <QThread>
 
 #include <atomic>
@@ -15,17 +18,207 @@ qint64 monotonicMilliseconds()
     using namespace std::chrono;
     return duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count();
 }
+
+QMutex g_hotkeyMutex;
+QVector<HotkeySpec> g_hotkeys;
+
+QString matchHotkey(unsigned int mods, int key)
+{
+    if (key == 0)
+        return QString();
+    QMutexLocker locker(&g_hotkeyMutex);
+    for (const HotkeySpec &spec : g_hotkeys) {
+        if (hotkeyMatches(spec, mods, key))
+            return spec.text;
+    }
+    return QString();
+}
+
+struct KeyNameEntry
+{
+    const char *name;
+    int key;
+};
+
+const KeyNameEntry kKeyNames[] = {
+    {"A", Qt::Key_A}, {"B", Qt::Key_B}, {"C", Qt::Key_C}, {"D", Qt::Key_D},
+    {"E", Qt::Key_E}, {"F", Qt::Key_F}, {"G", Qt::Key_G}, {"H", Qt::Key_H},
+    {"I", Qt::Key_I}, {"J", Qt::Key_J}, {"K", Qt::Key_K}, {"L", Qt::Key_L},
+    {"M", Qt::Key_M}, {"N", Qt::Key_N}, {"O", Qt::Key_O}, {"P", Qt::Key_P},
+    {"Q", Qt::Key_Q}, {"R", Qt::Key_R}, {"S", Qt::Key_S}, {"T", Qt::Key_T},
+    {"U", Qt::Key_U}, {"V", Qt::Key_V}, {"W", Qt::Key_W}, {"X", Qt::Key_X},
+    {"Y", Qt::Key_Y}, {"Z", Qt::Key_Z},
+    {"0", Qt::Key_0}, {"1", Qt::Key_1}, {"2", Qt::Key_2}, {"3", Qt::Key_3},
+    {"4", Qt::Key_4}, {"5", Qt::Key_5}, {"6", Qt::Key_6}, {"7", Qt::Key_7},
+    {"8", Qt::Key_8}, {"9", Qt::Key_9},
+    {"F1", Qt::Key_F1}, {"F2", Qt::Key_F2}, {"F3", Qt::Key_F3}, {"F4", Qt::Key_F4},
+    {"F5", Qt::Key_F5}, {"F6", Qt::Key_F6}, {"F7", Qt::Key_F7}, {"F8", Qt::Key_F8},
+    {"F9", Qt::Key_F9}, {"F10", Qt::Key_F10}, {"F11", Qt::Key_F11}, {"F12", Qt::Key_F12},
+    {"SPACE", Qt::Key_Space}, {"ENTER", Qt::Key_Return}, {"RETURN", Qt::Key_Return},
+    {"TAB", Qt::Key_Tab}, {"ESC", Qt::Key_Escape}, {"ESCAPE", Qt::Key_Escape},
+    {"HOME", Qt::Key_Home}, {"END", Qt::Key_End}, {"INSERT", Qt::Key_Insert},
+    {"DEL", Qt::Key_Delete}, {"DELETE", Qt::Key_Delete},
+};
+
+int keyFromName(const QString &name)
+{
+    const QString upper = name.trimmed().toUpper();
+    if (upper.isEmpty())
+        return 0;
+    for (const KeyNameEntry &entry : kKeyNames) {
+        if (upper == QString::fromLatin1(entry.name))
+            return entry.key;
+    }
+    return 0;
+}
+
+QString nameFromKey(int key)
+{
+    for (const KeyNameEntry &entry : kKeyNames) {
+        if (entry.key == key)
+            return QString::fromLatin1(entry.name);
+    }
+    return QString();
+}
+
+QString modifierLabel(const HotkeySpec &spec)
+{
+    QStringList parts;
+    if (spec.ctrl)
+        parts << QStringLiteral("Ctrl");
+    if (spec.alt)
+        parts << QStringLiteral("Alt");
+    if (spec.shift)
+        parts << QStringLiteral("Shift");
+    if (spec.meta)
+        parts << QStringLiteral("Meta");
+    return parts.join(QStringLiteral("+"));
+}
 } // namespace
+
+bool hotkeyMatches(const HotkeySpec &spec, unsigned int modifiers, int key)
+{
+    if (!spec.valid() || spec.key != key)
+        return false;
+    unsigned int want = 0;
+    if (spec.ctrl)
+        want |= ModCtrl;
+    if (spec.alt)
+        want |= ModAlt;
+    if (spec.shift)
+        want |= ModShift;
+    if (spec.meta)
+        want |= ModMeta;
+    return want == modifiers;
+}
+
+HotkeySpec parseHotkey(const QString &text)
+{
+    HotkeySpec spec;
+#if QT_VERSION >= QT_VERSION_CHECK(5, 14, 0)
+    const QStringList parts = text.split(QLatin1Char('+'), Qt::KeepEmptyParts);
+#else
+    const QStringList parts = text.split(QLatin1Char('+'), QString::KeepEmptyParts);
+#endif
+    for (int i = 0; i < parts.size(); ++i) {
+        const QString token = parts.at(i).trimmed().toLower();
+        if (token.isEmpty())
+            continue;
+        if (token == QStringLiteral("ctrl") || token == QStringLiteral("control")) {
+            spec.ctrl = true;
+            continue;
+        }
+        if (token == QStringLiteral("alt") || token == QStringLiteral("option")) {
+            spec.alt = true;
+            continue;
+        }
+        if (token == QStringLiteral("shift")) {
+            spec.shift = true;
+            continue;
+        }
+        if (token == QStringLiteral("meta") || token == QStringLiteral("win")
+            || token == QStringLiteral("cmd") || token == QStringLiteral("command")
+            || token == QStringLiteral("super")) {
+            spec.meta = true;
+            continue;
+        }
+        spec.key = keyFromName(token);
+    }
+
+    if (!spec.valid())
+        return HotkeySpec();
+    spec.text = text.trimmed();
+    return spec;
+}
+
+QString normalizeHotkey(const QString &text)
+{
+    HotkeySpec spec = parseHotkey(text);
+    if (!spec.valid())
+        return QString();
+
+    QStringList parts;
+    const QString mods = modifierLabel(spec);
+    if (!mods.isEmpty())
+        parts << mods;
+    parts << nameFromKey(spec.key);
+    return parts.join(QStringLiteral("+"));
+}
 
 // ============================ Windows ============================
 #ifdef Q_OS_WIN
 #  include <windows.h>
 
 namespace {
-DoubleCtrlHook *g_hook = nullptr;
+GlobalHotkeys *g_hook = nullptr;
 DoubleCtrlDetector g_detector;
 std::atomic<int> g_intervalMs{300};
 std::atomic<bool> g_allowInjected{false};
+
+int windowsKeyToQt(DWORD vk)
+{
+    if (vk >= 'A' && vk <= 'Z')
+        return Qt::Key_A + static_cast<int>(vk - 'A');
+    if (vk >= '0' && vk <= '9')
+        return Qt::Key_0 + static_cast<int>(vk - '0');
+    if (vk >= VK_F1 && vk <= VK_F24)
+        return Qt::Key_F1 + static_cast<int>(vk - VK_F1);
+    switch (vk) {
+    case VK_SPACE:
+        return Qt::Key_Space;
+    case VK_RETURN:
+        return Qt::Key_Return;
+    case VK_TAB:
+        return Qt::Key_Tab;
+    case VK_ESCAPE:
+        return Qt::Key_Escape;
+    case VK_HOME:
+        return Qt::Key_Home;
+    case VK_END:
+        return Qt::Key_End;
+    case VK_INSERT:
+        return Qt::Key_Insert;
+    case VK_DELETE:
+        return Qt::Key_Delete;
+    default:
+        break;
+    }
+    return 0;
+}
+
+unsigned int currentModifiers()
+{
+    unsigned int mods = 0;
+    if (GetAsyncKeyState(VK_CONTROL) & 0x8000)
+        mods |= ModCtrl;
+    if (GetAsyncKeyState(VK_MENU) & 0x8000)
+        mods |= ModAlt;
+    if (GetAsyncKeyState(VK_SHIFT) & 0x8000)
+        mods |= ModShift;
+    if ((GetAsyncKeyState(VK_LWIN) & 0x8000) || (GetAsyncKeyState(VK_RWIN) & 0x8000))
+        mods |= ModMeta;
+    return mods;
+}
 
 LRESULT CALLBACK lowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
 {
@@ -36,6 +229,17 @@ LRESULT CALLBACK lowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
             const DWORD vk = info->vkCode;
             const bool isCtrl = (vk == VK_LCONTROL || vk == VK_RCONTROL || vk == VK_CONTROL);
             const bool isDown = (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN);
+
+            if (isDown) {
+                const int key = windowsKeyToQt(vk);
+                if (key != 0) {
+                    const QString hit = matchHotkey(currentModifiers(), key);
+                    if (!hit.isEmpty()) {
+                        QMetaObject::invokeMethod(g_hook, "emitHotkey", Qt::QueuedConnection,
+                                                  Q_ARG(QString, hit));
+                    }
+                }
+            }
 
             if (isCtrl || isDown) {
                 g_detector.setIntervalMs(g_intervalMs.load());
@@ -54,11 +258,36 @@ LRESULT CALLBACK lowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
 #  include <ApplicationServices/ApplicationServices.h>
 
 namespace {
-DoubleCtrlHook *g_hook = nullptr;
+GlobalHotkeys *g_hook = nullptr;
 DoubleCtrlDetector g_detector;
 std::atomic<int> g_intervalMs{300};
 std::atomic<CFRunLoopRef> g_runLoop{nullptr};
 std::atomic<bool> g_stopRequested{false};
+
+/** 常见的 macOS 虚拟键码 → Qt::Key（字母、数字与 F1-F12，够插件热键用）。 */
+int macKeyCodeToQt(CGKeyCode code)
+{
+    static const int kLetterMap[47] = {
+        Qt::Key_A, Qt::Key_S, Qt::Key_D, Qt::Key_F, Qt::Key_H, Qt::Key_G, Qt::Key_Z, Qt::Key_X,
+        Qt::Key_C, Qt::Key_V, 0, Qt::Key_B, Qt::Key_Q, Qt::Key_W, Qt::Key_E, Qt::Key_R,
+        Qt::Key_Y, Qt::Key_T, Qt::Key_1, Qt::Key_2, Qt::Key_3, Qt::Key_4, Qt::Key_6,
+        Qt::Key_5, Qt::Key_Equal, Qt::Key_9, Qt::Key_7, Qt::Key_Minus, Qt::Key_8, Qt::Key_0,
+        Qt::Key_BracketRight, Qt::Key_O, Qt::Key_U, Qt::Key_BracketLeft, Qt::Key_I, Qt::Key_P,
+        Qt::Key_Return, Qt::Key_L, Qt::Key_J, Qt::Key_QuoteDbl, Qt::Key_K, Qt::Key_Semicolon,
+        Qt::Key_Backslash, Qt::Key_Comma, Qt::Key_Slash, Qt::Key_N, Qt::Key_M
+    };
+    if (code < sizeof(kLetterMap) / sizeof(kLetterMap[0]))
+        return kLetterMap[code];
+    if (code >= 122 && code <= 133) // kVK_F1 .. kVK_F12
+        return Qt::Key_F1 + static_cast<int>(code - 122);
+    if (code == 49)
+        return Qt::Key_Space;
+    if (code == 48)
+        return Qt::Key_Tab;
+    if (code == 53)
+        return Qt::Key_Escape;
+    return 0;
+}
 
 CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef event, void *refcon)
 {
@@ -82,6 +311,25 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
         }
     } else if (type == kCGEventKeyDown) {
         isDown = true;
+
+        const CGEventFlags flags = CGEventGetFlags(event);
+        unsigned int mods = 0;
+        if (flags & kCGEventFlagMaskControl)
+            mods |= ModCtrl;
+        if (flags & kCGEventFlagMaskAlternate)
+            mods |= ModAlt;
+        if (flags & kCGEventFlagMaskShift)
+            mods |= ModShift;
+        if (flags & kCGEventFlagMaskCommand)
+            mods |= ModMeta;
+
+        const CGKeyCode keyCode =
+            static_cast<CGKeyCode>(CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode));
+        const int key = macKeyCodeToQt(keyCode);
+        const QString hit = matchHotkey(mods, key);
+        if (!hit.isEmpty())
+            QMetaObject::invokeMethod(g_hook, "emitHotkey", Qt::QueuedConnection,
+                                      Q_ARG(QString, hit));
     } else if (type == kCGEventKeyUp) {
         isDown = false;
     } else {
@@ -105,14 +353,48 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
 #  include <X11/keysym.h>
 
 namespace {
-DoubleCtrlHook *g_hook = nullptr;
+GlobalHotkeys *g_hook = nullptr;
 DoubleCtrlDetector g_detector;
 std::atomic<int> g_intervalMs{300};
 std::atomic<bool> g_stopRequested{false};
+std::atomic<unsigned int> g_mods{0}; // 自己维护修饰键状态：XRecord 回传的事件里没有状态位
 
 Display *g_ctrlDisplay = nullptr; // 主线程用于停止
 Display *g_dataDisplay = nullptr; // 回调线程专用
 XRecordContext g_context = 0;
+
+int xKeySymToQt(KeySym sym)
+{
+    if (sym >= XK_a && sym <= XK_z)
+        return Qt::Key_A + static_cast<int>(sym - XK_a);
+    if (sym >= XK_A && sym <= XK_Z)
+        return Qt::Key_A + static_cast<int>(sym - XK_A);
+    if (sym >= XK_0 && sym <= XK_9)
+        return Qt::Key_0 + static_cast<int>(sym - XK_0);
+    if (sym >= XK_F1 && sym <= XK_F35)
+        return Qt::Key_F1 + static_cast<int>(sym - XK_F1);
+    switch (sym) {
+    case XK_space:
+        return Qt::Key_Space;
+    case XK_Return:
+        return Qt::Key_Return;
+    case XK_Tab:
+        return Qt::Key_Tab;
+    case XK_Escape:
+        return Qt::Key_Escape;
+    case XK_Home:
+        return Qt::Key_Home;
+    case XK_End:
+        return Qt::Key_End;
+    case XK_Insert:
+        return Qt::Key_Insert;
+    case XK_Delete:
+        return Qt::Key_Delete;
+    default:
+        break;
+    }
+    return 0;
+}
 
 void recordCallback(XPointer closure, XRecordInterceptData *data)
 {
@@ -126,11 +408,46 @@ void recordCallback(XPointer closure, XRecordInterceptData *data)
         if (type == KeyPress || type == KeyRelease) {
             const unsigned char keyCode = raw[1];
             const KeySym sym = XkbKeycodeToKeysym(g_dataDisplay, keyCode, 0, 0);
-            const bool isCtrl = (sym == XK_Control_L || sym == XK_Control_R);
             const bool isDown = (type == KeyPress);
+
+            unsigned int mods = g_mods.load();
+            switch (sym) {
+            case XK_Control_L:
+            case XK_Control_R:
+                mods = isDown ? (mods | ModCtrl) : (mods & ~ModCtrl);
+                g_mods.store(mods);
+                break;
+            case XK_Alt_L:
+            case XK_Alt_R:
+                mods = isDown ? (mods | ModAlt) : (mods & ~ModAlt);
+                g_mods.store(mods);
+                break;
+            case XK_Shift_L:
+            case XK_Shift_R:
+                mods = isDown ? (mods | ModShift) : (mods & ~ModShift);
+                g_mods.store(mods);
+                break;
+            case XK_Super_L:
+            case XK_Super_R:
+                mods = isDown ? (mods | ModMeta) : (mods & ~ModMeta);
+                g_mods.store(mods);
+                break;
+            default:
+                break;
+            }
+
+            const bool isCtrl = (sym == XK_Control_L || sym == XK_Control_R);
             g_detector.setIntervalMs(g_intervalMs.load());
             if (g_detector.handleKey(isCtrl, isDown, monotonicMilliseconds()))
                 QMetaObject::invokeMethod(g_hook, "emitActivated", Qt::QueuedConnection);
+
+            if (isDown && !isCtrl) {
+                const int key = xKeySymToQt(sym);
+                const QString hit = matchHotkey(g_mods.load(), key);
+                if (!hit.isEmpty())
+                    QMetaObject::invokeMethod(g_hook, "emitHotkey", Qt::QueuedConnection,
+                                              Q_ARG(QString, hit));
+            }
         }
     }
     XRecordFreeData(data);
@@ -138,19 +455,19 @@ void recordCallback(XPointer closure, XRecordInterceptData *data)
 } // namespace
 #endif
 
-DoubleCtrlHook::DoubleCtrlHook(QObject *parent)
+GlobalHotkeys::GlobalHotkeys(QObject *parent)
     : QThread(parent)
 {
 }
 
-DoubleCtrlHook::~DoubleCtrlHook()
+GlobalHotkeys::~GlobalHotkeys()
 {
     requestStop();
     if (isRunning())
         wait(2000);
 }
 
-void DoubleCtrlHook::setIntervalMs(int milliseconds)
+void GlobalHotkeys::setIntervalMs(int milliseconds)
 {
     m_intervalMs = qBound(150, milliseconds, 800);
 #if defined(Q_OS_WIN) || defined(Q_OS_MACOS) || (defined(Q_OS_LINUX) && defined(LISTERY_HAVE_X11))
@@ -158,7 +475,13 @@ void DoubleCtrlHook::setIntervalMs(int milliseconds)
 #endif
 }
 
-bool DoubleCtrlHook::isSupported()
+void GlobalHotkeys::setHotkeys(const QVector<HotkeySpec> &specs)
+{
+    QMutexLocker locker(&g_hotkeyMutex);
+    g_hotkeys = specs;
+}
+
+bool GlobalHotkeys::isSupported()
 {
 #if defined(Q_OS_WIN) || defined(Q_OS_MACOS)
     return true;
@@ -173,12 +496,17 @@ bool DoubleCtrlHook::isSupported()
 #endif
 }
 
-void DoubleCtrlHook::emitActivated()
+void GlobalHotkeys::emitActivated()
 {
     emit activated();
 }
 
-void DoubleCtrlHook::requestStop()
+void GlobalHotkeys::emitHotkey(const QString &text)
+{
+    emit hotkeyTriggered(text);
+}
+
+void GlobalHotkeys::requestStop()
 {
 #ifdef Q_OS_WIN
     if (m_threadId != 0)
@@ -196,7 +524,7 @@ void DoubleCtrlHook::requestStop()
 #endif
 }
 
-void DoubleCtrlHook::run()
+void GlobalHotkeys::run()
 {
 #ifdef Q_OS_WIN
     m_threadId = static_cast<quintptr>(GetCurrentThreadId());
@@ -322,6 +650,6 @@ void DoubleCtrlHook::run()
     XCloseDisplay(dataDisplay);
     XCloseDisplay(ctrlDisplay);
 #else
-    qWarning("Listery: 当前平台未实现系统级双击 Ctrl 监听");
+    qWarning("Listery: 当前平台未实现系统级全局按键监听");
 #endif
 }

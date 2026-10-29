@@ -32,6 +32,8 @@ A Listary-style quick launcher written in Qt / C++: index every executable → d
 | **Pinyin search** | `tengxunhuiyi`, `txhy` and `腾讯会议` all match the same app. Polyphonic characters keep every reading |
 | **Learns your habits** | Score = `0.72 × match quality + 0.28 × usage habit`, so apps you use most bubble up |
 | **Smart scanning** | Per-volume adaptive scheduling: volumes with no software back off automatically; on Linux it just reads the locate snapshot |
+| **EN↔ZH translator** | `Alt+E` opens the translator plugin: type English for Chinese, Chinese for English, press Enter to copy the result |
+| **Plugins** | Pure-C plugin ABI: plugins need no Qt and no OpenSSL, so anyone can extend Listery — see the [plugin guide](docs/PLUGINS_EN.md) |
 | **Portable** | Index, config and logs live next to the executable. Copy the folder to a USB stick and go |
 
 ## Quick start
@@ -40,6 +42,7 @@ A Listary-style quick launcher written in Qt / C++: index every executable → d
 2. Run `listery` (`listery.exe` on Windows). It drops to the tray and starts building the index;
 3. **Double-tap Ctrl**, type a program name, press Enter.
 
+> Windows users can also take the **installer** `listery-windows-setup.exe` (Inno Setup package, no admin rights, optional autostart and desktop shortcut).
 > Windows XP users: download `listery-windows-xp.zip` (32-bit MinGW + Qt 5.7 build).
 
 ### Keyboard
@@ -47,12 +50,27 @@ A Listary-style quick launcher written in Qt / C++: index every executable → d
 | Key | Action |
 | --- | --- |
 | `Double Ctrl` | Show / hide the launcher |
+| `Alt+E` | Open the EN↔ZH translator plugin (reassignable in Settings) |
 | `↑` `↓` `PgUp` `PgDn` | Move through results |
 | `Enter` | Launch the selected program |
 | `Ctrl + Enter` | Reveal it in the file manager |
 | `Shift + Enter` | Run as administrator |
 | `Esc` | Hide the launcher |
 | Right-click a result | Run as admin / open location / copy path |
+
+## Plugins
+
+Plugins are shared libraries in the `plugins/` folder next to the executable, behind a pure C ABI.
+They need **no Qt and no OpenSSL** — the host performs network requests on their behalf:
+
+| Bundled plugin | Hotkey | What it does |
+| --- | --- | --- |
+| EN↔ZH translator (`translator`) | `Alt+E` | Youdao dictionary suggest API, both directions, whole sentences too; Enter copies the result. Switch backends with `LISTERY_TRANSLATOR_ENDPOINT=google` |
+
+- Settings → Plugins lets you enable/disable each plugin and reassign its hotkey (`Alt+E`, `Ctrl+Shift+F1`, …);
+- The tray's Plugins submenu opens a plugin directly (fallback when hotkeys are unavailable);
+- To write your own: [plugin guide](docs/PLUGINS_EN.md) ([中文](docs/PLUGINS.md)) with a minimal sample, the action protocol and a CMake template;
+- Load failures never pop a dialog — the reason is shown in Settings, and plugin logs go to `listery.log`.
 
 ## Smart indexing
 
@@ -185,7 +203,7 @@ All three platforms share the same indexing, search, ranking and UI code. Platfo
 
 **Verification status (stated honestly)**:
 
-- **Windows**: actually built and run here on Qt 5.15.2 + MinGW 8.1, all 56 self-test checks pass, and the packaged `dist\` folder runs on a machine without Qt installed;
+- **Windows**: actually built and run here on Qt 5.15.2 + MinGW 8.1, all 69 self-test checks pass, and the packaged `dist\` folder runs on a machine without Qt installed;
 - **Linux**: actually compiled on WSL2 Ubuntu 24.04 (Qt 5.15.13, `libXtst`, XRecord headers present) and the self-test was executed with `QT_QPA_PLATFORM=offscreen`. Global double Ctrl needs a real X11 desktop session, which was not tested headless;
 - **macOS**: the code paths are implemented for `CGEventTap`, `open -R` and LaunchAgents, but no Mac is available — **not compiled, not run**.
 
@@ -195,21 +213,25 @@ All three platforms share the same indexing, search, ranking and UI code. Platfo
 listery/
 ├─ CMakeLists.txt
 ├─ build.bat / deploy.bat
-├─ .github/workflows/release.yml   # four-target matrix build & release
+├─ .github/workflows/release.yml   # four-target matrix build + Windows installer
+├─ sdk/listery_plugin_api.h        # plugin ABI (pure C, shipped for third-party devs)
+├─ plugins/translator/             # bundled plugin: EN<->ZH translator (zero deps)
+├─ installer/windows/listery.iss   # Inno Setup script
 ├─ src/
 │  ├─ main.cpp                 entry point, single instance, preview & selftest switches
 │  ├─ AppController.*          wires index / scan scheduling / hotkey / panel / tray
 │  ├─ Core/
-│  │  ├─ AppSettings.*         settings.ini based configuration
+│  │  ├─ AppSettings.*         settings.ini based configuration (incl. plugin state & hotkeys)
 │  │  ├─ Database.*            SQLite schema, bulk writes, search SQL, volume stats
 │  │  ├─ Scanner.*             scan thread: full walk / locate snapshot / per-volume stats
 │  │  ├─ Pinyin.* / PinyinData.*  Hanzi → full pinyin and initials (static table, polyphones kept)
 │  │  ├─ SearchEngine.*        coarse filter + in-memory ranking, match highlighting
 │  │  ├─ SearchService.*       background search thread (coalesces queued requests, drops stale results)
+│  │  ├─ PluginHost.*          plugin host: loads shared libs, dispatches queries, does HTTP for plugins
 │  │  ├─ UsageRecorder.*       usage writes (own thread + own connection)
 │  │  └─ LaunchService.*       launch / elevate / reveal (per-platform branches)
 │  ├─ Platform/
-│  │  ├─ HotkeyHook.*          global double Ctrl (Win hook / X11 XRecord / CGEventTap)
+│  │  ├─ HotkeyHook.*          global hotkeys (double Ctrl + combos like Alt+E, all three platforms)
 │  │  ├─ DoubleCtrlDetector.h  double-Ctrl state machine (unit-testable)
 │  │  ├─ Autostart.*           autostart (Run key / .desktop / LaunchAgent)
 │  │  ├─ WindowUtils.*         force foreground, center-top placement
@@ -218,8 +240,10 @@ listery/
 │  │  ├─ LauncherWindow.*      search panel (frameless + shadow + keyboard nav + context menu + collapse on empty input)
 │  │  ├─ ResultModel.* / ResultDelegate.*   result model and row painting (icon / highlight / path / count)
 │  │  └─ SettingsDialog.*      settings dialog
-│  └─ SelfTest.*               56 self-test checks
-└─ docs/preview.png
+│  └─ SelfTest.*               69 self-test checks
+└─ docs/
+   ├─ preview.png
+   ├─ PLUGINS.md / PLUGINS_EN.md   plugin guide (ZH / EN)
 ```
 
 ## Search and ranking details
@@ -309,7 +333,8 @@ GitHub Actions builds all targets in parallel with a **Matrix Strategy**. Pushin
 
 | Asset | Platform | Note |
 | --- | --- | --- |
-| `listery-windows.zip` | Windows x64 | Qt 5.15.2 / MSVC2019, Windows 7 and up |
+| `listery-windows.zip` | Windows x64 | Portable: unzip and run, Qt 5.15.2 / MSVC2019, Windows 7 and up |
+| `listery-windows-setup.exe` | Windows x64 | Installer (Inno Setup): no admin rights needed, optional autostart / desktop shortcut, uninstaller included |
 | `listery-windows-xp.zip` | Windows 32-bit | Qt 5.7.1 / MinGW 5.3, Windows XP compatible |
 | `listery-linux.AppImage` | Linux x64 | Self-contained image (Qt runtime bundled) |
 | `listery-macos.zip` | macOS | Executable with Qt frameworks bundled |

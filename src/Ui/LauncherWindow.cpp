@@ -1,6 +1,7 @@
 #include "Ui/LauncherWindow.h"
 
 #include "Core/LaunchService.h"
+#include "Core/PluginHost.h"
 #include "Core/SearchService.h"
 #include "Platform/WindowUtils.h"
 #include "Ui/ResultDelegate.h"
@@ -214,11 +215,63 @@ void LauncherWindow::popup()
     m_edit->setFocus(Qt::ShortcutFocusReason);
 }
 
+void LauncherWindow::setPluginHost(PluginHost *host)
+{
+    m_pluginHost = host;
+    if (m_pluginHost) {
+        connect(m_pluginHost, &PluginHost::queryFinished,
+                this, &LauncherWindow::applyPluginResults);
+    }
+}
+
+void LauncherWindow::enterPluginMode(const QString &pluginId, const QString &displayName,
+                                     const QString &placeholder)
+{
+    m_mode = LauncherMode::Plugin;
+    m_pluginId = pluginId;
+    m_pluginName = displayName;
+    m_statusBeforePlugin = m_status->text();
+    m_edit->setPlaceholderText(placeholder.isEmpty()
+                                   ? QStringLiteral("输入内容，交给 %1").arg(displayName)
+                                   : placeholder);
+    m_hints->setText(QStringLiteral("Enter 执行 · Esc 隐藏"));
+}
+
+void LauncherWindow::beginPluginSession(const QString &pluginId, const QString &displayName,
+                                        const QString &placeholder)
+{
+    if (m_mode == LauncherMode::Plugin && m_pluginId != pluginId)
+        endPluginSession();
+    enterPluginMode(pluginId, displayName, placeholder);
+    popup();
+}
+
+void LauncherWindow::endPluginSession()
+{
+    if (m_mode != LauncherMode::Plugin)
+        return;
+
+    const QString pluginId = m_pluginId;
+    m_mode = LauncherMode::Programs;
+    m_pluginId.clear();
+    m_pluginName.clear();
+    m_pendingSequence = 0;
+    m_appliedSequence = 0;
+    m_edit->setPlaceholderText(QStringLiteral("输入程序名，例如 chrome、excel、git"));
+    m_hints->setText(QStringLiteral("↑↓ 选择 · Enter 运行 · Ctrl+Enter 定位 · Shift+Enter 管理员 · Esc 隐藏"));
+    if (m_pluginHost && !pluginId.isEmpty())
+        m_pluginHost->cancel(pluginId);
+    m_status->setText(m_statusBeforePlugin);
+    emit pluginSessionClosed();
+}
+
 void LauncherWindow::dismiss()
 {
     if (!isVisible())
         return;
     hide();
+    if (m_mode == LauncherMode::Plugin)
+        endPluginSession();
     m_model->clearResults();
     {
         QSignalBlocker blocker(m_edit);
@@ -276,13 +329,71 @@ void LauncherWindow::performSearch()
         m_appliedSequence = 0;
         m_model->clearResults();
         m_list->setCurrentIndex(QModelIndex());
+        if (m_mode == LauncherMode::Plugin)
+            m_status->setText(m_pluginName.isEmpty() ? QString() : m_pluginName);
         updateGeometryForResults(0, true);
+        return;
+    }
+
+    if (m_mode == LauncherMode::Plugin) {
+        if (!m_pluginHost)
+            return;
+        m_status->setText(QStringLiteral("%1 · 处理中…").arg(m_pluginName));
+        const quint64 sequence = m_pluginHost->beginQuery(m_pluginId, query, m_maxResults);
+        if (sequence == 0) {
+            m_status->setText(QStringLiteral("插件不可用"));
+            return;
+        }
+        m_pendingSequence = sequence;
         return;
     }
 
     if (!m_service)
         return;
     m_pendingSequence = m_service->search(query, m_maxResults);
+}
+
+void LauncherWindow::applyPluginResults(quint64 sequence, QString pluginId, QString query,
+                                        QVector<PluginRow> rows, QString errorMessage)
+{
+    if (m_mode != LauncherMode::Plugin || pluginId != m_pluginId)
+        return;
+    // 输入已经变了：只认最新一次请求的结果
+    if (sequence != m_pendingSequence || query != m_edit->text().trimmed())
+        return;
+
+    QVector<SearchResult> results;
+    results.reserve(rows.size());
+    for (const PluginRow &row : rows) {
+        SearchResult result;
+        result.pluginTitle = row.title;
+        result.pluginSubtitle = row.subtitle;
+        result.pluginBadge = row.badge;
+        result.pluginAction = row.action;
+        result.score = 1.0;
+        results.append(result);
+    }
+
+    const int previousRow = m_list->currentIndex().row();
+    m_model->setResults(results);
+    if (!results.isEmpty()) {
+        const int target = qBound(0, previousRow < 0 ? 0 : previousRow, results.size() - 1);
+        m_list->setCurrentIndex(m_model->index(target));
+        m_list->scrollTo(m_model->index(target), QAbstractItemView::EnsureVisible);
+    } else {
+        m_list->setCurrentIndex(QModelIndex());
+    }
+
+    if (!errorMessage.isEmpty())
+        m_status->setText(errorMessage);
+    else if (results.isEmpty())
+        m_status->setText(QStringLiteral("没有结果"));
+    else
+        m_status->setText(QStringLiteral("%1 · %2 条").arg(m_pluginName).arg(results.size()));
+
+    updateGeometryForResults(results.size(), false);
+    m_appliedSequence = sequence;
+    emit searchApplied();
 }
 
 void LauncherWindow::applyResults(quint64 sequence, const QString &query,
@@ -353,6 +464,23 @@ void LauncherWindow::showContextMenu(const QPoint &position)
     m_list->setCurrentIndex(index);
     // exec() 会跑嵌套事件循环，期间扫描结束刷新或窗口失焦隐藏都可能清空模型，必须持有副本
     const SearchResult result = m_model->resultAt(index.row());
+
+    if (result.isPluginResult()) {
+        if (result.pluginAction.isEmpty())
+            return;
+        QMenu *menu = new QMenu(this);
+        QAction *run = menu->addAction(QStringLiteral("执行（默认动作）"));
+        m_contextMenuOpen = true;
+        QAction *chosen = menu->exec(m_list->viewport()->mapToGlobal(position));
+        m_contextMenuOpen = false;
+        delete menu;
+        if (chosen == run) {
+            emit pluginActionRequested(result.pluginAction);
+            dismiss();
+        }
+        return;
+    }
+
     if (result.record.path.isEmpty())
         return;
 
@@ -399,6 +527,14 @@ void LauncherWindow::activateCurrent(bool reveal, bool asAdmin)
         return;
 
     const SearchResult &result = m_model->resultAt(row);
+
+    if (result.isPluginResult()) {
+        if (!result.pluginAction.isEmpty())
+            emit pluginActionRequested(result.pluginAction);
+        dismiss();
+        return;
+    }
+
     if (result.record.path.isEmpty())
         return;
 

@@ -199,6 +199,10 @@ jobs:
         run: |
           & {
             windeployqt --release --no-translations --no-opengl-sw build\Release\listery.exe
+            # 带上插件目录（MSVC 多配置生成器会把插件放到 build\plugins\Release\）
+            New-Item -ItemType Directory -Force -Path build\Release\plugins | Out-Null
+            $pluginDll = Get-ChildItem build\plugins -Recurse -Filter translator.dll | Select-Object -First 1
+            if ($pluginDll) { Copy-Item $pluginDll.FullName build\Release\plugins\ } else { Write-Host "WARN: translator.dll not found" }
             $redist = (Get-ChildItem "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Redist\MSVC" -Recurse -Filter vcruntime140.dll | Select-Object -First 1).DirectoryName
             if ($redist) {
               Copy-Item "$redist\vcruntime140.dll"      build\Release\
@@ -208,6 +212,27 @@ jobs:
             Compress-Archive -Path build\Release\* -DestinationPath listery-windows.zip -Force
           } 2>&1 | Tee-Object -FilePath deploy.log
           if (-not (Test-Path listery-windows.zip)) { exit 1 }
+
+      # ---------- Windows 安装版（Inno Setup） ----------
+      - name: Build installer (Windows)
+        if: matrix.config.name == 'Windows'
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            Write-Host "=== Inno Setup not found, installing via chocolatey ==="
+            choco install innosetup --no-progress -y
+            $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          }
+          if (-not (Test-Path $iscc)) { Write-Host "::error::ISCC.exe not available"; exit 1 }
+          $version = "${{ github.ref_name }}" -replace '^v',''
+          if ([string]::IsNullOrWhiteSpace($version) -or $version.StartsWith('${{')) { $version = '1.0.0' }
+          Write-Host "=== building installer, version=$version ==="
+          & $iscc "installer\windows\listery.iss" "/DMyAppVersion=$version" 2>&1 | Tee-Object -FilePath installer.log
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::ISCC failed"; exit 1 }
+          $setup = "installer\windows\listery-windows-setup.exe"
+          if (-not (Test-Path $setup)) { Write-Host "::error::installer not produced"; exit 1 }
+          Get-Item $setup | Select-Object Name,Length
 
       # ---------- Windows XP (MinGW 5.3 / Qt 5.7) ----------
       - name: Deploy (Windows XP)
@@ -220,6 +245,9 @@ jobs:
             QT_QPA_PLATFORM=offscreen ./build/listery.exe --selftest | tail -5 || true
             mkdir -p dist-xp
             cp build/listery.exe dist-xp/
+            mkdir -p dist-xp/plugins
+            cp build/plugins/*.dll dist-xp/plugins/ 2>&1 || echo "WARN: plugin dll missing"
+            ls -la dist-xp/plugins
             windeployqt --release --no-translations --no-compiler-runtime dist-xp/listery.exe
             WDEPLOY=$?
             echo "windeployqt_status=$WDEPLOY"
@@ -264,6 +292,9 @@ jobs:
           ./linuxdeployqt.AppImage --appimage-extract >/dev/null
           mkdir -p app/usr/bin
           cp build/listery app/usr/bin/
+          mkdir -p app/usr/bin/plugins
+          cp build/plugins/*.so app/usr/bin/plugins/ 2>/dev/null || echo "WARN: plugin .so missing"
+          ls -la app/usr/bin/plugins
           # 生成 256x256 App 图标（desktop 文件引用的图标必须真实存在，否则 linuxdeployqt 拒绝打包）
           python3 - <<'PY'
           import struct, zlib
@@ -303,6 +334,9 @@ jobs:
           {
           mkdir -p listery.app/Contents/MacOS listery.app/Contents/Resources
           cp build/listery listery.app/Contents/MacOS/listery
+          mkdir -p listery.app/Contents/MacOS/plugins
+          cp build/plugins/*.dylib listery.app/Contents/MacOS/plugins/ 2>/dev/null || echo "WARN: plugin .dylib missing"
+          ls -la listery.app/Contents/MacOS/plugins
           cat > listery.app/Contents/Info.plist <<'EOF'
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -349,6 +383,8 @@ jobs:
             cat build.log 2>&1 || true
             echo "=== deploy.log ==="
             cat deploy.log 2>&1 || true
+            echo "=== installer.log ==="
+            cat installer.log 2>&1 || true
           } > ci-logs/all.log
           # .gitignore 含 *.log，必须 -f 强制添加
           git add -f ci-logs/all.log
@@ -361,6 +397,7 @@ jobs:
         with:
           files: |
             listery-windows.zip
+            installer/windows/listery-windows-setup.exe
             listery-windows-xp.zip
             listery-linux.AppImage
             listery-macos.zip

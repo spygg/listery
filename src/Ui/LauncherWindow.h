@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Core/PluginHost.h"
 #include "Core/SearchEngine.h"
 
 #include <QPoint>
@@ -12,8 +13,16 @@ class QListView;
 class QMenu;
 class QAction;
 class QTimer;
+class PluginHost;
 class ResultModel;
 class SearchService;
+
+/** 面板当前在做什么：找程序，还是把输入交给某个插件。 */
+enum class LauncherMode
+{
+    Programs,
+    Plugin
+};
 
 /**
  * 唤起的搜索面板：无边框、置顶、屏幕居中靠上弹出。
@@ -38,6 +47,17 @@ public:
     /** 离屏预览用：直接设置输入框内容并触发一次检索（不改变窗口可见性）。 */
     void setQueryForPreview(const QString &query);
 
+    /** 插件宿主：设置后面板才能进入插件模式。 */
+    void setPluginHost(PluginHost *host);
+
+    /** 进入插件模式并弹出面板（由插件热键触发）。 */
+    void beginPluginSession(const QString &pluginId, const QString &displayName,
+                            const QString &placeholder);
+    /** 结束插件模式（Esc / 失焦 / 动作执行完）。 */
+    void endPluginSession();
+    LauncherMode mode() const { return m_mode; }
+    QString pluginId() const { return m_pluginId; }
+
     /** 等待当前输入对应的检索结果落到界面上（预览/自检没有常驻事件循环时使用）。 */
     bool waitForSearch(int timeoutMs = 3000);
 
@@ -53,6 +73,10 @@ signals:
     void settingsRequested();
     /** 一次匹配当前输入的结果已写入列表（预览/自检等待用）。 */
     void searchApplied();
+    /** 插件行被回车/双击执行：action 见 sdk/listery_plugin_api.h。 */
+    void pluginActionRequested(const QString &action);
+    /** 插件模式已结束，宿主可以把状态栏恢复成索引状态。 */
+    void pluginSessionClosed();
 
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
@@ -61,6 +85,8 @@ protected:
 private slots:
     void applyResults(quint64 sequence, const QString &query,
                       const QVector<SearchResult> &results, qint64 elapsedMs);
+    void applyPluginResults(quint64 sequence, QString pluginId, QString query,
+                            QVector<PluginRow> rows, QString errorMessage);
 
 private:
     void buildUi();
@@ -70,8 +96,15 @@ private:
     void activateCurrent(bool reveal, bool asAdmin);
     void updateGeometryForResults(int rowCount, bool emptyQuery);
     void showContextMenu(const QPoint &position);
+    void enterPluginMode(const QString &pluginId, const QString &displayName,
+                         const QString &placeholder);
 
     SearchService *m_service = nullptr;
+    PluginHost *m_pluginHost = nullptr;
+    LauncherMode m_mode = LauncherMode::Programs;
+    QString m_pluginId;
+    QString m_pluginName;
+    QString m_statusBeforePlugin;
     int m_maxResults = 12;
     bool m_hideOnFocusLost = true;
     /** 右键菜单打开期间禁止失焦自动隐藏，避免嵌套事件循环里模型被清空。 */

@@ -32,6 +32,8 @@
 | **拼音检索** | `tengxunhuiyi`、`txhy`、`腾讯会议` 三种输入命中同一个程序；多音字保留全部读音 |
 | **越用越准** | 排序分 = `0.72 × 匹配度 + 0.28 × 使用习惯`，常用程序自动上浮 |
 | **智能扫描** | 按分区自适应调度：没装过软件的分区自动降低扫描频率；Linux 上直接读 locate 快照 |
+| **英汉翻译** | `Alt+E` 唤起翻译插件，输入英文给汉语、输入汉语给英文，回车把译文复制到剪贴板 |
+| **插件机制** | 纯 C ABI 的插件接口：插件不依赖 Qt / OpenSSL，第三方可自行扩展（见 [插件开发指南](docs/PLUGINS.md)） |
 | **免安装** | 索引、配置、日志都在可执行文件旁边，拷走 U 盘也能用 |
 
 ## 快速开始
@@ -40,6 +42,7 @@
 2. 运行 `listery`（Windows 为 `listery.exe`），程序静默进托盘并开始建立索引；
 3. **双击 Ctrl**，输入程序名，回车运行。
 
+> Windows 也可以用 **安装版** `listery-windows-setup.exe`（Inno Setup 打包，免管理员，可选开机启动与桌面快捷方式）；
 > Windows XP 用户请下载 `listery-windows-xp.zip`（MinGW 32 位 + Qt 5.7 构建）。
 
 ### 快捷键
@@ -47,12 +50,26 @@
 | 按键 | 作用 |
 | --- | --- |
 | `双击 Ctrl` | 唤起 / 隐藏搜索面板 |
+| `Alt+E` | 唤起英汉翻译插件（可在设置里改或清空） |
 | `↑` `↓` `PgUp` `PgDn` | 在候选里移动 |
 | `Enter` | 运行选中的程序 |
 | `Ctrl + Enter` | 在文件管理器中定位 |
 | `Shift + Enter` | 以管理员身份运行 |
 | `Esc` | 隐藏面板 |
 | 右键候选 | 管理员运行 / 打开所在位置 / 复制路径 |
+
+## 插件
+
+插件是可执行文件同目录 `plugins/` 里的动态库，接口是纯 C 的 ABI，**不依赖 Qt、不需要 OpenSSL**（网络请求由宿主代劳）：
+
+| 内置插件 | 热键 | 说明 |
+| --- | --- | --- |
+| 英汉翻译（`translator`） | `Alt+E` | 有道词典 suggest 接口的中英双向翻译，整句也能翻；回车复制译文，可切换 Google 后端（`LISTERY_TRANSLATOR_ENDPOINT=google`） |
+
+- 「设置 → 插件」里可以逐个启用/禁用、改热键（写法如 `Alt+E`、`Ctrl+Shift+F1`）；
+- 托盘菜单的「插件」子菜单也能直接唤起插件（热键不可用时的兜底）；
+- 想自己写插件：[插件开发指南](docs/PLUGINS.md)（[English](docs/PLUGINS_EN.md)），含最小示例、action 协议与 CMake 模板；
+- 插件加载失败不会弹窗，原因显示在设置页；插件日志写进 `listery.log`。
 
 ## 智能索引
 
@@ -185,7 +202,7 @@ Linux / macOS 把 `build\listery.exe` 换成 `./build/listery`，其余参数相
 
 **验证范围（如实说明）**：
 
-- **Windows**：本机 Qt 5.15.2 + MinGW 8.1 实际编译、运行，56 项自检全部通过，打包后的 `dist\` 在无 Qt 环境也可运行；
+- **Windows**：本机 Qt 5.15.2 + MinGW 8.1 实际编译、运行，69 项自检全部通过，打包后的 `dist\` 在无 Qt 环境也可运行；
 - **Linux**：在 WSL2 Ubuntu 24.04（Qt 5.15.13、`libXtst`、XRecord 头文件齐全）实际编译通过，并以 `QT_QPA_PLATFORM=offscreen` 跑完自检；全局双击 Ctrl 需要真实 X11 桌面会话，未在无头环境实测；
 - **macOS**：代码路径已按 `CGEventTap`、`open -R`、`LaunchAgents` 实现，但当前没有 Mac 机器，**未编译、未运行验证**。
 
@@ -195,21 +212,25 @@ Linux / macOS 把 `build\listery.exe` 换成 `./build/listery`，其余参数相
 listery/
 ├─ CMakeLists.txt
 ├─ build.bat / deploy.bat
-├─ .github/workflows/release.yml   # 三平台（含 XP）矩阵构建与发布
+├─ .github/workflows/release.yml   # 四目标（含 XP）矩阵构建 + Windows 安装版
+├─ sdk/listery_plugin_api.h        # 插件 ABI（纯 C，随发布分发给第三方开发者）
+├─ plugins/translator/             # 内置插件：英汉翻译（零依赖，只调宿主 httpGet）
+├─ installer/windows/listery.iss   # Inno Setup 安装脚本
 ├─ src/
 │  ├─ main.cpp                 程序入口、单实例、预览与自检开关
 │  ├─ AppController.*          组装索引库 / 扫描调度 / 热键 / 面板 / 托盘
 │  ├─ Core/
-│  │  ├─ AppSettings.*         基于 settings.ini 的配置
+│  │  ├─ AppSettings.*         基于 settings.ini 的配置（含插件启用状态与热键）
 │  │  ├─ Database.*            SQLite 表结构、批量写入、检索 SQL、卷统计
 │  │  ├─ Scanner.*             扫描线程：全量遍历 / locate 快照 / 按卷统计
 │  │  ├─ Pinyin.* / PinyinData.* 汉字转全拼与首字母（静态字表，多音字多变体）
 │  │  ├─ SearchEngine.*        粗筛 + 内存精排、匹配高亮
 │  │  ├─ SearchService.*       后台检索线程（合并排队请求、按序号丢弃过期结果）
+│  │  ├─ PluginHost.*          插件宿主：加载动态库、分发查询、代插件发 HTTP
 │  │  ├─ UsageRecorder.*       使用统计写入（独立线程 + 独立连接）
 │  │  └─ LaunchService.*       启动 / 提权 / 定位（三平台分支）
 │  ├─ Platform/
-│  │  ├─ HotkeyHook.*          全局双击 Ctrl（Win 钩子 / X11 XRecord / CGEventTap）
+│  │  ├─ HotkeyHook.*          全局热键（双击 Ctrl + Alt+E 等组合键，三平台实现）
 │  │  ├─ DoubleCtrlDetector.h  双击 Ctrl 状态机（可单测）
 │  │  ├─ Autostart.*           开机自启动（Run 项 / .desktop / LaunchAgent）
 │  │  ├─ WindowUtils.*         强制前台、屏幕居中靠上定位
@@ -218,8 +239,10 @@ listery/
 │  │  ├─ LauncherWindow.*      搜索面板（无边框 + 阴影 + 键盘导航 + 右键菜单 + 空输入收起）
 │  │  ├─ ResultModel.* / ResultDelegate.*  结果模型与行绘制（图标 / 高亮 / 路径 / 次数）
 │  │  └─ SettingsDialog.*      设置界面
-│  └─ SelfTest.*               56 项自检
-└─ docs/preview.png
+│  └─ SelfTest.*               69 项自检
+└─ docs/
+   ├─ preview.png
+   ├─ PLUGINS.md / PLUGINS_EN.md   插件开发指南（中英）
 ```
 
 ## 检索与排序细节
@@ -309,7 +332,8 @@ CREATE VIRTUAL TABLE exe_fts USING fts5(
 
 | Asset | 平台 | 说明 |
 | --- | --- | --- |
-| `listery-windows.zip` | Windows x64 | Qt 5.15.2 / MSVC2019 构建，Windows 7 及以上 |
+| `listery-windows.zip` | Windows x64 | 绿色版：解压即用，Qt 5.15.2 / MSVC2019 构建，Windows 7 及以上 |
+| `listery-windows-setup.exe` | Windows x64 | 安装版：Inno Setup 打包，免管理员，可选开机启动 / 桌面快捷方式，自带卸载 |
 | `listery-windows-xp.zip` | Windows 32 位 | Qt 5.7.1 / MinGW 5.3 构建，兼容 Windows XP |
 | `listery-linux.AppImage` | Linux x64 | 独立运行镜像（已打包 Qt 运行库） |
 | `listery-macos.zip` | macOS | 可执行程序（已打包 Qt 框架） |

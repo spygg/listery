@@ -244,6 +244,49 @@ void AppSettings::setUseLocateIndex(bool on)
     m_settings->sync();
 }
 
+QString AppSettings::resolvePluginDir()
+{
+    // 插件始终从可执行文件旁边加载：数据目录不可写时会回退到 AppData，
+    // 但插件是随程序分发的，不该跟着走
+    return QCoreApplication::applicationDirPath() + QStringLiteral("/plugins");
+}
+
+QString AppSettings::pluginDir() const
+{
+    return resolvePluginDir();
+}
+
+bool AppSettings::pluginEnabled(const QString &pluginId) const
+{
+    if (pluginId.isEmpty())
+        return false;
+    return m_settings->value(QStringLiteral("plugins/%1/enabled").arg(pluginId), true).toBool();
+}
+
+void AppSettings::setPluginEnabled(const QString &pluginId, bool enabled)
+{
+    if (pluginId.isEmpty())
+        return;
+    m_settings->setValue(QStringLiteral("plugins/%1/enabled").arg(pluginId), enabled);
+    m_settings->sync();
+}
+
+QString AppSettings::pluginHotkey(const QString &pluginId) const
+{
+    if (pluginId.isEmpty())
+        return QString();
+    return m_settings->value(QStringLiteral("plugins/%1/hotkey").arg(pluginId), QString())
+        .toString();
+}
+
+void AppSettings::setPluginHotkey(const QString &pluginId, const QString &hotkey)
+{
+    if (pluginId.isEmpty())
+        return;
+    m_settings->setValue(QStringLiteral("plugins/%1/hotkey").arg(pluginId), hotkey);
+    m_settings->sync();
+}
+
 int AppSettings::schemaVersion() const
 {
     return m_settings->value(QString::fromLatin1(kKeySchemaVersion), 1).toInt();
