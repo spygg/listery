@@ -1,0 +1,288 @@
+=== pwd: /d/a/listery/listery
+=== ls ===
+total 86
+drwxr-xr-x 1 runneradmin 197121     0 Oct 29 22:10 .
+drwxr-xr-x 1 runneradmin 197121     0 Oct 29 22:08 ..
+drwxr-xr-x 1 runneradmin 197121     0 Oct 29 22:10 .git
+drwxr-xr-x 1 runneradmin 197121     0 Oct 29 22:08 .github
+-rw-r--r-- 1 runneradmin 197121   173 Oct 29 22:08 .gitignore
+-rw-r--r-- 1 runneradmin 197121  3932 Oct 29 22:08 CMakeLists.txt
+-rw-r--r-- 1 runneradmin 197121  1083 Oct 29 22:08 LICENSE
+-rw-r--r-- 1 runneradmin 197121 19455 Oct 29 22:08 README.md
+-rw-r--r-- 1 runneradmin 197121 20336 Oct 29 22:08 README_EN.md
+drwxr-xr-x 1 runneradmin 197121     0 Oct 29 22:10 build
+-rw-r--r-- 1 runneradmin 197121   753 Oct 29 22:08 build.bat
+-rw-r--r-- 1 runneradmin 197121  3618 Oct 29 22:10 build.log
+drwxr-xr-x 1 runneradmin 197121     0 Oct 29 22:10 ci-logs
+-rw-r--r-- 1 runneradmin 197121   519 Oct 29 22:10 configure.log
+-rw-r--r-- 1 runneradmin 197121  1342 Oct 29 22:08 deploy.bat
+drwxr-xr-x 1 runneradmin 197121     0 Oct 29 22:08 docs
+drwxr-xr-x 1 runneradmin 197121     0 Oct 29 22:08 installer
+drwxr-xr-x 1 runneradmin 197121     0 Oct 29 22:08 plugins
+drwxr-xr-x 1 runneradmin 197121     0 Oct 29 22:08 sdk
+-rw-r--r-- 1 runneradmin 197121  6831 Oct 29 22:10 setup_qt.log
+drwxr-xr-x 1 runneradmin 197121     0 Oct 29 22:08 src
+drwxr-xr-x 1 runneradmin 197121     0 Oct 29 22:08 tools
+=== setup_qt.log ===
+=== cache miss: downloading offline installer ===
+-rwxr-xr-x 1 runneradmin 197121 1201453136 Oct 29 22:09 qt571.exe
+=== layer 1: extract [0] payload container from exe ===
+total 1154864
+drwxr-xr-x 1 runneradmin 197121          0 Oct 29 22:09 .
+drwxr-xr-x 1 runneradmin 197121          0 Oct 29 22:09 ..
+-rw-r--r-- 1 runneradmin 197121 1182578032 Nov 30  2016 [0]
+=== layer 2: split numbered component archives ===
+=== layer 3: extract components containing mingw53 ===
+skip: 10.7z (0 entries)
+skip: 100.7z (0 entries)
+skip: 102.7z (0 entries)
+skip: 104.7z (0 entries)
+skip: 106.7z (0 entries)
+skip: 108.7z (0 entries)
+skip: 110.7z (0 entries)
+skip: 112.7z (0 entries)
+skip: 114.7z (0 entries)
+skip: 116.7z (0 entries)
+skip: 118.7z (0 entries)
+skip: 12.7z (0 entries)
+skip: 120.7z (0 entries)
+skip: 122.7z (0 entries)
+skip: 124.7z (0 entries)
+skip: 126.7z (0 entries)
+HIT: 128.7z
+Compressed: 59160985
+skip: 130.7z (0 entries)
+skip: 132.7z (0 entries)
+HIT: 134.7z
+Compressed: 11975751
+skip: 136.7z (0 entries)
+HIT: 138.7z
+Compressed: 20341136
+HIT: 14.7z
+Compressed: 10971298
+skip: 140.7z (0 entries)
+skip: 142.7z (0 entries)
+skip: 144.7z (0 entries)
+HIT: 146.7z
+Compressed: 375699
+HIT: 148.7z
+Compressed: 3417299
+HIT: 150.7z
+Compressed: 53631259
+HIT: 152.7z
+Compressed: 3072808
+HIT: 154.7z
+Compressed: 125889230
+HIT: 156.7z
+Compressed: 4102111
+HIT: 158.7z
+Compressed: 4706801
+skip: 16.7z (0 entries)
+HIT: 160.7z
+Compressed: 71182378
+HIT: 162.7z
+Compressed: 542372
+HIT: 164.7z
+Compressed: 1619629
+HIT: 166.7z
+Compressed: 17337360
+HIT: 168.7z
+Compressed: 13425216
+HIT: 170.7z
+Compressed: 8157856
+HIT: 172.7z
+Compressed: 13018627
+HIT: 174.7z
+Compressed: 3637310
+HIT: 176.7z
+Compressed: 309082
+HIT: 178.7z
+Compressed: 2124165
+skip: 18.7z (0 entries)
+HIT: 180.7z
+Compressed: 48317715
+HIT: 182.7z
+Compressed: 1247067
+HIT: 184.7z
+Compressed: 744334
+HIT: 186.7z
+Compressed: 1732880
+HIT: 188.7z
+Compressed: 2063825
+HIT: 190.7z
+Compressed: 27371463
+skip: 192.7z (0 entries)
+skip: 194.7z (0 entries)
+skip: 2.7z (0 entries)
+skip: 20.7z (0 entries)
+HIT: 22.7z
+Compressed: 1794454
+skip: 24.7z (0 entries)
+skip: 26.7z (0 entries)
+skip: 28.7z (0 entries)
+HIT: 30.7z
+Compressed: 990417
+skip: 32.7z (0 entries)
+HIT: 34.7z
+Compressed: 2489853
+HIT: 36.7z
+Compressed: 1836463
+HIT: 38.7z
+Compressed: 702440
+skip: 4.7z (0 entries)
+skip: 40.7z (0 entries)
+HIT: 42.7z
+Compressed: 2743378
+skip: 44.7z (0 entries)
+skip: 46.7z (0 entries)
+skip: 48.7z (0 entries)
+skip: 50.7z (0 entries)
+skip: 52.7z (0 entries)
+skip: 54.7z (0 entries)
+skip: 56.7z (0 entries)
+skip: 58.7z (0 entries)
+skip: 6.7z (0 entries)
+skip: 60.7z (0 entries)
+skip: 62.7z (0 entries)
+skip: 64.7z (0 entries)
+skip: 66.7z (0 entries)
+skip: 68.7z (0 entries)
+skip: 70.7z (0 entries)
+skip: 72.7z (0 entries)
+skip: 74.7z (0 entries)
+skip: 76.7z (0 entries)
+skip: 78.7z (0 entries)
+skip: 8.7z (0 entries)
+skip: 80.7z (0 entries)
+skip: 82.7z (0 entries)
+skip: 84.7z (0 entries)
+skip: 86.7z (0 entries)
+skip: 88.7z (0 entries)
+skip: 90.7z (0 entries)
+skip: 92.7z (0 entries)
+skip: 94.7z (0 entries)
+skip: 96.7z (0 entries)
+skip: 98.7z (0 entries)
+QTBIN=/d/qt571/5.7/mingw53_32/bin
+GCCBIN=/d/qt571/Tools/mingw530_32/bin
+=== toolchain bin ===
+addr2line.exe
+ar.exe
+as.exe
+c++.exe
+c++filt.exe
+cpp.exe
+dlltool.exe
+dllwrap.exe
+dwp.exe
+elfedit.exe
+g++.exe
+gcc-ar.exe
+gcc-nm.exe
+gcc-ranlib.exe
+gcc.exe
+gcov-tool.exe
+gcov.exe
+gdb.exe
+gdborig.exe
+gdbserver.exe
+gendef.exe
+genidl.exe
+genpeimg.exe
+gfortran.exe
+gprof.exe
+i686-w64-mingw32-c++.exe
+i686-w64-mingw32-g++.exe
+i686-w64-mingw32-gcc-5.3.0.exe
+i686-w64-mingw32-gcc-ar.exe
+i686-w64-mingw32-gcc-nm.exe
+i686-w64-mingw32-gcc-ranlib.exe
+i686-w64-mingw32-gcc.exe
+i686-w64-mingw32-gfortran.exe
+ld.bfd.exe
+ld.exe
+ld.gold.exe
+libatomic-1.dll
+libgcc_s_dw2-1.dll
+libgfortran-3.dll
+libgomp-1.dll
+=== gcc -v ===
+Using built-in specs.
+COLLECT_GCC=D:\qt571\Tools\mingw530_32\bin\gcc.exe
+COLLECT_LTO_WRAPPER=D:/qt571/Tools/mingw530_32/bin/../libexec/gcc/i686-w64-mingw32/5.3.0/lto-wrapper.exe
+Target: i686-w64-mingw32
+Configured with: ../../../src/gcc-5.3.0/configure --host=i686-w64-mingw32 --build=i686-w64-mingw32 --target=i686-w64-mingw32 --prefix=/mingw32 --with-sysroot=/c/mingw530/i686-530-posix-dwarf-rt_v4-rev0/mingw32 --with-gxx-include-dir=/mingw32/i686-w64-mingw32/include/c++ --enable-shared --enable-static --disable-multilib --enable-languages=c,c++,fortran,lto --enable-libstdcxx-time=yes --enable-threads=posix --enable-libgomp --enable-libatomic --enable-lto --enable-graphite --enable-checking=release --enable-fully-dynamic-string --enable-version-specific-runtime-libs --disable-sjlj-exceptions --with-dwarf2 --disable-isl-version-check --disable-libstdcxx-pch --disable-libstdcxx-debug --enable-bootstrap --disable-rpath --disable-win32-registry --disable-nls --disable-werror --disable-symvers --with-gnu-as --with-gnu-ld --with-arch=i686 --with-tune=generic --with-libiconv --with-system-zlib --with-gmp=/c/mingw530/prerequisites/i686-w64-mingw32-static --with-mpfr=/c/mingw530/prerequisites/i686-w64-mingw32-static --with-mpc=/c/mingw530/prerequisites/i686-w64-mingw32-static --with-isl=/c/mingw530/prerequisites/i686-w64-mingw32-static --with-pkgversion='i686-posix-dwarf-rev0, Built by MinGW-W64 project' --with-bugurl=http://sourceforge.net/projects/mingw-w64 CFLAGS='-O2 -pipe -I/c/mingw530/i686-530-posix-dwarf-rt_v4-rev0/mingw32/opt/include -I/c/mingw530/prerequisites/i686-zlib-static/include -I/c/mingw530/prerequisites/i686-w64-mingw32-static/include' CXXFLAGS='-O2 -pipe -I/c/mingw530/i686-530-posix-dwarf-rt_v4-rev0/mingw32/opt/include -I/c/mingw530/prerequisites/i686-zlib-static/include -I/c/mingw530/prerequisites/i686-w64-mingw32-static/include' CPPFLAGS= LDFLAGS='-pipe -L/c/mingw530/i686-530-posix-dwarf-rt_v4-rev0/mingw32/opt/lib -L/c/mingw530/prerequisites/i686-zlib-static/lib -L/c/mingw530/prerequisites/i686-w64-mingw32-static/lib -Wl,--large-address-aware'
+=== runtime dll check ===
+present: libstdc++-6.dll
+present: libwinpthread-1.dll
+present: libgcc_s_dw2-1.dll
+MISSING: libiconv-2.dll
+MISSING: libintl-8.dll
+[Paths]
+Prefix=..
+qmake prefix: D:/qt571/5.7/mingw53_32
+seeded /d/qt571/Tools/mingw530_32/bin/../libexec/gcc/i686-w64-mingw32/5.3.0/libwinpthread-1.dll
+seeded /d/qt571/Tools/mingw530_32/bin/../libexec/gcc/i686-w64-mingw32/5.3.0/libstdc++-6.dll
+seeded /d/qt571/Tools/mingw530_32/bin/../libexec/gcc/i686-w64-mingw32/5.3.0/libgcc_s_dw2-1.dll
+seeded /d/qt571/Tools/mingw530_32/bin/../lib/gcc/i686-w64-mingw32/5.3.0/libwinpthread-1.dll
+seeded /d/qt571/Tools/mingw530_32/bin/../lib/gcc/i686-w64-mingw32/5.3.0/libstdc++-6.dll
+seeded /d/qt571/Tools/mingw530_32/bin/../lib/gcc/i686-w64-mingw32/5.3.0/libgcc_s_dw2-1.dll
+=== cc1plus --version ===
+cc1plus_status=0
+=== compile smoke test ===
+compile_status=0
+-rwxr-xr-x 1 runneradmin 197121 46732 Oct 29 22:10 smoke.exe
+run_status=0
+=== configure.log ===
+-- The CXX compiler identification is GNU 5.3.0
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: D:/qt571/Tools/mingw530_32/bin/g++.exe - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- Configuring done (2.6s)
+-- Generating done (0.4s)
+-- Build files have been written to: D:/a/listery/listery/build
+=== selected Qt (from CMakeCache) ===
+Qt5Core_DIR:PATH=D:/qt571/5.7/mingw53_32/lib/cmake/Qt5Core
+=== link command ===
+=== build.log ===
+[1/29] Automatic MOC for target listery_translator
+[2/29] Building CXX object plugins/translator/CMakeFiles/listery_translator.dir/listery_translator_autogen/mocs_compilation.cpp.obj
+[3/29] Building CXX object plugins/translator/CMakeFiles/listery_translator.dir/translator.cpp.obj
+[4/29] Linking CXX shared module plugins\translator.dll
+[5/29] Automatic MOC for target listery
+[6/29] Building CXX object CMakeFiles/listery.dir/src/Core/AppSettings.cpp.obj
+[7/29] Building CXX object CMakeFiles/listery.dir/listery_autogen/mocs_compilation.cpp.obj
+[8/29] Building CXX object CMakeFiles/listery.dir/src/main.cpp.obj
+[9/29] Building CXX object CMakeFiles/listery.dir/src/AppController.cpp.obj
+[10/29] Building CXX object CMakeFiles/listery.dir/src/Core/Database.cpp.obj
+[11/29] Building CXX object CMakeFiles/listery.dir/src/SelfTest.cpp.obj
+[12/29] Building CXX object CMakeFiles/listery.dir/src/Core/SearchService.cpp.obj
+[13/29] Building CXX object CMakeFiles/listery.dir/src/Core/LaunchService.cpp.obj
+[14/29] Building CXX object CMakeFiles/listery.dir/src/Core/Scanner.cpp.obj
+[15/29] Building CXX object CMakeFiles/listery.dir/src/Core/UsageRecorder.cpp.obj
+[16/29] Building CXX object CMakeFiles/listery.dir/src/Core/Pinyin.cpp.obj
+[17/29] Building CXX object CMakeFiles/listery.dir/src/Core/SearchEngine.cpp.obj
+[18/29] Building CXX object CMakeFiles/listery.dir/src/Core/PinyinData.cpp.obj
+[19/29] Building CXX object CMakeFiles/listery.dir/src/Core/Updater.cpp.obj
+FAILED: [code=1] CMakeFiles/listery.dir/src/Core/Updater.cpp.obj 
+D:\qt571\Tools\mingw530_32\bin\g++.exe -DLISTERY_VERSION=\"1.3.0\" -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_SQL_LIB -DQT_WIDGETS_LIB -ID:/a/listery/listery/build -ID:/a/listery/listery -ID:/a/listery/listery/build/listery_autogen/include -ID:/a/listery/listery/src -ID:/a/listery/listery/sdk -isystem D:/qt571/5.7/mingw53_32/include -isystem D:/qt571/5.7/mingw53_32/include/QtWidgets -isystem D:/qt571/5.7/mingw53_32/include/QtGui -isystem D:/qt571/5.7/mingw53_32/include/QtCore -isystem D:/qt571/5.7/mingw53_32/./mkspecs/win32-g++ -isystem D:/qt571/5.7/mingw53_32/include/QtSql -isystem D:/qt571/5.7/mingw53_32/include/QtNetwork -O3 -DNDEBUG -std=c++14 -Wall -Wextra -Wno-unused-parameter -MD -MT CMakeFiles/listery.dir/src/Core/Updater.cpp.obj -MF CMakeFiles\listery.dir\src\Core\Updater.cpp.obj.d -o CMakeFiles/listery.dir/src/Core/Updater.cpp.obj -c D:/a/listery/listery/src/Core/Updater.cpp
+D:/a/listery/listery/src/Core/Updater.cpp: In member function 'void Updater::onFinished(QNetworkReply*)':
+D:/a/listery/listery/src/Core/Updater.cpp:91:16: error: 'unique_ptr' in namespace 'std' does not name a template type
+     const std::unique_ptr<QNetworkReply> guard(reply); // 调用结束后自动释放
+                ^
+[20/29] Building CXX object CMakeFiles/listery.dir/src/Platform/Autostart.cpp.obj
+[21/29] Building CXX object CMakeFiles/listery.dir/src/Platform/HotkeyHook.cpp.obj
+[22/29] Building CXX object CMakeFiles/listery.dir/src/Core/PluginHost.cpp.obj
+[23/29] Building CXX object CMakeFiles/listery.dir/src/Platform/Branding.cpp.obj
+[24/29] Building CXX object CMakeFiles/listery.dir/src/Platform/WindowUtils.cpp.obj
+[25/29] Building CXX object CMakeFiles/listery.dir/src/Ui/ResultModel.cpp.obj
+[26/29] Building CXX object CMakeFiles/listery.dir/src/Ui/ResultDelegate.cpp.obj
+[27/29] Building CXX object CMakeFiles/listery.dir/src/Ui/LauncherWindow.cpp.obj
+[28/29] Building CXX object CMakeFiles/listery.dir/src/Ui/SettingsDialog.cpp.obj
+ninja: build stopped: cannot make progress due to previous errors.
+=== deploy.log ===
+cat: deploy.log: No such file or directory
+=== installer.log ===
+cat: installer.log: No such file or directory
