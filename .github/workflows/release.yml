@@ -100,12 +100,27 @@ jobs:
           ./linuxdeployqt.AppImage --appimage-extract >/dev/null
           mkdir -p app/usr/bin
           cp build/listery app/usr/bin/
+          # 生成 256x256 App 图标（desktop 文件引用的图标必须真实存在，否则 linuxdeployqt 拒绝打包）
+          python3 - <<'PY'
+          import struct, zlib
+          def chunk(t, data):
+              c = t + data
+              return struct.pack('>I', len(data)) + c + struct.pack('>I', zlib.crc32(c))
+          w = h = 256
+          raw = b''.join(b'\x00' + b'\x3d\x7c\xff' * w for _ in range(h))
+          png = (b'\x89PNG\r\n\x1a\n'
+                 + chunk(b'IHDR', struct.pack('>IIBBBBB', w, h, 8, 2, 0, 0, 0))
+                 + chunk(b'IDAT', zlib.compress(raw))
+                 + chunk(b'IEND', b''))
+          open('app/listery.png', 'wb').write(png)
+          PY
           cat > app/listery.desktop <<'EOF'
           [Desktop Entry]
           Type=Application
           Name=Listery
+          Comment=Quick launcher
           Exec=listery
-          Icon=utilities-terminal
+          Icon=listery
           Categories=Utility;
           EOF
           VERSION=1.0.0 ./squashfs-root/AppRun app/usr/bin/listery -appimage -no-translations
