@@ -66,7 +66,7 @@ void trimLog(const QString &path, int keepDays)
     file.close();
 
     const QStringList lines = QString::fromUtf8(content).split(QLatin1Char('\n'),
-                                                              QString::SkipEmptyParts);
+                                                              LISTERY_SKIP_EMPTY_PARTS);
     if (lines.isEmpty())
         return;
 

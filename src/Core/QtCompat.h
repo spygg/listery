@@ -88,3 +88,14 @@ inline void listerySetWindowFlag(WidgetT *widget, Qt::WindowType flag, bool on =
                               : (widget->windowFlags() & ~Qt::WindowFlags(flag)));
 #endif
 }
+
+// QString::SkipEmptyParts 在 Qt 5.14 移入 Qt 命名空间（Qt::SkipEmptyParts），
+// Qt 6 直接删除了 QString::SkipEmptyParts。本项目需兼容：
+//   - Windows XP 的 Qt 5.7.1（只有 QString::SkipEmptyParts）
+//   - macOS 的 Qt 6.x（只有 Qt::SkipEmptyParts）
+// 用宏统一，避免每个调用点写版本守卫。
+#if QT_VERSION >= QT_VERSION_CHECK(5, 14, 0)
+    #define LISTERY_SKIP_EMPTY_PARTS Qt::SkipEmptyParts
+#else
+    #define LISTERY_SKIP_EMPTY_PARTS QString::SkipEmptyParts
+#endif

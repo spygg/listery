@@ -1,4 +1,5 @@
 #include "Core/Updater.h"
+#include "Core/QtCompat.h"
 
 #ifndef LISTERY_VERSION
 #define LISTERY_VERSION "0.0.0"
@@ -11,13 +12,14 @@
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QUrl>
+#include <memory>
 
 namespace {
 /** 把 "1.2.0" 拆成数字段，便于逐段比较。 */
 QVector<int> parseVersionParts(const QString &version)
 {
     QVector<int> parts;
-    for (const QString &piece : version.split(QLatin1Char('.'), QString::SkipEmptyParts)) {
+    for (const QString &piece : version.split(QLatin1Char('.'), LISTERY_SKIP_EMPTY_PARTS)) {
         bool ok = false;
         const int value = piece.toInt(&ok);
         parts.append(ok ? value : 0);
