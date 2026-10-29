@@ -136,6 +136,15 @@ jobs:
             for f in libstdc++-6.dll libwinpthread-1.dll libgcc_s_dw2-1.dll libiconv-2.dll libintl-8.dll; do
               [ -f "$GCCBIN/$f" ] && echo "present: $f" || echo "MISSING: $f"
             done
+            # cc1plus/collect2 等位于 libexec 目录，运行时按「程序目录 → PATH」查找
+            # libwinpthread-1.dll；PATH 里 Git 自带的 64 位同名 DLL 会让 32 位
+            # cc1plus 静默加载失败，因此把运行库复制到程序目录（优先级最高）
+            for d in "$GCCBIN/../libexec/gcc/i686-w64-mingw32/5.3.0" \
+                     "$GCCBIN/../lib/gcc/i686-w64-mingw32/5.3.0"; do
+              for f in libwinpthread-1.dll libstdc++-6.dll libgcc_s_dw2-1.dll; do
+                cp "$GCCBIN/$f" "$d/$f" 2>/dev/null && echo "seeded $d/$f"
+              done
+            done
             # 当前步骤内 GITHUB_PATH 尚未生效，先显式把工具链放进 PATH 再验证
             export PATH="$GCCBIN:$QTBIN:$PATH"
             echo "=== cc1plus --version ==="
