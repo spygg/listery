@@ -217,6 +217,9 @@ jobs:
       - name: Build installer (Windows)
         if: matrix.config.name == 'Windows'
         shell: pwsh
+        env:
+          # 版本号直接走环境变量：run 块里就不再出现 ${{ }} 表达式
+          REF_NAME: ${{ github.ref_name }}
         run: |
           $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
           if (-not (Test-Path $iscc)) {
@@ -225,8 +228,8 @@ jobs:
             $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
           }
           if (-not (Test-Path $iscc)) { Write-Host "::error::ISCC.exe not available"; exit 1 }
-          $version = "${{ github.ref_name }}" -replace '^v',''
-          if ([string]::IsNullOrWhiteSpace($version) -or $version.StartsWith('${{')) { $version = '1.0.0' }
+          $version = $env:REF_NAME -replace '^v',''
+          if ([string]::IsNullOrWhiteSpace($version)) { $version = '1.0.0' }
           Write-Host "=== building installer, version=$version ==="
           & $iscc "installer\windows\listery.iss" "/DMyAppVersion=$version" 2>&1 | Tee-Object -FilePath installer.log
           if ($LASTEXITCODE -ne 0) { Write-Host "::error::ISCC failed"; exit 1 }
