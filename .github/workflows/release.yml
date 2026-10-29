@@ -213,16 +213,26 @@ jobs:
           {
             # 冒烟测试：确认 Qt 5.7 运行库能加载、核心逻辑正常
             QT_QPA_PLATFORM=offscreen ./build/listery.exe --selftest | tail -5 || true
-            windeployqt --release --no-translations build/listery.exe
+            mkdir -p dist-xp
+            cp build/listery.exe dist-xp/
+            windeployqt --release --no-translations --no-compiler-runtime dist-xp/listery.exe
+            echo "windeployqt_status=$?"
             GCCBIN=$(dirname "$(command -v g++.exe)")
             # MinGW 运行库随包（避免目标机缺 DLL）
             for f in libgcc_s_sjlj-1.dll libgcc_s_dw2-1.dll libstdc++-6.dll libwinpthread-1.dll; do
-              cp "$GCCBIN/$f" build/ 2>/dev/null && echo "copied $f"
+              cp "$GCCBIN/$f" dist-xp/ 2>/dev/null && echo "copied $f"
             done
-            ls build
-            cd build && 7z a -tzip ../listery-windows-xp.zip . > /dev/null
+            ls -la dist-xp
+            ls -la dist-xp/platforms dist-xp/sqldrivers 2>&1 | head -20
+            # 必须带上 Qt 运行库与平台插件，否则产物不可用（用文件传状态，管道里变量传不出来）
+            ok=1
+            [ -f dist-xp/Qt5Core.dll ] || ok=0
+            [ -f dist-xp/listery.exe ] || ok=0
+            [ -d dist-xp/platforms ] || ok=0
+            echo "$ok" > dist_ok
+            cd dist-xp && 7z a -tzip ../listery-windows-xp.zip . > /dev/null
           } 2>&1 | tee deploy.log
-          test -f listery-windows-xp.zip
+          test -f listery-windows-xp.zip && test "$(cat dist_ok)" = "1"
 
       # ---------- Linux ----------
       - name: Deploy (Linux)
