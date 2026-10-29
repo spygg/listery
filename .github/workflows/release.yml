@@ -37,8 +37,11 @@ jobs:
           # macOS 用 Qt 6.8：Qt 5.15.2 的 macdeployqt 无法解析新版 Xcode 的 otool
           # 输出（"Could not parse otool output"），Qt 6 的 macdeployqt 正常；
           # 代码已通过 QT_VERSION_CHECK 宏兼容 Qt6，CMake 会自动选用 Qt6
+          # macos-latest 已升级 macOS 26/Xcode 26，其 SDK 移除了 AGL framework，
+          # 而 Qt 6.8.3 的 QtGui 仍链接 -framework AGL，导致链接失败；
+          # 固定 macos-15（Xcode 16，SDK 仍带 AGL）
           - name: macOS
-            os: macos-latest
+            os: macos-15
             qt: '6.8.3'
             host: mac
             target: desktop
