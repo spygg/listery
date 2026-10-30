@@ -46,6 +46,10 @@ public:
     bool isStopping() const;
 
     static QStringList availableRoots(bool includeRemovable);
+    /** 当前用户的 AppData\Local 与 AppData\Roaming（仅 Windows 有意义，其余平台返回空）。
+     *  大量用户级应用（豆包、Discord、VS Code 等）装在这里，而这些目录是隐藏目录，
+     *  全盘遍历进不去，所以作为显式扫描根单独扫。 */
+    static QStringList userAppDataRoots();
     /** locate 是否可用（仅 Unix）：用于向用户解释为什么这一轮这么快。 */
     static bool locateAvailable();
 
@@ -57,7 +61,9 @@ protected:
     void run() override;
 
 private:
-    void scanDirectory(const QString &path, int depth, Database &db);
+    /** depth 是当前目录层级（从 0 起），maxDepth 为允许下钻的最大层级，超过即停止递归。
+     *  对开始菜单 / AppData 这类隐藏根使用较小的 maxDepth，避免掉进浏览器的深层缓存树里。 */
+    void scanDirectory(const QString &path, int depth, Database &db, int maxDepth = 64);
     bool isSkippedDirectory(const QString &name) const;
     bool isSkippedPath(const QString &path) const;
     void emitProgress(const QString &root, bool force = false);

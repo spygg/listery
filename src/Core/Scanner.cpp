@@ -24,7 +24,11 @@
 #endif
 
 namespace {
-const int kMaxDepth = 64;
+/** 开始菜单 / AppData 这类隐藏根允许下钻的最大层级。
+ *  它们位于隐藏目录下，全盘遍历进不去，必须单独扫；但 AppData 里嵌套着浏览器缓存、
+ *  包管理缓存等极深的目录树，限定层级既能找到绝大多数用户级程序（通常 1~3 层），
+ *  又不会在缓存目录里无谓地狂扫。 */
+const int kHiddenRootMaxDepth = 6;
 /** locate 单次输出的上限，防止异常环境返回几十万行把内存吃光。 */
 const int kLocateLineLimit = 200000;
 
@@ -70,6 +74,29 @@ QStringList locateDatabasePaths()
 }
 #endif
 } // namespace
+
+#ifdef Q_OS_WIN
+/** 当前用户的 AppData\Local 与 AppData\Roaming。
+ *  大量用户级应用（豆包、Discord、VS Code、各类便携软件）直接装在这里，而这些目录是
+ *  隐藏目录，全盘遍历的 QDir::Dirs 过滤不会进入，开始菜单里又往往没有它们的快捷方式，
+ *  所以必须作为显式扫描根单独扫。Roaming 与 Local 是两个并列目录，都要扫。 */
+QStringList Scanner::userAppDataRoots()
+{
+    QStringList roots;
+    const QString local = qEnvironmentVariable("LOCALAPPDATA");
+    if (!local.isEmpty())
+        roots.append(QDir::toNativeSeparators(local));
+    const QString roaming = qEnvironmentVariable("APPDATA");
+    if (!roaming.isEmpty())
+        roots.append(QDir::toNativeSeparators(roaming));
+    return roots;
+}
+#else
+QStringList Scanner::userAppDataRoots()
+{
+    return QStringList();
+}
+#endif
 
 Scanner::Scanner(const QString &databasePath,
                  const QStringList &extensions,
@@ -242,15 +269,19 @@ void Scanner::run()
     m_usedLocate = !m_deep && scanViaLocate(roots, db);
 
     if (!m_usedLocate) {
-        // 开始菜单位于隐藏目录（ProgramData / AppData）下，全盘遍历的 QDir::Dirs 过滤不会进入，
-        // 但那里的快捷方式恰恰是最常用的入口，单独扫一遍
-        const QStringList menus = m_volumes.isEmpty() ? startMenuRoots() : QStringList();
-        for (const QString &menu : menus) {
+        // 开始菜单与 AppData 都在隐藏目录（ProgramData / AppData）下，全盘遍历进不去，
+        // 但那里恰恰装着大量用户级应用（豆包、Discord、VS Code、各类便携软件），单独扫一遍。
+        // 这些隐藏根都位于某个固定卷（通常是 C:\）之内，随全盘扫描一起被扫、一起纳入下方
+        // removeStale 的卷前缀清理——重扫 C:\ 时会重新给它们打上当前 generation，因此不会被误删。
+        const QStringList hiddenRoots = m_volumes.isEmpty()
+            ? (startMenuRoots() + userAppDataRoots())
+            : QStringList();
+        for (const QString &hidden : hiddenRoots) {
             if (isStopping())
                 break;
-            m_currentRoot = menu;
-            emitProgress(menu, true);
-            scanDirectory(menu, 0, db);
+            m_currentRoot = hidden;
+            emitProgress(hidden, true);
+            scanDirectory(hidden, 0, db, kHiddenRootMaxDepth);
         }
 
         for (const QString &root : roots) {
@@ -399,9 +430,9 @@ bool Scanner::scanViaLocate(const QStringList &roots, Database &db)
 #endif
 }
 
-void Scanner::scanDirectory(const QString &path, int depth, Database &db)
+void Scanner::scanDirectory(const QString &path, int depth, Database &db, int maxDepth)
 {
-    if (isStopping() || depth > kMaxDepth)
+    if (isStopping() || depth > maxDepth)
         return;
 
     QDir dir(path);

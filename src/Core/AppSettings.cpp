@@ -40,6 +40,7 @@ QStringList defaultSkipPatterns()
                          << QStringLiteral("SoftwareDistribution")
                          << QStringLiteral("DriverStore")
                          << QStringLiteral("WindowsApps")
+                         << QStringLiteral("Packages")
                          << QStringLiteral("Temp")
                          << QStringLiteral("__pycache__");
 }

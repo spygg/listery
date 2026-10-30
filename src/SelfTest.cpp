@@ -397,6 +397,56 @@ int SelfTest::run()
               QStringLiteral("当前版本 %1 不低于 0.0.1").arg(Updater::currentVersion()));
     }
 
+    // ---- 8. AppData 隐藏目录扫描：用户级应用（豆包等）装在 AppData\Local，
+    //        这些目录是隐藏目录，全盘遍历进不去、开始菜单又没它们的快捷方式，
+    //        必须通过 userAppDataRoots() 显式扫描。这是用户真实反馈“搜 doublao 找不到豆包”的根因。
+    {
+        QTemporaryDir appDataDir;
+        const QString appDataRoot = appDataDir.path();
+        // 模拟 C:\Users\<user>\AppData\Local\Doubao\Application\Doubao.exe
+        const QString doubaoPath = appDataRoot
+            + QStringLiteral("/Doubao/Application/Doubao.exe");
+        QDir().mkpath(QFileInfo(doubaoPath).absolutePath());
+        check(writeStub(doubaoPath), QStringLiteral("写入模拟豆包可执行文件"));
+
+        const QString adDbPath = appDataDir.path() + QStringLiteral("/ad.db");
+        const QStringList adExts = QStringList() << QStringLiteral("exe");
+        Scanner adScanner(adDbPath, adExts, QStringList(), false, 11,
+                          QStringList() << appDataRoot);
+        adScanner.start();
+        check(adScanner.wait(20000), QStringLiteral("AppData 模拟扫描线程完成"));
+
+        Database adDb(adDbPath);
+        QString adErr;
+        check(adDb.open(&adErr), QStringLiteral("打开 AppData 测试库：%1").arg(adErr));
+        SearchEngine adEngine(&adDb);
+
+        // 完整检索链路：与用户实际输入一致，“doubao” 必须命中深藏在 AppData 下的 Doubao.exe
+        const QVector<SearchResult> doubaoHits = adEngine.search(QStringLiteral("doubao"), 10);
+        bool found = false;
+        for (const SearchResult &r : doubaoHits)
+            if (r.record.displayName == QStringLiteral("Doubao.exe"))
+                found = true;
+        check(found, QStringLiteral("搜 doubao 命中 AppData 下的 Doubao.exe"));
+
+        // userAppDataRoots() 在 Windows 上应返回 Local / Roaming，其余平台返回空
+#ifdef Q_OS_WIN
+        const QStringList appDataRoots = Scanner::userAppDataRoots();
+        bool hasLocal = false;
+        for (const QString &r : appDataRoots) {
+            const QString tail = QDir::toNativeSeparators(r);
+            if (tail.endsWith(QStringLiteral("AppData\\Local"), Qt::CaseInsensitive)
+                || tail.endsWith(QStringLiteral("AppData\\Roaming"), Qt::CaseInsensitive))
+                hasLocal = true;
+        }
+        check(!appDataRoots.isEmpty() && hasLocal,
+              QStringLiteral("userAppDataRoots() 返回本地 AppData（%1 条）").arg(appDataRoots.size()));
+#else
+        check(Scanner::userAppDataRoots().isEmpty(),
+              QStringLiteral("非 Windows 平台 userAppDataRoots() 返回空"));
+#endif
+    }
+
     // ---- 4. 空查询按最近使用 ----
     const QVector<SearchResult> recentHits = engine.search(QString(), 5);
     check(!recentHits.isEmpty(),
