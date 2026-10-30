@@ -1,0 +1,3 @@
+// Listery 可执行文件图标（Windows）。被 CMake 在 WIN32 下编进 listery.exe，
+// 使资源管理器/任务栏/快捷方式显示正式图标，而非空白 exe。
+IDI_ICON1 ICON DISCARDABLE "appicon.ico"

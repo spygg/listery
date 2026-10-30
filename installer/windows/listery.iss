@@ -37,6 +37,8 @@ WizardResizable=yes
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 ArchitecturesAllowed=x64
+; 安装包自身与卸载程序图标（程序快捷方式会自动沿用 exe 内嵌图标）
+SetupIconFile=..\..\src\resources\appicon.ico
 UninstallDisplayName={#MyAppName} {#MyAppVersion}
 CloseApplications=yes
 RestartApplications=no

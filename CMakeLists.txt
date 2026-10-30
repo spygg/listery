@@ -76,6 +76,11 @@ set(PROJECT_SOURCES
 
 add_executable(listery ${PROJECT_SOURCES})
 
+# Windows 下把正式图标编进 exe（资源管理器/任务栏显示，而非空白 exe）
+if(WIN32)
+    target_sources(listery PRIVATE src/resources/appicon.rc)
+endif()
+
 set_target_properties(listery PROPERTIES
     WIN32_EXECUTABLE TRUE
     MACOSX_BUNDLE FALSE

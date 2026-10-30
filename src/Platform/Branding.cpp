@@ -1,34 +1,23 @@
 #include "Platform/Branding.h"
 
-#include <QLinearGradient>
-#include <QPainter>
 #include <QPixmap>
 
 namespace Branding {
 
 QIcon appIcon()
 {
-    QPixmap pixmap(64, 64);
-    pixmap.fill(Qt::transparent);
-
-    QPainter painter(&pixmap);
-    painter.setRenderHint(QPainter::Antialiasing, true);
-
-    QLinearGradient gradient(0, 0, 64, 64);
-    gradient.setColorAt(0.0, QColor(0x3D, 0x7C, 0xFF));
-    gradient.setColorAt(1.0, QColor(0x1C, 0x46, 0xC8));
-
-    painter.setPen(Qt::NoPen);
-    painter.setBrush(gradient);
-    painter.drawRoundedRect(QRectF(3, 3, 58, 58), 15, 15);
-
-    painter.setBrush(Qt::NoBrush);
-    painter.setPen(QPen(Qt::white, 4.2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-    painter.drawEllipse(QPointF(27, 27), 11, 11);
-    painter.drawLine(QPointF(35.5, 35.5), QPointF(46, 46));
-    painter.end();
-
-    return QIcon(pixmap);
+    // 预渲染多个原生尺寸，保证窗口/托盘在任意 DPI 下都清晰（不依赖运行时缩放）
+    static const int sizes[] = {16, 20, 24, 32, 40, 48, 64, 128, 256, 512};
+    QIcon icon;
+    for (int s : sizes) {
+        QPixmap pixmap(s, s);
+        pixmap.fill(Qt::transparent);
+        QPainter painter(&pixmap);
+        paintListeryIcon(&painter, pixmap.size());
+        painter.end();
+        icon.addPixmap(pixmap);
+    }
+    return icon;
 }
 
 } // namespace Branding
