@@ -230,11 +230,16 @@ LRESULT CALLBACK lowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
             const bool isCtrl = (vk == VK_LCONTROL || vk == VK_RCONTROL || vk == VK_CONTROL);
             const bool isDown = (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN);
 
+            bool consume = false;
             if (isDown) {
                 const int key = windowsKeyToQt(vk);
                 if (key != 0) {
                     const QString hit = matchHotkey(currentModifiers(), key);
                     if (!hit.isEmpty()) {
+                        // 命中插件热键（如 Alt+E）：吞掉这次按键，避免 e 等字符落到
+                        // 当前聚焦的输入框。注意只吞「最终按键」，修饰键（Ctrl/Alt/Shift）
+                        // 仍放行，否则会破坏其它应用的正常组合键（如 Ctrl+C）。
+                        consume = true;
                         QMetaObject::invokeMethod(g_hook, "emitHotkey", Qt::QueuedConnection,
                                                   Q_ARG(QString, hit));
                     }
@@ -246,6 +251,9 @@ LRESULT CALLBACK lowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
                 if (g_detector.handleKey(isCtrl, isDown, monotonicMilliseconds()))
                     QMetaObject::invokeMethod(g_hook, "emitActivated", Qt::QueuedConnection);
             }
+
+            if (consume)
+                return 1; // 拦截：命中插件的按键不再传给目标窗口
         }
     }
     return CallNextHookEx(nullptr, nCode, wParam, lParam);
