@@ -50,6 +50,10 @@ public:
      *  大量用户级应用（豆包、Discord、VS Code 等）装在这里，而这些目录是隐藏目录，
      *  全盘遍历进不去，所以作为显式扫描根单独扫。 */
     static QStringList userAppDataRoots();
+    /** 这一轮要扫的卷里，有哪些隐藏根（开始菜单、AppData）需要一并扫。
+     *  隐藏根位于卷之内，但它本身是隐藏目录，全盘遍历进不去；定时重扫只扫到期的卷，
+     *  若不同时扫这些隐藏根，它们拿不到当前 generation，会被 removeStale 误删。 */
+    static QStringList hiddenRootsFor(const QStringList &volumes);
     /** locate 是否可用（仅 Unix）：用于向用户解释为什么这一轮这么快。 */
     static bool locateAvailable();
 
@@ -81,6 +85,8 @@ private:
     QStringList m_extensions;
     QSet<QString> m_extensionSet;
     QStringList m_skipPatterns;
+    /** m_skipPatterns 的小写副本：每层目录都要比对一遍，现算 toLower 是白扔分配。 */
+    QStringList m_skipPatternsLower;
     bool m_includeRemovable = true;
     qint64 m_generation = 0;
     QStringList m_volumes;

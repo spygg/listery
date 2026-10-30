@@ -447,6 +447,24 @@ int SelfTest::run()
 #endif
     }
 
+    // ---- 8b. 定时重扫必须带上隐藏根 ----
+    // 定时重扫只扫「到期的那几个卷」（Scanner 的 m_volumes 非空）。隐藏根若不同时扫，
+    // 这一轮拿不到当前 generation，会被 removeStale 按卷前缀当成失效记录删掉——
+    // 表现是豆包这类只有 exe、没有快捷方式的程序，装完能搜到，第一次定时刷新后就消失了。
+#ifdef Q_OS_WIN
+    {
+        const QStringList appData = Scanner::userAppDataRoots();
+        const QString volume = appData.isEmpty() ? QString() : appData.first().left(3);
+        const QStringList underVolume = volume.isEmpty()
+            ? QStringList()
+            : Scanner::hiddenRootsFor(QStringList() << QDir::toNativeSeparators(volume));
+        check(!appData.isEmpty() && underVolume.contains(appData.first()),
+              QStringLiteral("按卷重扫时带上 AppData 隐藏根（共 %1 条）").arg(underVolume.size()));
+        check(Scanner::hiddenRootsFor(QStringList() << QStringLiteral("Q:/")).isEmpty(),
+              QStringLiteral("卷不在本轮范围内时不返回任何隐藏根"));
+    }
+#endif
+
     // ---- 4. 空查询按最近使用 ----
     const QVector<SearchResult> recentHits = engine.search(QString(), 5);
     check(!recentHits.isEmpty(),

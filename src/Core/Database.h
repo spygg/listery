@@ -84,6 +84,10 @@ public:
      */
     int removeStale(qint64 generation, const QStringList &volumes, qint64 keepNewerThan,
                     QString *errorMessage = nullptr);
+    /** 删掉使用统计里已经不在索引中的孤儿记录。
+     *  使用统计表没有外键约束，程序卸载后它的统计行会一直留着；而“常用程序先入候选”
+     *  只取频次最高的前 400 条，孤儿行占住名额就会把真正在用的程序挤出候选区。 */
+    int pruneOrphanUsage();
     int totalCount() const;
     bool clearAll();
 

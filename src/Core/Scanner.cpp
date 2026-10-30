@@ -73,6 +73,25 @@ QStringList locateDatabasePaths()
         << QStringLiteral("/var/db/locate.database");
 }
 #endif
+
+/** path 是否位于 root 之下。两者都换成原生分隔符；Windows 上盘符大小写不敏感。 */
+bool isUnderRoot(const QString &path, const QString &root)
+{
+    if (path.isEmpty() || root.isEmpty())
+        return false;
+
+    QString prefix = QDir::toNativeSeparators(root);
+    const QChar last = prefix.at(prefix.size() - 1);
+    if (last != QLatin1Char('/') && last != QLatin1Char('\\'))
+        prefix.append(QDir::toNativeSeparators(QStringLiteral("/")));
+
+    const QString native = QDir::toNativeSeparators(path);
+#ifdef Q_OS_WIN
+    return native.startsWith(prefix, Qt::CaseInsensitive);
+#else
+    return native.startsWith(prefix);
+#endif
+}
 } // namespace
 
 #ifdef Q_OS_WIN
@@ -98,6 +117,24 @@ QStringList Scanner::userAppDataRoots()
 }
 #endif
 
+QStringList Scanner::hiddenRootsFor(const QStringList &volumes)
+{
+    const QStringList candidates = startMenuRoots() + userAppDataRoots();
+    if (candidates.isEmpty())
+        return QStringList();
+
+    QStringList roots;
+    for (const QString &candidate : candidates) {
+        for (const QString &volume : volumes) {
+            if (isUnderRoot(candidate, volume)) {
+                roots.append(candidate);
+                break;
+            }
+        }
+    }
+    return roots;
+}
+
 Scanner::Scanner(const QString &databasePath,
                  const QStringList &extensions,
                  const QStringList &skipPatterns,
@@ -117,6 +154,10 @@ Scanner::Scanner(const QString &databasePath,
 {
     for (const QString &ext : m_extensions)
         m_extensionSet.insert(ext.toLower());
+
+    m_skipPatternsLower.reserve(m_skipPatterns.size());
+    for (const QString &pattern : m_skipPatterns)
+        m_skipPatternsLower.append(pattern.toLower());
 
     // 开始菜单 / 桌面上的快捷方式就是最常用的启动入口，不受扩展名设置影响，始终索引
     m_extensionSet.insert(QStringLiteral("lnk"));
@@ -271,12 +312,12 @@ void Scanner::run()
     if (!m_usedLocate) {
         // 开始菜单与 AppData 都在隐藏目录（ProgramData / AppData）下，全盘遍历进不去，
         // 但那里恰恰装着大量用户级应用（豆包、Discord、VS Code、各类便携软件），单独扫一遍。
-        // 这些隐藏根都位于某个固定卷（通常是 C:\）之内，随全盘扫描一起被扫、一起纳入下方
-        // removeStale 的卷前缀清理——重扫 C:\ 时会重新给它们打上当前 generation，因此不会被误删。
-        const QStringList hiddenRoots = m_volumes.isEmpty()
-            ? (startMenuRoots() + userAppDataRoots())
-            : QStringList();
-        for (const QString &hidden : hiddenRoots) {
+        //
+        // 关键：定时重扫只针对「到期的那几个卷」（m_volumes 非空），这时候也必须把落在这些卷
+        // 里的隐藏根一起扫。否则这些记录拿不到当前 generation，会被下面的 removeStale 当成
+        // 失效记录删掉——表现就是豆包这类只有 exe、没有快捷方式的程序，装完能搜到，
+        // 第一次定时刷新之后就凭空消失了。
+        for (const QString &hidden : hiddenRootsFor(roots)) {
             if (isStopping())
                 break;
             m_currentRoot = hidden;
@@ -307,6 +348,8 @@ void Scanner::run()
         removed = db.removeStale(m_generation, roots, m_usedLocate ? m_locateDbMtime : 0, &error);
         if (removed < 0)
             m_error = QStringLiteral("清理旧索引失败：%1").arg(error);
+        // 顺手清掉已卸载程序残留的使用统计，否则它们会长期占住“常用程序”候选名额
+        db.pruneOrphanUsage();
     }
 
     // 只有完整跑完且清理成功才算“已更新”；取消或失败时索引是半新半旧的
@@ -458,7 +501,9 @@ void Scanner::scanDirectory(const QString &path, int depth, Database &db, int ma
             if (isSkippedDirectory(name))
                 continue;
             ++m_directories;
-            scanDirectory(info.absoluteFilePath(), depth + 1, db);
+            // maxDepth 必须一路带下去：漏传会退化成默认的 64 层，
+            // AppData 底下那些深层缓存树就又被整棵翻一遍了
+            scanDirectory(info.absoluteFilePath(), depth + 1, db, maxDepth);
             emitProgress(m_currentRoot);
             continue;
         }
@@ -517,9 +562,11 @@ bool Scanner::ingestFile(const QFileInfo &info, Database &db, bool allowExtensio
 
 bool Scanner::isSkippedDirectory(const QString &name) const
 {
+    if (m_skipPatternsLower.isEmpty())
+        return false;
     const QString lower = name.toLower();
-    for (const QString &pattern : m_skipPatterns) {
-        if (QDir::match(pattern.toLower(), lower))
+    for (const QString &pattern : m_skipPatternsLower) {
+        if (QDir::match(pattern, lower))
             return true;
     }
     return false;

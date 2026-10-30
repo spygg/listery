@@ -471,6 +471,22 @@ int Database::removeStale(qint64 generation, const QStringList &volumes, qint64 
     return query.numRowsAffected();
 }
 
+int Database::pruneOrphanUsage()
+{
+    if (!isOpen())
+        return 0;
+
+    QSqlQuery query(*m_db);
+    // 索引清空时不要连带把使用历史全抹掉（那多半是库损坏后重建，统计本身还有价值）
+    if (totalCount() == 0)
+        return 0;
+    if (!query.exec(QStringLiteral(
+            "DELETE FROM usage_stats WHERE path NOT IN (SELECT path FROM executables)"))) {
+        return 0;
+    }
+    return query.numRowsAffected();
+}
+
 VolumeStat Database::volumeStat(const QString &root) const
 {
     VolumeStat stat;
