@@ -203,7 +203,12 @@ jobs:
             New-Item -ItemType Directory -Force -Path build\Release\plugins | Out-Null
             $pluginDll = Get-ChildItem build\plugins -Recurse -Filter translator.dll | Select-Object -First 1
             if ($pluginDll) { Copy-Item $pluginDll.FullName build\Release\plugins\ } else { Write-Host "WARN: translator.dll not found" }
-            $redist = (Get-ChildItem "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Redist\MSVC" -Recurse -Filter vcruntime140.dll | Select-Object -First 1).DirectoryName
+            # 仅从 x64 子目录取运行库：GitHub 的 Windows runner 可能是 ARM64 架构，
+            # 用 -Recurse 直接搜会把 ARM64 版 vcruntime140.dll 也收进来，导致 x64 应用
+            # 加载到 ARM64 运行库而启动失败（0xC000007B）。应用与 Qt 均为 x64，必须配对。
+            $msvcRoot = "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Redist\MSVC"
+            $verDir = Get-ChildItem $msvcRoot -Directory | Sort-Object Name | Select-Object -Last 1
+            $redist = (Get-ChildItem "$($verDir.FullName)\x64" -Recurse -Filter vcruntime140.dll | Select-Object -First 1).DirectoryName
             if ($redist) {
               Copy-Item "$redist\vcruntime140.dll"      build\Release\
               Copy-Item "$redist\msvcp140.dll"          build\Release\
