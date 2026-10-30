@@ -1,5 +1,6 @@
 #include "Core/LaunchService.h"
 
+#include <QCoreApplication>
 #include <QDesktopServices>
 #include <QDir>
 #include <QFileInfo>
@@ -21,20 +22,20 @@ QString shellErrorText(int code)
 {
     switch (code) {
     case 0:
-        return QStringLiteral("系统资源不足，无法启动该程序");
+        return QCoreApplication::translate("LaunchService", "系统资源不足，无法启动该程序");
     case ERROR_FILE_NOT_FOUND:
-        return QStringLiteral("文件不存在，可能已被移动或删除");
+        return QCoreApplication::translate("LaunchService", "文件不存在，可能已被移动或删除");
     case ERROR_PATH_NOT_FOUND:
-        return QStringLiteral("路径不存在");
+        return QCoreApplication::translate("LaunchService", "路径不存在");
     case ERROR_ACCESS_DENIED:
-        return QStringLiteral("没有权限启动该程序（可尝试以管理员身份运行）");
+        return QCoreApplication::translate("LaunchService", "没有权限启动该程序（可尝试以管理员身份运行）");
     case ERROR_BAD_FORMAT:
-        return QStringLiteral("不是有效的可执行文件");
+        return QCoreApplication::translate("LaunchService", "不是有效的可执行文件");
     case SE_ERR_ASSOCINCOMPLETE:
     case SE_ERR_NOASSOC:
-        return QStringLiteral("系统没有为该类型文件关联打开方式");
+        return QCoreApplication::translate("LaunchService", "系统没有为该类型文件关联打开方式");
     default:
-        return QStringLiteral("启动失败，ShellExecute 返回码 %1").arg(code);
+        return QCoreApplication::translate("LaunchService", "启动失败，ShellExecute 返回码 %1").arg(code);
     }
 }
 } // namespace
@@ -45,11 +46,11 @@ namespace LaunchService {
 QString platformHint()
 {
 #if defined(Q_OS_WIN)
-    return QStringLiteral("双击 Ctrl 唤起 · Enter 运行 · Ctrl+Enter 定位 · Shift+Enter 管理员");
+    return QCoreApplication::translate("LaunchService", "双击 Ctrl 唤起 · Enter 运行 · Ctrl+Enter 定位 · Shift+Enter 管理员");
 #elif defined(Q_OS_MACOS)
-    return QStringLiteral("双击 Ctrl 唤起 · Enter 运行 · Ctrl+Enter 定位 · Shift+Enter 管理员");
+    return QCoreApplication::translate("LaunchService", "双击 Ctrl 唤起 · Enter 运行 · Ctrl+Enter 定位 · Shift+Enter 管理员");
 #else
-    return QStringLiteral("双击 Ctrl 唤起（X11） · Enter 运行 · Ctrl+Enter 定位 · Shift+Enter 管理员");
+    return QCoreApplication::translate("LaunchService", "双击 Ctrl 唤起（X11） · Enter 运行 · Ctrl+Enter 定位 · Shift+Enter 管理员");
 #endif
 }
 
@@ -57,14 +58,14 @@ bool launch(const ExecutableRecord &record, bool asAdmin, QString *errorMessage)
 {
     if (record.path.isEmpty()) {
         if (errorMessage)
-            *errorMessage = QStringLiteral("路径为空");
+            *errorMessage = QCoreApplication::translate("LaunchService", "路径为空");
         return false;
     }
 
     const QFileInfo info(record.path);
     if (!info.exists()) {
         if (errorMessage)
-            *errorMessage = QStringLiteral("文件不存在：%1").arg(record.path);
+            *errorMessage = QCoreApplication::translate("LaunchService", "文件不存在：%1").arg(record.path);
         return false;
     }
 
@@ -78,12 +79,12 @@ bool launch(const ExecutableRecord &record, bool asAdmin, QString *errorMessage)
         const QString bash = QStandardPaths::findExecutable(QStringLiteral("bash"));
         if (bash.isEmpty()) {
             if (errorMessage)
-                *errorMessage = QStringLiteral("启动 .sh 需要 bash：请安装 Git for Windows 或 WSL");
+                *errorMessage = QCoreApplication::translate("LaunchService", "启动 .sh 需要 bash：请安装 Git for Windows 或 WSL");
             return false;
         }
         if (!QProcess::startDetached(bash, QStringList() << nativePath, workDir)) {
             if (errorMessage)
-                *errorMessage = QStringLiteral("无法通过 bash 启动脚本");
+                *errorMessage = QCoreApplication::translate("LaunchService", "无法通过 bash 启动脚本");
             return false;
         }
         return true;
@@ -96,7 +97,7 @@ bool launch(const ExecutableRecord &record, bool asAdmin, QString *errorMessage)
             shell = QStandardPaths::findExecutable(QStringLiteral("powershell"));
         if (shell.isEmpty()) {
             if (errorMessage)
-                *errorMessage = QStringLiteral("未找到 PowerShell，无法运行脚本");
+                *errorMessage = QCoreApplication::translate("LaunchService", "未找到 PowerShell，无法运行脚本");
             return false;
         }
         const QString params = QStringLiteral("-NoLogo -NoExit -ExecutionPolicy Bypass -File \"%1\"")
@@ -141,6 +142,13 @@ bool launch(const ExecutableRecord &record, bool asAdmin, QString *errorMessage)
 #ifdef Q_OS_MACOS
         // 提权执行的是 bundle 内的真实二进制，而不是 .app 目录
         QString escaped = nativePath;
+        // 索引项就是 .app 包本身（目录）时，直接执行目录会失败：改用它包内的主程序
+        if (launchTarget.endsWith(QLatin1String(".app"), Qt::CaseInsensitive)) {
+            const QString binary = launchTarget + QStringLiteral("/Contents/MacOS/")
+                + QFileInfo(launchTarget).completeBaseName();
+            if (QFileInfo(binary).isFile())
+                escaped = binary;
+        }
         escaped.replace(QLatin1Char('\\'), QStringLiteral("\\\\"));
         escaped.replace(QLatin1Char('"'), QStringLiteral("\\\""));
         const QString script =
@@ -149,7 +157,7 @@ bool launch(const ExecutableRecord &record, bool asAdmin, QString *errorMessage)
         if (!QProcess::startDetached(QStringLiteral("osascript"),
                                      QStringList() << QStringLiteral("-e") << script)) {
             if (errorMessage)
-                *errorMessage = QStringLiteral("无法调用 osascript 提权启动");
+                *errorMessage = QCoreApplication::translate("LaunchService", "无法调用 osascript 提权启动");
             return false;
         }
         return true;
@@ -157,12 +165,12 @@ bool launch(const ExecutableRecord &record, bool asAdmin, QString *errorMessage)
         const QString pkexec = QStandardPaths::findExecutable(QStringLiteral("pkexec"));
         if (pkexec.isEmpty()) {
             if (errorMessage)
-                *errorMessage = QStringLiteral("以管理员身份运行需要 polkit 的 pkexec，请先安装 polkit");
+                *errorMessage = QCoreApplication::translate("LaunchService", "以管理员身份运行需要 polkit 的 pkexec，请先安装 polkit");
             return false;
         }
         if (!QProcess::startDetached(pkexec, QStringList() << launchTarget, workDir)) {
             if (errorMessage)
-                *errorMessage = QStringLiteral("pkexec 启动失败（可能没有图形化 polkit 代理）");
+                *errorMessage = QCoreApplication::translate("LaunchService", "pkexec 启动失败（可能没有图形化 polkit 代理）");
             return false;
         }
         return true;
@@ -175,7 +183,7 @@ bool launch(const ExecutableRecord &record, bool asAdmin, QString *errorMessage)
             return true;
         }
         if (errorMessage)
-            *errorMessage = QStringLiteral("无法通过 LaunchServices 打开应用包");
+            *errorMessage = QCoreApplication::translate("LaunchService", "无法通过 LaunchServices 打开应用包");
         return false;
     }
 #endif
@@ -184,12 +192,12 @@ bool launch(const ExecutableRecord &record, bool asAdmin, QString *errorMessage)
         const QString bash = QStandardPaths::findExecutable(QStringLiteral("bash"));
         if (bash.isEmpty()) {
             if (errorMessage)
-                *errorMessage = QStringLiteral("未找到 bash，无法运行脚本");
+                *errorMessage = QCoreApplication::translate("LaunchService", "未找到 bash，无法运行脚本");
             return false;
         }
         if (!QProcess::startDetached(bash, QStringList() << nativePath, workDir)) {
             if (errorMessage)
-                *errorMessage = QStringLiteral("无法通过 bash 启动脚本");
+                *errorMessage = QCoreApplication::translate("LaunchService", "无法通过 bash 启动脚本");
             return false;
         }
         return true;
@@ -197,7 +205,7 @@ bool launch(const ExecutableRecord &record, bool asAdmin, QString *errorMessage)
 
     if (!QProcess::startDetached(launchTarget, QStringList(), workDir)) {
         if (errorMessage)
-            *errorMessage = QStringLiteral("启动失败：%1（请确认文件有可执行权限）").arg(launchTarget);
+            *errorMessage = QCoreApplication::translate("LaunchService", "启动失败：%1（请确认文件有可执行权限）").arg(launchTarget);
         return false;
     }
     return true;
@@ -208,7 +216,7 @@ bool revealInFolder(const QString &filePath, QString *errorMessage)
 {
     if (filePath.isEmpty()) {
         if (errorMessage)
-            *errorMessage = QStringLiteral("路径为空");
+            *errorMessage = QCoreApplication::translate("LaunchService", "路径为空");
         return false;
     }
 
@@ -235,7 +243,7 @@ bool revealInFolder(const QString &filePath, QString *errorMessage)
         return true;
     }
     if (errorMessage)
-        *errorMessage = QStringLiteral("无法调用 Finder 定位文件");
+        *errorMessage = QCoreApplication::translate("LaunchService", "无法调用 Finder 定位文件");
     return false;
 #else
     const QString dir = info.absolutePath();
@@ -261,7 +269,7 @@ bool revealInFolder(const QString &filePath, QString *errorMessage)
 
     if (!QDesktopServices::openUrl(QUrl::fromLocalFile(dir))) {
         if (errorMessage)
-            *errorMessage = QStringLiteral("无法打开所在目录：%1").arg(dir);
+            *errorMessage = QCoreApplication::translate("LaunchService", "无法打开所在目录：%1").arg(dir);
         return false;
     }
     return true;

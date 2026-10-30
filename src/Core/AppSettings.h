@@ -46,6 +46,10 @@ public:
     int maxResults() const;
     void setMaxResults(int count);
 
+    /** 界面语言（zh_CN / zh_TW / en / fr）；未设置过时跟随系统区域。 */
+    QString language() const;
+    void setLanguage(const QString &code);
+
     bool autoScanOnStart() const;
     void setAutoScanOnStart(bool on);
 

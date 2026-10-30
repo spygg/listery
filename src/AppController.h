@@ -89,9 +89,13 @@ private:
     void setupConnections();
     void applySettings();
     void applyAutoStart();
+    /** 切换界面语言后刷新窗口、托盘菜单与状态栏上的文字。 */
+    void retranslateUi();
     int indexCount() const;
 
     // ----- 智能调度 -----
+    /** 当前挂载点（带短时缓存：调度一次会连着问两遍）。 */
+    QStringList currentRoots() const;
     /** 到期的卷：没扫过、到点了、或需要全量复核的。 */
     QStringList dueVolumes() const;
     /** 距离下一个到期卷还有多少毫秒；<=0 表示已经到期。 */
@@ -124,6 +128,8 @@ private:
     QMenu *m_pluginMenu = nullptr;
     /** 点击托盘更新通知时要打开的发布页（仅一条，避免 messageClicked 串台）。 */
     QString m_pendingUpdateUrl;
+    /** 本次检查是否由用户从托盘手动触发：结果要用气泡反馈，自动检查则只记日志。 */
+    bool m_updateNotify = false;
     QAction *m_actionRescan = nullptr;
     QAction *m_actionSettings = nullptr;
     QAction *m_actionQuit = nullptr;
@@ -132,6 +138,9 @@ private:
     bool m_scanPending = false;
     bool m_pendingDeep = false;
     QStringList m_pendingVolumes;
+    /** currentRoots() 的缓存内容与时间戳（0 表示尚未缓存）。 */
+    mutable QStringList m_rootsCache;
+    mutable qint64 m_rootsCacheAt = 0;
     /** 面板正在使用时推迟扫描的次数上限，避免无限让位。 */
     int m_scanDeferred = 0;
     bool m_silentStart = false;

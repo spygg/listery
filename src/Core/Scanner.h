@@ -50,7 +50,9 @@ public:
      *  大量用户级应用（豆包、Discord、VS Code 等）装在这里，而这些目录是隐藏目录，
      *  全盘遍历进不去，所以作为显式扫描根单独扫。 */
     static QStringList userAppDataRoots();
-    /** 这一轮要扫的卷里，有哪些隐藏根（开始菜单、AppData）需要一并扫。
+    /** Unix 上用户级程序常放在隐藏目录（~/.local/bin、~/bin），同样需要显式扫描。 */
+    static QStringList userBinRoots();
+    /** 这一轮要扫的卷里，有哪些隐藏根（开始菜单、AppData、用户 bin 目录）需要一并扫。
      *  隐藏根位于卷之内，但它本身是隐藏目录，全盘遍历进不去；定时重扫只扫到期的卷，
      *  若不同时扫这些隐藏根，它们拿不到当前 generation，会被 removeStale 误删。 */
     static QStringList hiddenRootsFor(const QStringList &volumes);
@@ -71,8 +73,10 @@ private:
     bool isSkippedDirectory(const QString &name) const;
     bool isSkippedPath(const QString &path) const;
     void emitProgress(const QString &root, bool force = false);
-    /** 收下一份候选文件：白名单后缀命中，或（Unix 快速通道）带可执行位。 */
+    /** 收下一份候选文件：白名单后缀命中，或（Unix 快速通道 / bin 目录）带可执行位。 */
     bool ingestFile(const QFileInfo &info, Database &db, bool allowExtensionless);
+    /** 收下一个 .app 包（macOS：程序包本身是目录，整个包作为一个可执行项）。 */
+    bool ingestBundle(const QFileInfo &info, Database &db);
 
     // Linux 快速通道：直接读 locate 快照
     bool scanViaLocate(const QStringList &roots, Database &db);

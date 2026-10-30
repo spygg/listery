@@ -74,6 +74,16 @@ QStringList locateDatabasePaths()
 }
 #endif
 
+#ifdef Q_OS_UNIX
+/** /usr/bin、/usr/local/sbin、/usr/games 这类目录里放的就是“程序”，且大多没有扩展名。 */
+bool isUnixBinDirectory(const QString &path)
+{
+    const QString name = QFileInfo(path).fileName().toLower();
+    return name == QLatin1String("bin") || name == QLatin1String("sbin")
+        || name == QLatin1String("games");
+}
+#endif
+
 /** path 是否位于 root 之下。两者都换成原生分隔符；Windows 上盘符大小写不敏感。 */
 bool isUnderRoot(const QString &path, const QString &root)
 {
@@ -117,9 +127,34 @@ QStringList Scanner::userAppDataRoots()
 }
 #endif
 
+#ifdef Q_OS_UNIX
+/** Unix 上用户级程序常放在隐藏目录（~/.local/bin、~/bin），全盘遍历进不去，单独作为根扫。 */
+QStringList Scanner::userBinRoots()
+{
+    QStringList roots;
+    const QString home = QDir::homePath();
+    if (home.isEmpty())
+        return roots;
+
+    const QStringList candidates = QStringList()
+        << home + QStringLiteral("/.local/bin")
+        << home + QStringLiteral("/bin");
+    for (const QString &candidate : candidates) {
+        if (QFileInfo(candidate).isDir())
+            roots.append(QDir::toNativeSeparators(candidate));
+    }
+    return roots;
+}
+#else
+QStringList Scanner::userBinRoots()
+{
+    return QStringList();
+}
+#endif
+
 QStringList Scanner::hiddenRootsFor(const QStringList &volumes)
 {
-    const QStringList candidates = startMenuRoots() + userAppDataRoots();
+    const QStringList candidates = startMenuRoots() + userAppDataRoots() + userBinRoots();
     if (candidates.isEmpty())
         return QStringList();
 
@@ -188,8 +223,12 @@ QStringList Scanner::availableRoots(bool includeRemovable)
     for (const QStorageInfo &volume : volumes) {
         if (!volume.isValid() || !volume.isReady() || volume.rootPath().isEmpty())
             continue;
+#ifndef Q_OS_MACOS
+        // macOS 的系统卷（/）本身是只读挂载的；照搬这里的判断会把它整卷跳过，
+        // 结果什么程序都索引不到
         if (volume.isReadOnly())
             continue;
+#endif
 
 #ifdef Q_OS_WIN
         const UINT type = windowsDriveType(volume.rootPath());
@@ -213,8 +252,16 @@ QStringList Scanner::availableRoots(bool includeRemovable)
         }
         if (pseudo)
             continue;
-        // 只收真实块设备挂载的卷（/dev/sdX、/dev/nvme、/dev/mapper 等），排除网络与伪挂载
-        if (volume.device().startsWith("/dev/"))
+#ifdef Q_OS_MACOS
+        // APFS 的 /System/Volumes/Data 与 / 下的路径通过 firmlink 指向同一批文件，
+        // 从 / 遍历已经覆盖；再单独扫它会让每个程序出现两条不同路径
+        if (rootPath == QLatin1String("/System/Volumes")
+            || rootPath.startsWith(QStringLiteral("/System/Volumes/")))
+            continue;
+#endif
+        // 真实块设备挂载的卷（/dev/sdX、/dev/nvme、/dev/mapper 等），排除网络与伪挂载。
+        // 根分区额外直接收录：btrfs / ZFS / overlay 等文件系统的 device() 并不是 /dev/ 开头
+        if (rootPath == QLatin1String("/") || volume.device().startsWith(QStringLiteral("/dev/")))
             roots.append(rootPath);
 #endif
     }
@@ -290,7 +337,7 @@ void Scanner::run()
     Database db(m_databasePath);
     QString error;
     if (!db.open(&error)) {
-        emit scanFinished(0, 0, false, QStringLiteral("打开索引库失败：%1").arg(error));
+        emit scanFinished(0, 0, false, tr("打开索引库失败：%1").arg(error));
         return;
     }
 
@@ -298,7 +345,7 @@ void Scanner::run()
         ? availableRoots(m_includeRemovable)
         : m_volumes;
     if (roots.isEmpty()) {
-        emit scanFinished(0, 0, false, QStringLiteral("没有找到可扫描的磁盘卷"));
+        emit scanFinished(0, 0, false, tr("没有找到可扫描的磁盘卷"));
         return;
     }
 
@@ -347,7 +394,7 @@ void Scanner::run()
         // 只清理这次扫过的卷；走 locate 快照时保留比快照更新的记录（它们可能还没进 locate 库）
         removed = db.removeStale(m_generation, roots, m_usedLocate ? m_locateDbMtime : 0, &error);
         if (removed < 0)
-            m_error = QStringLiteral("清理旧索引失败：%1").arg(error);
+            m_error = tr("清理旧索引失败：%1").arg(error);
         // 顺手清掉已卸载程序残留的使用统计，否则它们会长期占住“常用程序”候选名额
         db.pruneOrphanUsage();
     }
@@ -418,7 +465,27 @@ bool Scanner::scanViaLocate(const QStringList &roots, Database &db)
         process.start(program, QStringList() << QStringLiteral("-i") << QStringLiteral("-r") << pattern);
         if (!process.waitForStarted(5000))
             return false;
-        if (!process.waitForFinished(180000)) {
+        // 不能一次 waitForFinished(180000)：退出程序时要等最多三分钟，
+        // 主线程那边的 wait(8000) 超时后就会撞上“销毁仍在运行的线程”
+        QElapsedTimer waitTimer;
+        waitTimer.start();
+        bool finished = false;
+        while (waitTimer.elapsed() < 180000) {
+            if (process.waitForFinished(200)) {
+                finished = true;
+                break;
+            }
+            if (process.state() == QProcess::NotRunning) {
+                finished = true;
+                break;
+            }
+            if (isStopping()) {
+                process.kill();
+                process.waitForFinished(5000);
+                return false;
+            }
+        }
+        if (!finished) {
             process.kill();
             process.waitForFinished(5000);
             return false;
@@ -445,7 +512,8 @@ bool Scanner::scanViaLocate(const QStringList &roots, Database &db)
 
         bool underRoot = false;
         for (const QString &root : roots) {
-            if (path.startsWith(root)) {
+            // 必须按路径边界判断：只 startsWith 的话 "/home" 会错误地把 "/home2/foo" 也算进来
+            if (isUnderRoot(path, root)) {
                 underRoot = true;
                 break;
             }
@@ -482,6 +550,13 @@ void Scanner::scanDirectory(const QString &path, int depth, Database &db, int ma
     if (!dir.exists())
         return;
 
+#ifdef Q_OS_UNIX
+    // Unix 上的程序（/usr/bin/git、~/.local/bin/xxx）绝大多数没有扩展名。
+    // 只在这类“专门放程序”的目录里额外接受无扩展名文件：全盘范围内对每个无后缀文件
+    // 都 stat 一次找可执行位，在慢盘上是白扔的几万次系统调用。
+    const bool allowExtensionless = isUnixBinDirectory(path);
+#endif
+
     // 不能加 QDir::NoSymLinks：开始菜单里的 .lnk 带重解析点属性，会被当作符号链接整批滤掉。
     // QDirIterator 逐个产出，比 entryInfoList 少一次整目录的 QFileInfo 数组分配；
     // 目录项的类型在 Windows 来自 FindFirstFile、在 Unix 来自 readdir 的 d_type，不需要额外 stat。
@@ -500,6 +575,23 @@ void Scanner::scanDirectory(const QString &path, int depth, Database &db, int ma
                 continue;
             if (isSkippedDirectory(name))
                 continue;
+#ifdef Q_OS_MACOS
+            // macOS 的程序都是 .app 包，而包本身是目录：整个包作为一个可执行项索引，
+            // 不再往里钻（Contents/MacOS 里的二进制不该单独出现在结果里）
+            if (name.endsWith(QLatin1String(".app"), Qt::CaseInsensitive)) {
+                if (ingestBundle(info, db)) {
+                    ++m_filesFound;
+                    ++m_pendingWrites;
+                    if (m_pendingWrites >= 2000) {
+                        db.commitBulk();
+                        db.beginBulk();
+                        m_pendingWrites = 0;
+                    }
+                }
+                emitProgress(m_currentRoot);
+                continue;
+            }
+#endif
             ++m_directories;
             // maxDepth 必须一路带下去：漏传会退化成默认的 64 层，
             // AppData 底下那些深层缓存树就又被整棵翻一遍了
@@ -510,13 +602,17 @@ void Scanner::scanDirectory(const QString &path, int depth, Database &db, int ma
 
         // 先用名字把绝大多数无关文件挡掉，再去做需要 stat 的判断：
         // 一个典型的系统盘里 95% 以上的文件都不是可执行文件，这一步省掉了它们的系统调用
+        bool accepted = false;
         const int dot = name.lastIndexOf(QLatin1Char('.'));
-        if (dot <= 0 || dot == name.size() - 1)
-            continue;
-        if (!m_extensionSet.contains(name.mid(dot + 1).toLower()))
-            continue;
-
-        if (!ingestFile(info, db, false))
+        if (dot <= 0 || dot == name.size() - 1) {
+#ifdef Q_OS_UNIX
+            if (allowExtensionless)
+                accepted = ingestFile(info, db, true);
+#endif
+        } else if (m_extensionSet.contains(name.mid(dot + 1).toLower())) {
+            accepted = ingestFile(info, db, false);
+        }
+        if (!accepted)
             continue;
 
         ++m_filesFound;
@@ -553,12 +649,38 @@ bool Scanner::ingestFile(const QFileInfo &info, Database &db, bool allowExtensio
     Pinyin::buildSearchForms(record.displayName, &record.pinyin, &record.pinyinInitials);
 
     if (!db.upsertExecutable(record, m_generation)) {
-        m_error = QStringLiteral("写入索引失败：%1").arg(record.path);
+        m_error = tr("写入索引失败：%1").arg(record.path);
         m_stop.storeRelease(1);
         return false;
     }
     return true;
 }
+
+#ifdef Q_OS_MACOS
+bool Scanner::ingestBundle(const QFileInfo &info, Database &db)
+{
+    if (!info.isDir())
+        return false;
+
+    ExecutableRecord record;
+    record.path = QDir::toNativeSeparators(info.absoluteFilePath());
+    // 显示名去掉 .app 后缀：结果列表里 “Safari.app” 只是噪音
+    record.displayName = info.completeBaseName();
+    record.dir = QDir::toNativeSeparators(info.absolutePath());
+    record.ext = QStringLiteral("app");
+    // 包是目录，没有单一文件大小；用包内文件数没意义，留 0 即可
+    record.size = 0;
+    record.mtime = info.lastModified().toMSecsSinceEpoch();
+    Pinyin::buildSearchForms(record.displayName, &record.pinyin, &record.pinyinInitials);
+
+    if (!db.upsertExecutable(record, m_generation)) {
+        m_error = tr("写入索引失败：%1").arg(record.path);
+        m_stop.storeRelease(1);
+        return false;
+    }
+    return true;
+}
+#endif
 
 bool Scanner::isSkippedDirectory(const QString &name) const
 {

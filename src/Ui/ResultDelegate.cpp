@@ -3,7 +3,6 @@
 #include "Ui/ResultModel.h"
 
 #include <QApplication>
-#include <QDir>
 #include <QFileIconProvider>
 #include <QFileInfo>
 #include <QFontMetrics>
@@ -50,6 +49,21 @@ int textWidth(const QFontMetrics &metrics, const QString &text)
 #else
     return metrics.width(text);
 #endif
+}
+
+/**
+ * 结果行的目录文案。
+ * 索引库里已经存了原生分隔符的 dir，直接用即可：重绘时对每一行构造 QFileInfo
+ * 会去 stat 一次磁盘（可能还是慢速网络盘），列表滚动就会被拖慢。
+ */
+QString rowDirectory(const ExecutableRecord &record)
+{
+    if (!record.dir.isEmpty())
+        return record.dir;
+
+    const int slash = qMax(record.path.lastIndexOf(QLatin1Char('/')),
+                           record.path.lastIndexOf(QLatin1Char('\\')));
+    return slash > 0 ? record.path.left(slash) : QString();
 }
 
 void drawHighlightedText(QPainter *painter,
@@ -159,9 +173,7 @@ void ResultDelegate::paint(QPainter *painter,
     painter->setFont(pathFont);
     painter->setPen(QColor(0x8A, 0x91, 0x9B));
     const QRect pathRect(textLeft, rowRect.top() + 27, textWidthAvailable, 18);
-    const QString subtitle = pluginRow
-                                 ? result.pluginSubtitle
-                                 : QDir::toNativeSeparators(QFileInfo(result.record.path).absolutePath());
+    const QString subtitle = pluginRow ? result.pluginSubtitle : rowDirectory(result.record);
     painter->drawText(pathRect, Qt::AlignLeft | Qt::AlignVCenter,
                       pathMetrics.elidedText(subtitle, Qt::ElideMiddle, pathRect.width()));
 
@@ -174,7 +186,7 @@ void ResultDelegate::paint(QPainter *painter,
         const QRect actionRect(rowRect.right() - 108, rowRect.top(), 92, rowRect.height());
         painter->drawText(actionRect, Qt::AlignRight | Qt::AlignVCenter,
                           result.pluginAction.startsWith(QStringLiteral("copy:"))
-                              ? QStringLiteral("Enter 复制")
+                              ? tr("Enter 复制")
                               : QString());
         painter->setPen(QColor(0x8A, 0x91, 0x9B));
     }
@@ -186,7 +198,7 @@ void ResultDelegate::paint(QPainter *painter,
         painter->setPen(QColor(0x9A, 0xA1, 0xAB));
         const QRect usageRect(rowRect.right() - 92, rowRect.top(), 76, rowRect.height());
         painter->drawText(usageRect, Qt::AlignRight | Qt::AlignVCenter,
-                          QStringLiteral("%1 次").arg(result.record.launchCount));
+                          tr("%1 次").arg(result.record.launchCount));
     }
 
     painter->restore();

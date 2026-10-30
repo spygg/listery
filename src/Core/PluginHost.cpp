@@ -1,19 +1,20 @@
 #include "Core/PluginHost.h"
 
+#include "Core/HttpClient.h"
 #include "listery_plugin_api.h"
 
 #include <QApplication>
+#include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
 #include <QLibrary>
 #include <QMetaObject>
 #include <QMutexLocker>
-#include <QNetworkReply>
-#include <QNetworkRequest>
 #include <QThread>
-#include <QTimer>
 #include <QUrl>
 #include <QVariant>
+
+#include <memory>
 
 namespace {
 
@@ -108,7 +109,17 @@ PluginHost::PluginHost(QObject *parent)
 {
     qRegisterMetaType<PluginRow>("PluginRow");
     qRegisterMetaType<QVector<PluginRow>>("QVector<PluginRow>");
-    m_network = new QNetworkAccessManager(this);
+    m_http = new HttpClient(this);
+    connect(m_http, &HttpClient::finished, this,
+            [this](quint64 requestId, int status, const QByteArray &body, const QString &error) {
+                const PendingHttp pending = m_httpPending.take(requestId);
+                if (!pending.callback)
+                    return;
+                const QByteArray errorUtf8 = error.toUtf8();
+                pending.callback(pending.userData, status, body.constData(),
+                                 static_cast<unsigned int>(body.size()),
+                                 error.isEmpty() ? nullptr : errorUtf8.constData());
+            });
 
     // 能力表常驻：插件 init() 里保存的就是 &m_hostTable
     fillHostTable(&m_hostTable, this);
@@ -133,7 +144,7 @@ int PluginHost::loadFromDirectory(const QString &directory, QString *errorMessag
     QDir dir(directory);
     if (!dir.exists()) {
         if (errorMessage)
-            *errorMessage = QStringLiteral("插件目录不存在：%1").arg(directory);
+            *errorMessage = tr("插件目录不存在：%1").arg(directory);
         return 0;
     }
 
@@ -158,9 +169,12 @@ int PluginHost::loadFromDirectory(const QString &directory, QString *errorMessag
         auto entry = std::make_unique<LoadedPlugin>();
         entry->library = std::make_unique<QLibrary>(file.absoluteFilePath());
         entry->info.filePath = file.absoluteFilePath();
+        // 只在进程结束时释放句柄，不真正 FreeLibrary：插件可能仍有回调/线程在飞，
+        // 卸载 DLL 会让那些代码段失效；两个以上插件时尤其容易在退出阶段崩溃
+        entry->library->setLoadHints(QLibrary::PreventUnloadHint);
 
         if (!entry->library->load()) {
-            entry->info.error = QStringLiteral("无法加载：%1").arg(entry->library->errorString());
+            entry->info.error = tr("无法加载：%1").arg(entry->library->errorString());
             m_plugins.push_back(std::move(entry));
             continue;
         }
@@ -168,31 +182,31 @@ int PluginHost::loadFromDirectory(const QString &directory, QString *errorMessag
         auto resolve = reinterpret_cast<ListeryPluginEntry>(
             entry->library->resolve("listery_plugin_v1"));
         if (resolve == nullptr) {
-            entry->info.error = QStringLiteral("不是 Listery 插件（缺少 listery_plugin_v1 入口）");
+            entry->info.error = tr("不是 Listery 插件（缺少 listery_plugin_v1 入口）");
             m_plugins.push_back(std::move(entry));
             continue;
         }
 
         const ListeryPluginV1 *api = resolve();
         if (api == nullptr || api->id == nullptr || api->name == nullptr) {
-            entry->info.error = QStringLiteral("插件入口返回了空描述");
+            entry->info.error = tr("插件入口返回了空描述");
             m_plugins.push_back(std::move(entry));
             continue;
         }
         if (api->apiVersion != LISTERY_PLUGIN_API_VERSION) {
-            entry->info.error = QStringLiteral("插件接口版本 %1 与本程序不兼容（需要 %2）")
+            entry->info.error = tr("插件接口版本 %1 与本程序不兼容（需要 %2）")
                                     .arg(api->apiVersion)
                                     .arg(LISTERY_PLUGIN_API_VERSION);
             m_plugins.push_back(std::move(entry));
             continue;
         }
         if (hasPlugin(QString::fromUtf8(api->id))) {
-            entry->info.error = QStringLiteral("插件标识 %1 已被占用").arg(QString::fromUtf8(api->id));
+            entry->info.error = tr("插件标识 %1 已被占用").arg(QString::fromUtf8(api->id));
             m_plugins.push_back(std::move(entry));
             continue;
         }
         if (api->init == nullptr || api->beginQuery == nullptr) {
-            entry->info.error = QStringLiteral("插件缺少必需的 init / beginQuery 实现");
+            entry->info.error = tr("插件缺少必需的 init / beginQuery 实现");
             m_plugins.push_back(std::move(entry));
             continue;
         }
@@ -208,7 +222,7 @@ int PluginHost::loadFromDirectory(const QString &directory, QString *errorMessag
 
         const int rc = api->init(&m_hostTable);
         if (rc != 0) {
-            entry->info.error = QStringLiteral("插件初始化失败（错误码 %1）").arg(rc);
+            entry->info.error = tr("插件初始化失败（错误码 %1）").arg(rc);
             m_plugins.push_back(std::move(entry));
             continue;
         }
@@ -298,15 +312,30 @@ quint64 PluginHost::beginQuery(const QString &id, const QString &query, int maxR
     if (target == nullptr || target->api->beginQuery == nullptr)
         return 0;
 
-    // 同一个插件的上一轮还没回来：让它尽快停止，界面只认最新序号
-    for (auto it = m_activeOwner.constBegin(); it != m_activeOwner.constEnd(); ++it) {
-        if (it.value() == id && target->api->cancelQuery)
-            target->api->cancelQuery(it.key());
-    }
-
-    const quint64 sequence = m_nextSequence++;
+    // 同一个插件的上一轮还没回来：让它尽快停止，界面只认最新序号。
+    // 先在锁内收集旧请求，再在锁外调用插件（插件可能同步回调 finish，持锁调用会死锁）。
+    QVector<quint64> stale;
     {
         QMutexLocker locker(&m_mutex);
+        for (auto it = m_activeOwner.constBegin(); it != m_activeOwner.constEnd(); ++it) {
+            if (it.value() == id)
+                stale.append(it.key());
+        }
+    }
+    for (quint64 requestId : stale) {
+        if (target->api->cancelQuery)
+            target->api->cancelQuery(requestId);
+        // 插件不保证回调 finish：顺手丢掉它可能残留的行，避免 m_pending 无限增长
+        QMutexLocker locker(&m_mutex);
+        m_pending.remove(requestId);
+        m_pendingQuery.remove(requestId);
+        m_activeOwner.remove(requestId);
+    }
+
+    quint64 sequence = 0;
+    {
+        QMutexLocker locker(&m_mutex);
+        sequence = m_nextSequence++;
         m_pendingQuery.insert(sequence, query);
         m_activeOwner.insert(sequence, id);
     }
@@ -314,7 +343,7 @@ quint64 PluginHost::beginQuery(const QString &id, const QString &query, int maxR
     const QByteArray utf8 = query.toUtf8();
     const int rc = target->api->beginQuery(sequence, utf8.constData(), maxResults);
     if (rc != 0) {
-        finishRequest(sequence, QStringLiteral("插件拒绝了这次请求（错误码 %1）").arg(rc));
+        finishRequest(sequence, tr("插件拒绝了这次请求（错误码 %1）").arg(rc));
         return 0;
     }
     return sequence;
@@ -327,10 +356,17 @@ void PluginHost::cancel(const QString &id)
             continue;
         if (plugin->api->cancelQuery == nullptr)
             continue;
-        for (auto it = m_activeOwner.constBegin(); it != m_activeOwner.constEnd(); ++it) {
-            if (it.value() == id)
-                plugin->api->cancelQuery(it.key());
+
+        QVector<quint64> active;
+        {
+            QMutexLocker locker(&m_mutex);
+            for (auto it = m_activeOwner.constBegin(); it != m_activeOwner.constEnd(); ++it) {
+                if (it.value() == id)
+                    active.append(it.key());
+            }
         }
+        for (quint64 requestId : active)
+            plugin->api->cancelQuery(requestId);
     }
 }
 
@@ -412,74 +448,23 @@ int PluginHost::startHttpGet(const QString &url,
                              void *userData,
                              int timeoutMs)
 {
-    if (m_network == nullptr) {
+    const QUrl target = QUrl::fromUserInput(url);
+    if (!target.isValid() || m_http == nullptr) {
         if (callback)
-            callback(userData, 0, nullptr, 0, "宿主没有可用的网络组件");
+            callback(userData, 0, nullptr, 0, "请求地址无效或宿主没有可用的网络组件");
         return 1;
     }
 
-    QNetworkRequest request(QUrl::fromUserInput(url));
 #if QT_VERSION >= QT_VERSION_CHECK(5, 14, 0)
     const QStringList lines = headers.split(QLatin1Char('\n'), Qt::SkipEmptyParts);
 #else
     const QStringList lines = headers.split(QLatin1Char('\n'), QString::SkipEmptyParts);
 #endif
-    for (const QString &line : lines) {
-        const int colon = line.indexOf(QLatin1Char(':'));
-        if (colon <= 0)
-            continue;
-        request.setRawHeader(line.left(colon).trimmed().toUtf8(),
-                             line.mid(colon + 1).trimmed().toUtf8());
-    }
-
-    QNetworkReply *reply = m_network->get(request);
-    if (reply == nullptr) {
-        if (callback)
-            callback(userData, 0, nullptr, 0, "无法创建网络请求");
-        return 1;
-    }
 
     const int timeout = timeoutMs > 0 ? timeoutMs : kDefaultHttpTimeoutMs;
-    auto *timer = new QTimer(reply);
-    timer->setSingleShot(true);
-    auto *settled = new bool(false);
-
-    connect(timer, &QTimer::timeout, this, [reply, settled, callback, userData]() {
-        if (*settled)
-            return;
-        *settled = true;
-        reply->abort();
-        if (callback) {
-            const QByteArray message = QStringLiteral("请求超时").toUtf8();
-            callback(userData, 0, nullptr, 0, message.constData());
-        }
-        reply->deleteLater();
-        delete settled;
-    });
-    timer->start(timeout);
-
-    connect(reply, &QNetworkReply::finished,
-            [reply, settled, callback, userData]() {
-                if (*settled) {
-                    reply->deleteLater();
-                    return;
-                }
-                *settled = true;
-                const int status =
-                    reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-                const QByteArray body = reply->readAll();
-                const QString error = reply->error() == QNetworkReply::NoError
-                                          ? QString()
-                                          : reply->errorString();
-                if (callback) {
-                    const QByteArray errorUtf8 = error.toUtf8();
-                    callback(userData, status, body.constData(),
-                             static_cast<unsigned int>(body.size()),
-                             error.isEmpty() ? nullptr : errorUtf8.constData());
-                }
-                reply->deleteLater();
-                delete settled;
-            });
-
+    const QString userAgent =
+        QStringLiteral("Listery-Plugin-Host/%1").arg(QCoreApplication::applicationVersion());
+    const quint64 requestId = m_http->get(target, userAgent, lines, timeout);
+    m_httpPending.insert(requestId, PendingHttp{callback, userData});
     return 0;
 }

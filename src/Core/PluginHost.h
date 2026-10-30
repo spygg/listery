@@ -7,13 +7,15 @@
 #include <QMap>
 #include <QMetaType>
 #include <QMutex>
-#include <QNetworkAccessManager>
+#include <QObject>
 #include <QString>
 #include <QStringList>
 #include <QVector>
 
 #include <memory>
 #include <vector>
+
+class HttpClient;
 
 /**
  * 插件宿主：加载插件动态库、分发查询、把结果安全地送回 GUI 线程。
@@ -103,7 +105,15 @@ private:
     ListeryHostV1 m_hostTable;
     std::vector<std::unique_ptr<LoadedPlugin>> m_plugins;
     QMap<quint64, QString> m_activeOwner;   // requestId -> plugin id（仅用于排查）
-    QNetworkAccessManager *m_network = nullptr;
+
+    /** 插件发起的 HTTP 请求：完成时按序号找回 C 回调。 */
+    struct PendingHttp
+    {
+        ListeryHttpCallback callback = nullptr;
+        void *userData = nullptr;
+    };
+    HttpClient *m_http = nullptr;
+    QHash<quint64, PendingHttp> m_httpPending;
     QHash<quint64, QVector<PluginRow>> m_pending;
     QHash<quint64, QString> m_pendingQuery;
     quint64 m_nextSequence = 1;

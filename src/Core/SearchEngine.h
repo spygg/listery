@@ -47,4 +47,11 @@ public:
 
 private:
     Database *m_database = nullptr;
+    /**
+     * usageSnapshot() 的短时缓存：统计表只有启动程序时才会变，
+     * 连续打字（每次按键一次检索）没必要每次都把整表读进 QHash。
+     * 1.5 秒足够短，刚启动过的程序下次唤起时排名就能立刻跟上。
+     */
+    mutable QHash<QString, UsageStat> m_usageCache;
+    mutable qint64 m_usageCacheAt = 0;
 };

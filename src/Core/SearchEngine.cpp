@@ -14,6 +14,8 @@ const double kRecencyHalfLifeDays = 14.0;
 const int kCandidateLimit = 3000;
 const int kPrefixLimit = 600;
 const int kSeedLimit = 64;
+/** 使用统计快照的缓存时长（毫秒）。 */
+const qint64 kUsageCacheTtlMs = 1500;
 
 bool isWordBoundary(QChar ch)
 {
@@ -147,7 +149,11 @@ TokenMatch matchToken(const QString &token, const QString &name, const QString &
     return match;
 }
 
-double usageScore(const ExecutableRecord &record, int maxFrequency)
+/**
+ * @param now 当前时间戳，由调用方取一次传进来：这个函数会对上百条候选各调一次，
+ *            在循环里反复取系统时间既慢又会让同一批结果的“最近使用”基准不一致。
+ */
+double usageScore(const ExecutableRecord &record, int maxFrequency, qint64 now)
 {
     if (record.launchCount <= 0)
         return 0.0;
@@ -157,7 +163,6 @@ double usageScore(const ExecutableRecord &record, int maxFrequency)
 
     double recency = 0.0;
     if (record.lastUsed > 0) {
-        const qint64 now = QDateTime::currentMSecsSinceEpoch();
         const double days = qMax(0.0, static_cast<double>(now - record.lastUsed) / 86400000.0);
         recency = std::exp(-days / kRecencyHalfLifeDays);
     }
@@ -278,8 +283,14 @@ QVector<SearchResult> SearchEngine::search(const QString &query, int limit) cons
     if (candidates.isEmpty())
         return results;
 
-    // 使用统计整表很小，一次读出比每行 LEFT JOIN 便宜得多
-    const QHash<QString, UsageStat> usage = m_database->usageSnapshot();
+    // 使用统计整表很小，一次读出比每行 LEFT JOIN 便宜得多；再叠一层 1.5 秒缓存，
+    // 避免逐字输入时每次按键都重新读一遍表
+    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+    if (m_usageCacheAt == 0 || nowMs - m_usageCacheAt >= kUsageCacheTtlMs) {
+        m_usageCache = m_database->usageSnapshot();
+        m_usageCacheAt = nowMs;
+    }
+    const QHash<QString, UsageStat> &usage = m_usageCache;
     for (ExecutableRecord &record : candidates) {
         const auto it = usage.constFind(record.path);
         if (it == usage.constEnd())
@@ -337,7 +348,7 @@ QVector<SearchResult> SearchEngine::search(const QString &query, int limit) cons
         result.record = record;
         result.highlights = positions;
         result.score = kMatchWeight * matchQuality
-            + kUsageWeight * usageScore(record, maxFrequency)
+            + kUsageWeight * usageScore(record, maxFrequency, nowMs)
             + 0.004 * (1.0 - qMin(1.0, static_cast<double>(record.displayName.size()) / 64.0));
         results.append(result);
     }

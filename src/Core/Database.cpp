@@ -143,6 +143,9 @@ bool Database::open(QString *errorMessage)
         m_lastError = m_db->lastError().text();
         if (errorMessage)
             *errorMessage = m_lastError;
+        // 失败时也要释放连接：否则再次 open() 会用同名连接再 addDatabase 一次，
+        // 旧连接被 Qt 移除、指针悬垂，还会一直占着数据库句柄
+        close();
         return false;
     }
 
@@ -152,8 +155,8 @@ bool Database::open(QString *errorMessage)
     pragma.exec(QStringLiteral("PRAGMA busy_timeout = 5000"));
     pragma.exec(QStringLiteral("PRAGMA temp_store = MEMORY"));
     pragma.exec(QStringLiteral("PRAGMA cache_size = -20000"));
-    // name/dir 入库即为小写、查询 token 也已小写，开启后 LIKE 'x%' 才能走 idx_exe_name
-    pragma.exec(QStringLiteral("PRAGMA case_sensitive_like = ON"));
+    // 注意：不要再用 PRAGMA case_sensitive_like —— SQLite 已把它标记为弃用（未来版本会移除）。
+    // 前缀查询靠索引上的 COLLATE NOCASE 走范围扫描（见 createSchema），语义与默认 LIKE 一致。
 
     return createSchema(errorMessage);
 }
@@ -161,6 +164,28 @@ bool Database::open(QString *errorMessage)
 bool Database::createSchema(QString *errorMessage)
 {
     QSqlQuery query(*m_db);
+
+    // 索引迁移：老版本用 PRAGMA case_sensitive_like 让前缀 LIKE 走 BINARY 索引，该 pragma 已弃用。
+    // 现在改为在索引上显式声明 COLLATE NOCASE（默认 LIKE 本来就不区分大小写），
+    // 老库里的同名 BINARY 索引必须删掉重建，否则前缀查询会退化成全表扫描。
+    int userVersion = 0;
+    {
+        QSqlQuery versionQuery(*m_db);
+        if (versionQuery.exec(QStringLiteral("PRAGMA user_version")) && versionQuery.next())
+            userVersion = versionQuery.value(0).toInt();
+    }
+    if (userVersion < 2) {
+        static const char *kPrefixIndexes[] = {"idx_exe_name", "idx_exe_pinyin",
+                                               "idx_exe_pinyin_initials"};
+        for (const char *index : kPrefixIndexes) {
+            if (!query.exec(QStringLiteral("DROP INDEX IF EXISTS %1").arg(QString::fromLatin1(index)))) {
+                m_lastError = query.lastError().text();
+                if (errorMessage)
+                    *errorMessage = m_lastError;
+                return false;
+            }
+        }
+    }
 
     const QStringList statements = QStringList()
         << QStringLiteral(
@@ -177,12 +202,15 @@ bool Database::createSchema(QString *errorMessage)
                " drive TEXT NOT NULL DEFAULT '',"
                " gen INTEGER NOT NULL DEFAULT 0"
                ")")
-        << QStringLiteral("CREATE INDEX IF NOT EXISTS idx_exe_name ON executables(name)")
+        // 这三个索引供 LIKE 'x%' 前缀查询使用：COLLATE NOCASE 让默认（大小写不敏感）的
+        // LIKE 也能走范围扫描，不再依赖已弃用的 case_sensitive_like
+        << QStringLiteral("CREATE INDEX IF NOT EXISTS idx_exe_name ON executables(name COLLATE NOCASE)")
         << QStringLiteral("CREATE INDEX IF NOT EXISTS idx_exe_dir ON executables(dir)")
         << QStringLiteral("CREATE INDEX IF NOT EXISTS idx_exe_gen ON executables(gen)")
         << QStringLiteral("CREATE INDEX IF NOT EXISTS idx_exe_mtime ON executables(mtime)")
-        << QStringLiteral("CREATE INDEX IF NOT EXISTS idx_exe_pinyin ON executables(pinyin)")
-        << QStringLiteral("CREATE INDEX IF NOT EXISTS idx_exe_pinyin_initials ON executables(pinyin_initials)")
+        << QStringLiteral("CREATE INDEX IF NOT EXISTS idx_exe_pinyin ON executables(pinyin COLLATE NOCASE)")
+        << QStringLiteral("CREATE INDEX IF NOT EXISTS idx_exe_pinyin_initials"
+                          " ON executables(pinyin_initials COLLATE NOCASE)")
         << QStringLiteral(
                "CREATE TABLE IF NOT EXISTS usage_stats ("
                " path TEXT NOT NULL PRIMARY KEY,"
@@ -443,7 +471,8 @@ int Database::removeStale(qint64 generation, const QStringList &volumes, qint64 
             const QString prefix = volumePrefix(volume);
             if (prefix.isEmpty())
                 continue;
-            // path 是主键（BINARY 排序）且开启了 case_sensitive_like，前缀 LIKE 可以走索引范围扫描
+            // 这里保留 LIKE：path 是 BINARY 排序，而默认 LIKE 大小写不敏感，
+            // 用不了索引（会退化成覆盖索引全扫）；本查询每轮扫描只跑一次，可接受
             volumeClauses.append(QStringLiteral("path LIKE ? ESCAPE '\\'"));
             binds.append(likeEscape(prefix) + QLatin1Char('%'));
         }
@@ -480,8 +509,11 @@ int Database::pruneOrphanUsage()
     // 索引清空时不要连带把使用历史全抹掉（那多半是库损坏后重建，统计本身还有价值）
     if (totalCount() == 0)
         return 0;
+    // NOT EXISTS 走 executables.path 主键逐行探测；NOT IN 子查询会先物化整张表再比较，
+    // 二十万条索引时慢一个数量级
     if (!query.exec(QStringLiteral(
-            "DELETE FROM usage_stats WHERE path NOT IN (SELECT path FROM executables)"))) {
+            "DELETE FROM usage_stats WHERE NOT EXISTS"
+            " (SELECT 1 FROM executables e WHERE e.path = usage_stats.path)"))) {
         return 0;
     }
     return query.numRowsAffected();
@@ -638,6 +670,8 @@ QVector<ExecutableRecord> Database::searchByPrefix(const QString &prefix, int li
 
     // 拼音列也要参与前缀匹配：输入 “wx” 需要能命中 “微信”（pinyin_initials = "wx ws"）。
     // 拼音列一律小写存储，与已转小写的 token 直接比前缀即可。
+    // 保留 LIKE：pattern 是绑定参数、ESCAPE 用普通字符串字面量时，SQLite 仍能把前缀
+    // 改写成 NOCASE 索引范围扫描（实测 40k 行 0.03ms），不需要手工算上下界。
     QSqlQuery query(*m_db);
     query.prepare(QStringLiteral("SELECT ") + lightColumns() + lightFrom()
                   + QStringLiteral(" WHERE (e.name LIKE ? ESCAPE '\\'"
@@ -662,9 +696,11 @@ QVector<ExecutableRecord> Database::searchByExactName(const QString &name, int l
     if (!isOpen() || name.isEmpty() || limit <= 0)
         return results;
 
+    // 必须显式 COLLATE NOCASE：列默认是 BINARY 排序，只写 name = ? 既走不了
+    // idx_exe_name（每次按键全表扫 ~14ms），也会漏掉大小写不同的同名文件
     QSqlQuery query(*m_db);
     query.prepare(QStringLiteral("SELECT ") + lightColumns() + lightFrom()
-                  + QStringLiteral(" WHERE e.name = ? LIMIT ?"));
+                  + QStringLiteral(" WHERE e.name = ? COLLATE NOCASE LIMIT ?"));
     query.addBindValue(name);
     query.addBindValue(limit);
     if (!query.exec())

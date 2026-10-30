@@ -43,6 +43,8 @@ public:
     void setMaxResults(int maxResults);
     void setHideOnFocusLost(bool on);
     void setStatusText(const QString &text);
+    /** 界面语言切换后刷新占位提示与底栏快捷键说明（状态栏由宿主重新设置）。 */
+    void retranslateUi();
 
     /** 离屏预览用：直接设置输入框内容并触发一次检索（不改变窗口可见性）。 */
     void setQueryForPreview(const QString &query);
@@ -94,7 +96,7 @@ private:
     void performSearch();
     void moveSelection(int delta);
     void activateCurrent(bool reveal, bool asAdmin);
-    void updateGeometryForResults(int rowCount, bool emptyQuery);
+    void updateGeometryForResults(int rowCount);
     void showContextMenu(const QPoint &position);
     void enterPluginMode(const QString &pluginId, const QString &displayName,
                          const QString &placeholder);

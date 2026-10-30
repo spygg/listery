@@ -7,6 +7,7 @@
 class AppSettings;
 class PluginHost;
 class QCheckBox;
+class QComboBox;
 class QKeySequenceEdit;
 class QLineEdit;
 class QSpinBox;
@@ -44,6 +45,7 @@ private:
     QSpinBox *m_hotkeyInterval = nullptr;
     QSpinBox *m_maxResults = nullptr;
     QSpinBox *m_rescanMinutes = nullptr;
+    QComboBox *m_language = nullptr;
     QCheckBox *m_autoScan = nullptr;
     QCheckBox *m_includeRemovable = nullptr;
     QCheckBox *m_autoStart = nullptr;

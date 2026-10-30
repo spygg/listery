@@ -95,7 +95,7 @@ void LauncherWindow::buildUi()
 
     m_edit = new QLineEdit(m_card);
     m_edit->setObjectName(QStringLiteral("searchEdit"));
-    m_edit->setPlaceholderText(QStringLiteral("输入程序名，例如 chrome、excel、git"));
+    m_edit->setPlaceholderText(tr("输入程序名，例如 chrome、excel、git"));
     m_edit->setClearButtonEnabled(false);
     m_edit->setFixedHeight(kEditHeight);
     m_edit->installEventFilter(this);
@@ -136,7 +136,7 @@ void LauncherWindow::buildUi()
 
     m_status = new QLabel(m_footer);
     m_status->setObjectName(QStringLiteral("statusLabel"));
-    m_status->setText(QStringLiteral("索引尚未建立"));
+    m_status->setText(tr("索引尚未建立"));
     m_status->setMaximumWidth(420);
     footerLayout->addWidget(m_status);
     footerLayout->addStretch(1);
@@ -144,7 +144,7 @@ void LauncherWindow::buildUi()
     m_hints = new QLabel(m_footer);
     m_hints->setObjectName(QStringLiteral("hintLabel"));
     m_hints->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    m_hints->setText(QStringLiteral("↑↓ 选择 · Enter 运行 · Ctrl+Enter 定位 · Shift+Enter 管理员 · Esc 隐藏"));
+    m_hints->setText(tr("↑↓ 选择 · Enter 运行 · Ctrl+Enter 定位 · Shift+Enter 管理员 · Esc 隐藏"));
     footerLayout->addWidget(m_hints);
     cardLayout->addWidget(m_footer);
 
@@ -232,9 +232,9 @@ void LauncherWindow::enterPluginMode(const QString &pluginId, const QString &dis
     m_pluginName = displayName;
     m_statusBeforePlugin = m_status->text();
     m_edit->setPlaceholderText(placeholder.isEmpty()
-                                   ? QStringLiteral("输入内容，交给 %1").arg(displayName)
+                                   ? tr("输入内容，交给 %1").arg(displayName)
                                    : placeholder);
-    m_hints->setText(QStringLiteral("Enter 执行 · Esc 隐藏"));
+    m_hints->setText(tr("Enter 执行 · Esc 隐藏"));
 }
 
 void LauncherWindow::beginPluginSession(const QString &pluginId, const QString &displayName,
@@ -257,8 +257,8 @@ void LauncherWindow::endPluginSession()
     m_pluginName.clear();
     m_pendingSequence = 0;
     m_appliedSequence = 0;
-    m_edit->setPlaceholderText(QStringLiteral("输入程序名，例如 chrome、excel、git"));
-    m_hints->setText(QStringLiteral("↑↓ 选择 · Enter 运行 · Ctrl+Enter 定位 · Shift+Enter 管理员 · Esc 隐藏"));
+    m_edit->setPlaceholderText(tr("输入程序名，例如 chrome、excel、git"));
+    m_hints->setText(tr("↑↓ 选择 · Enter 运行 · Ctrl+Enter 定位 · Shift+Enter 管理员 · Esc 隐藏"));
     if (m_pluginHost && !pluginId.isEmpty())
         m_pluginHost->cancel(pluginId);
     m_status->setText(m_statusBeforePlugin);
@@ -278,7 +278,7 @@ void LauncherWindow::dismiss()
         m_edit->clear();
     }
     // 隐藏前把面板收回输入框高度：否则下次唤起会带着上一次展开的尺寸出现
-    updateGeometryForResults(0, true);
+    updateGeometryForResults(0);
 }
 
 void LauncherWindow::refreshResults()
@@ -303,6 +303,17 @@ void LauncherWindow::setStatusText(const QString &text)
 {
     m_status->setText(text);
     m_status->setToolTip(text);
+}
+
+void LauncherWindow::retranslateUi()
+{
+    if (m_mode == LauncherMode::Plugin) {
+        // 插件模式的占位文字由宿主给出（含插件名），切换语言时不动它
+        m_hints->setText(tr("Enter 执行 · Esc 隐藏"));
+        return;
+    }
+    m_edit->setPlaceholderText(tr("输入程序名，例如 chrome、excel、git"));
+    m_hints->setText(tr("↑↓ 选择 · Enter 运行 · Ctrl+Enter 定位 · Shift+Enter 管理员 · Esc 隐藏"));
 }
 
 void LauncherWindow::setQueryForPreview(const QString &query)
@@ -331,17 +342,17 @@ void LauncherWindow::performSearch()
         m_list->setCurrentIndex(QModelIndex());
         if (m_mode == LauncherMode::Plugin)
             m_status->setText(m_pluginName.isEmpty() ? QString() : m_pluginName);
-        updateGeometryForResults(0, true);
+        updateGeometryForResults(0);
         return;
     }
 
     if (m_mode == LauncherMode::Plugin) {
         if (!m_pluginHost)
             return;
-        m_status->setText(QStringLiteral("%1 · 处理中…").arg(m_pluginName));
+        m_status->setText(tr("%1 · 处理中…").arg(m_pluginName));
         const quint64 sequence = m_pluginHost->beginQuery(m_pluginId, query, m_maxResults);
         if (sequence == 0) {
-            m_status->setText(QStringLiteral("插件不可用"));
+            m_status->setText(tr("插件不可用"));
             return;
         }
         m_pendingSequence = sequence;
@@ -387,11 +398,11 @@ void LauncherWindow::applyPluginResults(quint64 sequence, QString pluginId, QStr
     if (!errorMessage.isEmpty())
         m_status->setText(errorMessage);
     else if (results.isEmpty())
-        m_status->setText(QStringLiteral("没有结果"));
+        m_status->setText(tr("没有结果"));
     else
-        m_status->setText(QStringLiteral("%1 · %2 条").arg(m_pluginName).arg(results.size()));
+        m_status->setText(tr("%1 · %2 条").arg(m_pluginName).arg(results.size()));
 
-    updateGeometryForResults(results.size(), false);
+    updateGeometryForResults(results.size());
     m_appliedSequence = sequence;
     emit searchApplied();
 }
@@ -400,6 +411,10 @@ void LauncherWindow::applyResults(quint64 sequence, const QString &query,
                                   const QVector<SearchResult> &results, qint64 elapsedMs)
 {
     Q_UNUSED(elapsedMs)
+    // 程序检索与插件检索的序号各自从 1 开始：切到插件模式后，仍在路上的程序结果
+    // 可能恰好“序号相同 + 查询相同”，不能让它覆盖插件面板
+    if (m_mode != LauncherMode::Programs)
+        return;
     // 输入已经变了：只认最新一次请求的结果，过期结果直接丢弃
     if (sequence != m_pendingSequence || query != m_edit->text().trimmed())
         return;
@@ -415,7 +430,7 @@ void LauncherWindow::applyResults(quint64 sequence, const QString &query,
         m_list->setCurrentIndex(QModelIndex());
     }
 
-    updateGeometryForResults(results.size(), false);
+    updateGeometryForResults(results.size());
     m_appliedSequence = sequence;
     emit searchApplied();
 }
@@ -443,9 +458,9 @@ QMenu *LauncherWindow::createResultMenu(const SearchResult &result,
 {
     Q_UNUSED(result)
     QMenu *menu = new QMenu(const_cast<LauncherWindow *>(this));
-    QAction *admin = menu->addAction(QStringLiteral("以管理员身份运行"));
-    QAction *reveal = menu->addAction(QStringLiteral("打开所在位置"));
-    QAction *copy = menu->addAction(QStringLiteral("复制路径到剪贴板"));
+    QAction *admin = menu->addAction(tr("以管理员身份运行"));
+    QAction *reveal = menu->addAction(tr("打开所在位置"));
+    QAction *copy = menu->addAction(tr("复制路径到剪贴板"));
     if (adminAction)
         *adminAction = admin;
     if (revealAction)
@@ -469,7 +484,7 @@ void LauncherWindow::showContextMenu(const QPoint &position)
         if (result.pluginAction.isEmpty())
             return;
         QMenu *menu = new QMenu(this);
-        QAction *run = menu->addAction(QStringLiteral("执行（默认动作）"));
+        QAction *run = menu->addAction(tr("执行（默认动作）"));
         m_contextMenuOpen = true;
         QAction *chosen = menu->exec(m_list->viewport()->mapToGlobal(position));
         m_contextMenuOpen = false;
@@ -544,16 +559,17 @@ void LauncherWindow::activateCurrent(bool reveal, bool asAdmin)
         emit launchRequested(result.record, asAdmin);
 }
 
-void LauncherWindow::updateGeometryForResults(int rowCount, bool emptyQuery)
+void LauncherWindow::updateGeometryForResults(int rowCount)
 {
     const bool noRows = rowCount <= 0;
 
-    // 空输入：只有输入框；有输入但无候选：输入框 + 状态栏；有候选：展开列表
+    // 状态栏常驻：空输入和有输入无候选时面板高度一致，输入区不会随输入状态忽高忽低。
+    // 只有出现候选时才向下展开列表。
     m_list->setVisible(!noRows);
     m_separator->setVisible(!noRows);
-    m_footer->setVisible(!emptyQuery);
+    m_footer->setVisible(true);
 
-    int contentHeight = kEditHeight + kCardBorder;
+    int contentHeight = kEditHeight + kCardBorder + kFooterHeight;
     if (noRows) {
         m_list->setFixedHeight(0);
     } else {
@@ -561,8 +577,6 @@ void LauncherWindow::updateGeometryForResults(int rowCount, bool emptyQuery)
         m_list->setFixedHeight(visibleRows * kRowHeight);
         contentHeight += 1 + m_list->height();
     }
-    if (!emptyQuery)
-        contentHeight += kFooterHeight;
 
     // 先清掉最小高度再 resize：布局一旦把 minimumHeight 抬起来，resize() 会被钳住
     setMinimumHeight(0);

@@ -1,4 +1,6 @@
 #include "Core/Updater.h"
+
+#include "Core/HttpClient.h"
 #include "Core/QtCompat.h"
 
 #ifndef LISTERY_VERSION
@@ -8,11 +10,7 @@
 #include <QDesktopServices>
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <QNetworkAccessManager>
-#include <QNetworkReply>
-#include <QNetworkRequest>
 #include <QUrl>
-#include <memory>
 
 namespace {
 /** 把 "1.2.0" 拆成数字段，便于逐段比较。 */
@@ -30,10 +28,9 @@ QVector<int> parseVersionParts(const QString &version)
 
 Updater::Updater(QObject *parent)
     : QObject(parent)
-    , m_network(new QNetworkAccessManager(this))
+    , m_http(new HttpClient(this))
 {
-    connect(m_network, &QNetworkAccessManager::finished,
-            this, &Updater::onFinished);
+    connect(m_http, &HttpClient::finished, this, &Updater::onHttpFinished);
 }
 
 Updater::~Updater() = default;
@@ -68,16 +65,13 @@ int Updater::compareVersions(const QString &a, const QString &b)
 
 void Updater::checkForUpdates(const QString &apiUrl)
 {
-    if (apiUrl.isEmpty())
+    if (apiUrl.isEmpty() || !m_http)
         return;
 
-    QNetworkRequest request(QUrl::fromUserInput(apiUrl));
-    // GitHub API 要求带 UA，否则 403
-    request.setHeader(QNetworkRequest::UserAgentHeader,
-                      QStringLiteral("Listery/%1 (update-check)").arg(currentVersion()));
-    // 避免代理/缓存返回陈旧结果
-    request.setRawHeader("Cache-Control", "no-cache");
-    m_network->get(request);
+    // GitHub API 要求带 UA，否则 403；Cache-Control 避免代理返回陈旧结果
+    m_http->get(QUrl::fromUserInput(apiUrl),
+                QStringLiteral("Listery/%1 (update-check)").arg(currentVersion()),
+                QStringList() << QStringLiteral("Cache-Control: no-cache"), 10000);
 }
 
 void Updater::openUrl(const QString &url)
@@ -86,20 +80,24 @@ void Updater::openUrl(const QString &url)
         QDesktopServices::openUrl(QUrl::fromUserInput(url));
 }
 
-void Updater::onFinished(QNetworkReply *reply)
+void Updater::onHttpFinished(quint64 requestId, int status, const QByteArray &body,
+                             const QString &error)
 {
-    if (!reply)
-        return;
-    const std::unique_ptr<QNetworkReply> guard(reply); // 调用结束后自动释放
+    Q_UNUSED(requestId)
 
-    if (reply->error() != QNetworkReply::NoError) {
-        emit checkFailed(reply->errorString());
+    if (!error.isEmpty()) {
+        emit checkFailed(error);
+        return;
+    }
+    if (status != 200) {
+        emit checkFailed(status > 0
+                             ? QStringLiteral("服务器返回 HTTP %1").arg(status)
+                             : QStringLiteral("服务器没有返回内容"));
         return;
     }
 
-    const QByteArray payload = reply->readAll();
     QJsonParseError parseError;
-    const QJsonDocument doc = QJsonDocument::fromJson(payload, &parseError);
+    const QJsonDocument doc = QJsonDocument::fromJson(body, &parseError);
     if (doc.isNull() || !doc.isObject()) {
         emit checkFailed(parseError.errorString());
         return;

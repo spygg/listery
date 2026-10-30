@@ -64,6 +64,24 @@ bool writeTextFile(const QString &path, const QString &content, QString *error)
     file.close();
     return true;
 }
+
+#ifdef Q_OS_LINUX
+/**
+ * .desktop 的 Exec 键转义：双引号内 " ` $ \ 要用反斜杠转义，
+ * 而 % 是字段码前缀（%f、%u…），路径里出现 % 必须写成 %% 才不会被解释成字段码。
+ * 之前的写法直接把路径塞进引号里，装在带 % 的目录下会导致自启动项解析失败。
+ */
+QString desktopExecEscaped(const QString &path)
+{
+    QString escaped = path;
+    escaped.replace(QLatin1Char('\\'), QStringLiteral("\\\\"));
+    escaped.replace(QLatin1Char('"'), QStringLiteral("\\\""));
+    escaped.replace(QLatin1Char('`'), QStringLiteral("\\`"));
+    escaped.replace(QLatin1Char('$'), QStringLiteral("\\$"));
+    escaped.replace(QLatin1Char('%'), QStringLiteral("%%"));
+    return escaped;
+}
+#endif
 #endif
 } // namespace
 
@@ -176,7 +194,7 @@ bool setEnabled(bool on, QString *error)
         "Exec=\"%1\" --autostart\n"
         "Terminal=false\n"
         "X-GNOME-Autostart-enabled=true\n")
-        .arg(exe);
+        .arg(desktopExecEscaped(exe));
 #endif
     return writeTextFile(path, content, error);
 #endif

@@ -1,5 +1,7 @@
 #include "Core/AppSettings.h"
 
+#include "Core/Localization.h"
+
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
@@ -14,6 +16,7 @@ const char *kKeyIncludeRemovable = "index/includeRemovableDrives";
 const char *kKeyAutoStart = "general/autoStart";
 const char *kKeyHotkeyInterval = "ui/hotkeyIntervalMs";
 const char *kKeyMaxResults = "ui/maxResults";
+const char *kKeyLanguage = "ui/language";
 const char *kKeyAutoScan = "index/autoScanOnStartup";
 const char *kKeyRescanMinutes = "index/rescanIntervalMinutes";
 const char *kKeyHideOnFocusLost = "ui/hideWhenFocusLost";
@@ -203,6 +206,23 @@ int AppSettings::maxResults() const
 void AppSettings::setMaxResults(int count)
 {
     m_settings->setValue(QString::fromLatin1(kKeyMaxResults), qBound(5, count, 30));
+    m_settings->sync();
+}
+
+QString AppSettings::language() const
+{
+    // 没设置过时不写入默认值，这样用户换系统语言后界面也会跟着变
+    const QString stored =
+        m_settings->value(QString::fromLatin1(kKeyLanguage), QString()).toString();
+    return stored.isEmpty() ? Localization::systemLanguage() : stored;
+}
+
+void AppSettings::setLanguage(const QString &code)
+{
+    if (code.isEmpty())
+        m_settings->remove(QString::fromLatin1(kKeyLanguage));
+    else
+        m_settings->setValue(QString::fromLatin1(kKeyLanguage), code);
     m_settings->sync();
 }
 

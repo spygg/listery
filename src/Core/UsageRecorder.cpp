@@ -19,8 +19,9 @@ UsageRecorder::UsageRecorder(const QString &databasePath, QObject *parent)
 
 UsageRecorder::~UsageRecorder()
 {
-    if (m_db.isOpen())
-        m_db.close();
+    // 析构时也要走一遍完整清理：只 close() 会把连接名留在 QSqlDatabase 里，
+    // 进程内再创建同名连接（自检、多次启动）会拿到半死的句柄并报 "duplicate connection name"
+    shutdown();
 }
 
 void UsageRecorder::shutdown()

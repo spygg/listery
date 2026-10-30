@@ -1,11 +1,13 @@
 #include "Ui/SettingsDialog.h"
 
 #include "Core/AppSettings.h"
+#include "Core/Localization.h"
 #include "Core/PluginHost.h"
 #include "Core/QtCompat.h"
 #include "Platform/HotkeyHook.h"
 
 #include <QCheckBox>
+#include <QComboBox>
 #include <QDesktopServices>
 #include <QDialogButtonBox>
 #include <QFormLayout>
@@ -40,7 +42,7 @@ SettingsDialog::SettingsDialog(AppSettings *settings, PluginHost *plugins, QWidg
     , m_settings(settings)
     , m_plugins(plugins)
 {
-    setWindowTitle(QStringLiteral("Listery 设置"));
+    setWindowTitle(tr("Listery 设置"));
     listerySetWindowFlag(this, Qt::WindowContextHelpButtonHint, false);
     setMinimumWidth(520);
 
@@ -54,27 +56,27 @@ void SettingsDialog::buildUi()
     mainLayout->setContentsMargins(20, 18, 20, 16);
     mainLayout->setSpacing(14);
 
-    auto *indexGroup = new QGroupBox(QStringLiteral("索引"), this);
+    auto *indexGroup = new QGroupBox(tr("索引"), this);
     auto *indexForm = new QFormLayout(indexGroup);
     indexForm->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
 
     m_extensions = new QLineEdit(indexGroup);
-    m_extensions->setPlaceholderText(QStringLiteral("exe, com, bat, cmd, sh, ps1（lnk/url 快捷方式始终索引）"));
-    indexForm->addRow(QStringLiteral("可执行后缀"), m_extensions);
+    m_extensions->setPlaceholderText(tr("exe, com, bat, cmd, sh, ps1（lnk/url 快捷方式始终索引）"));
+    indexForm->addRow(tr("可执行后缀"), m_extensions);
 
     m_skipDirectories = new QLineEdit(indexGroup);
     m_skipDirectories->setPlaceholderText(QStringLiteral("WinSxS, node_modules, Temp"));
-    indexForm->addRow(QStringLiteral("跳过目录"), m_skipDirectories);
+    indexForm->addRow(tr("跳过目录"), m_skipDirectories);
 
-    m_includeRemovable = new QCheckBox(QStringLiteral("索引可移动磁盘（U 盘、移动硬盘）"), indexGroup);
+    m_includeRemovable = new QCheckBox(tr("索引可移动磁盘（U 盘、移动硬盘）"), indexGroup);
     indexForm->addRow(QString(), m_includeRemovable);
 
-    m_autoScan = new QCheckBox(QStringLiteral("启动时自动更新索引（每天最多一次全盘扫描）"), indexGroup);
+    m_autoScan = new QCheckBox(tr("启动时自动更新索引（每天最多一次全盘扫描）"), indexGroup);
     indexForm->addRow(QString(), m_autoScan);
 
     m_smartSchedule = new QCheckBox(
-        QStringLiteral("智能调度：可执行程序很少的分区自动降低扫描频率"), indexGroup);
-    m_smartSchedule->setToolTip(QStringLiteral(
+        tr("智能调度：可执行程序很少的分区自动降低扫描频率"), indexGroup);
+    m_smartSchedule->setToolTip(tr(
         "有程序的分区按下面的间隔刷新；只有零星几个的放宽到 2 倍；"
         "一个都没有的从 4 倍起步、每空一轮再翻倍，最多放宽到 14 天。"));
     indexForm->addRow(QString(), m_smartSchedule);
@@ -83,8 +85,8 @@ void SettingsDialog::buildUi()
     // locate 是 Linux 专属的快速通道（读取 mlocate/plocate 快照），Windows/macOS 根本没有，
     // 在这些平台上把这个选项藏掉，免得用户看到一条用不上的设置。
     m_useLocate = new QCheckBox(
-        QStringLiteral("优先用 locate 数据库建索引（秒级完成）"), indexGroup);
-    m_useLocate->setToolTip(QStringLiteral(
+        tr("优先用 locate 数据库建索引（秒级完成）"), indexGroup);
+    m_useLocate->setToolTip(tr(
         "读取 mlocate / plocate 的快照而不是遍历整个文件系统；"
         "locate 库由系统每天更新一次，因此新建的程序最多晚一天进入索引。"));
     indexForm->addRow(QString(), m_useLocate);
@@ -92,30 +94,35 @@ void SettingsDialog::buildUi()
 
     m_rescanMinutes = new QSpinBox(indexGroup);
     m_rescanMinutes->setRange(0, 10080);
-    m_rescanMinutes->setSuffix(QStringLiteral(" 分钟"));
-    m_rescanMinutes->setSpecialValueText(QStringLiteral("不自动刷新"));
-    indexForm->addRow(QStringLiteral("定时刷新间隔"), m_rescanMinutes);
+    m_rescanMinutes->setSuffix(tr(" 分钟"));
+    m_rescanMinutes->setSpecialValueText(tr("不自动刷新"));
+    indexForm->addRow(tr("定时刷新间隔"), m_rescanMinutes);
 
     mainLayout->addWidget(indexGroup);
 
-    auto *uiGroup = new QGroupBox(QStringLiteral("交互"), this);
+    auto *uiGroup = new QGroupBox(tr("交互"), this);
     auto *uiForm = new QFormLayout(uiGroup);
     uiForm->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
+
+    m_language = new QComboBox(uiGroup);
+    for (const QString &code : Localization::availableLanguages())
+        m_language->addItem(Localization::nativeName(code), code);
+    uiForm->addRow(tr("界面语言"), m_language);
 
     m_hotkeyInterval = new QSpinBox(uiGroup);
     m_hotkeyInterval->setRange(150, 800);
     m_hotkeyInterval->setSingleStep(20);
-    m_hotkeyInterval->setSuffix(QStringLiteral(" 毫秒"));
-    uiForm->addRow(QStringLiteral("双击 Ctrl 间隔"), m_hotkeyInterval);
+    m_hotkeyInterval->setSuffix(tr(" 毫秒"));
+    uiForm->addRow(tr("双击 Ctrl 间隔"), m_hotkeyInterval);
 
     m_maxResults = new QSpinBox(uiGroup);
     m_maxResults->setRange(5, 30);
-    uiForm->addRow(QStringLiteral("最大候选数"), m_maxResults);
+    uiForm->addRow(tr("最大候选数"), m_maxResults);
 
-    m_hideOnFocusLost = new QCheckBox(QStringLiteral("窗口失去焦点时自动隐藏"), uiGroup);
+    m_hideOnFocusLost = new QCheckBox(tr("窗口失去焦点时自动隐藏"), uiGroup);
     uiForm->addRow(QString(), m_hideOnFocusLost);
 
-    m_autoStart = new QCheckBox(QStringLiteral("开机自启动（登录后静默运行，默认开启）"), uiGroup);
+    m_autoStart = new QCheckBox(tr("开机自启动（登录后静默运行，默认开启）"), uiGroup);
     uiForm->addRow(QString(), m_autoStart);
 
     mainLayout->addWidget(uiGroup);
@@ -123,12 +130,12 @@ void SettingsDialog::buildUi()
     buildPluginGroup(mainLayout);
 
     auto *dataRow = new QHBoxLayout();
-    auto *dataLabel = new QLabel(QStringLiteral("数据目录：%1").arg(m_settings->dataDir()), this);
+    auto *dataLabel = new QLabel(tr("数据目录：%1").arg(m_settings->dataDir()), this);
     dataLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
     dataLabel->setWordWrap(true);
     dataRow->addWidget(dataLabel, 1);
 
-    auto *openDataButton = new QPushButton(QStringLiteral("打开"), this);
+    auto *openDataButton = new QPushButton(tr("打开"), this);
     connect(openDataButton, &QPushButton::clicked, this, [this]() {
         QDesktopServices::openUrl(QUrl::fromLocalFile(m_settings->dataDir()));
     });
@@ -136,13 +143,13 @@ void SettingsDialog::buildUi()
     mainLayout->addLayout(dataRow);
 
     auto *buttonBox = new QDialogButtonBox(this);
-    auto *rescanButton = new QPushButton(QStringLiteral("立即重建索引"), buttonBox);
-    rescanButton->setToolTip(QStringLiteral("重新遍历所有磁盘，耗时取决于磁盘规模"));
+    auto *rescanButton = new QPushButton(tr("立即重建索引"), buttonBox);
+    rescanButton->setToolTip(tr("重新遍历所有磁盘，耗时取决于磁盘规模"));
     buttonBox->addButton(rescanButton, QDialogButtonBox::ActionRole);
-    auto *saveButton = new QPushButton(QStringLiteral("保存"), buttonBox);
+    auto *saveButton = new QPushButton(tr("保存"), buttonBox);
     saveButton->setDefault(true);
     buttonBox->addButton(saveButton, QDialogButtonBox::AcceptRole);
-    auto *cancelButton = new QPushButton(QStringLiteral("取消"), buttonBox);
+    auto *cancelButton = new QPushButton(tr("取消"), buttonBox);
     buttonBox->addButton(cancelButton, QDialogButtonBox::RejectRole);
 
     connect(saveButton, &QPushButton::clicked, this, [this]() {
@@ -161,19 +168,19 @@ void SettingsDialog::buildUi()
 
 void SettingsDialog::buildPluginGroup(QVBoxLayout *mainLayout)
 {
-    auto *pluginGroup = new QGroupBox(QStringLiteral("插件"), this);
+    auto *pluginGroup = new QGroupBox(tr("插件"), this);
     auto *pluginLayout = new QVBoxLayout(pluginGroup);
     pluginLayout->setSpacing(8);
 
     const QString pluginDir = m_settings->pluginDir();
-    auto *dirLabel = new QLabel(QStringLiteral("插件目录：%1").arg(pluginDir), pluginGroup);
+    auto *dirLabel = new QLabel(tr("插件目录：%1").arg(pluginDir), pluginGroup);
     dirLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
     dirLabel->setWordWrap(true);
     pluginLayout->addWidget(dirLabel);
 
     const QVector<PluginInfo> plugins = m_plugins ? m_plugins->plugins() : QVector<PluginInfo>();
     if (plugins.isEmpty()) {
-        auto *empty = new QLabel(QStringLiteral("未发现插件。把 .dll / .so 放进上面的目录，重启 Listery 即可加载。"),
+        auto *empty = new QLabel(tr("未发现插件。把 .dll / .so 放进上面的目录，重启 Listery 即可加载。"),
                                  pluginGroup);
         empty->setWordWrap(true);
         empty->setStyleSheet(QStringLiteral("color: #8A919B;"));
@@ -189,21 +196,21 @@ void SettingsDialog::buildPluginGroup(QVBoxLayout *mainLayout)
         enabled->setEnabled(info.loaded);
         enabled->setToolTip(info.loaded
                                 ? info.filePath
-                                : QStringLiteral("加载失败：%1").arg(info.error));
+                                : tr("加载失败：%1").arg(info.error));
         row->addWidget(enabled, 1);
 
-        auto *version = new QLabel(info.loaded ? info.version : QStringLiteral("加载失败"), pluginGroup);
+        auto *version = new QLabel(info.loaded ? info.version : tr("加载失败"), pluginGroup);
         version->setStyleSheet(QStringLiteral("color: #8A919B;"));
         row->addWidget(version);
 
         auto *hotkey = new QKeySequenceEdit(QKeySequence::fromString(info.hotkey, QKeySequence::PortableText),
                                             pluginGroup);
         hotkey->setMaximumWidth(110);
-        hotkey->setToolTip(QStringLiteral("留空表示不占用全局热键（仍可从托盘菜单进入）"));
+        hotkey->setToolTip(tr("留空表示不占用全局热键（仍可从托盘菜单进入）"));
         row->addWidget(hotkey);
 
         if (info.hasConfigUi && info.loaded) {
-            auto *configure = new QPushButton(QStringLiteral("配置…"), pluginGroup);
+            auto *configure = new QPushButton(tr("配置…"), pluginGroup);
             const QString pluginId = info.id;
             connect(configure, &QPushButton::clicked, this, [this, pluginId]() {
                 if (m_plugins)
@@ -235,6 +242,8 @@ void SettingsDialog::buildPluginGroup(QVBoxLayout *mainLayout)
 
 void SettingsDialog::loadValues()
 {
+    const int languageIndex = m_language->findData(m_settings->language());
+    m_language->setCurrentIndex(languageIndex >= 0 ? languageIndex : 0);
     m_hotkeyInterval->setValue(m_settings->hotkeyIntervalMs());
     m_maxResults->setValue(m_settings->maxResults());
     m_rescanMinutes->setValue(m_settings->rescanIntervalMinutes());
@@ -271,6 +280,7 @@ void SettingsDialog::saveValues()
 #endif
     m_settings->setHotkeyIntervalMs(m_hotkeyInterval->value());
     m_settings->setMaxResults(m_maxResults->value());
+    m_settings->setLanguage(m_language->currentData().toString());
 
     // 插件：写回设置并同步给宿主（热键由 AppController 在对话框关闭后重新注册）
     for (const PluginWidgets &widget : m_pluginWidgets) {

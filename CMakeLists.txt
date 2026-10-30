@@ -43,6 +43,8 @@ set(PROJECT_SOURCES
     src/Core/LaunchService.h
     src/Core/LaunchService.cpp
     src/Core/QtCompat.h
+    src/Core/Localization.h
+    src/Core/Localization.cpp
     src/Core/UsageRecorder.h
     src/Core/UsageRecorder.cpp
     src/Core/Pinyin.h
@@ -53,6 +55,8 @@ set(PROJECT_SOURCES
     src/Core/PluginHost.cpp
     src/Core/Updater.h
     src/Core/Updater.cpp
+    src/Core/HttpClient.h
+    src/Core/HttpClient.cpp
 
     src/Platform/HotkeyHook.h
     src/Platform/HotkeyHook.cpp
@@ -100,8 +104,40 @@ target_link_libraries(listery PRIVATE
     Qt${QT_VERSION_MAJOR}::Network
 )
 
+# 界面语言包：lrelease 把 .ts 编译成 .qm，再随资源嵌进 exe（部署时只有一个文件）。
+# 没有安装 LinguistTools 时跳过：Localization 会退回简体中文，程序照常可用。
+find_package(Qt${QT_VERSION_MAJOR} QUIET COMPONENTS LinguistTools)
+if(TARGET Qt${QT_VERSION_MAJOR}::lrelease)
+    set(LISTERY_LANGUAGES en fr zh_TW)
+    set(LISTERY_QM_FILES)
+    set(LISTERY_QRC_CONTENT "<RCC>\n    <qresource prefix=\"/i18n\">\n")
+    foreach(lang ${LISTERY_LANGUAGES})
+        set(ts "${CMAKE_CURRENT_SOURCE_DIR}/src/i18n/listery_${lang}.ts")
+        set(qm "${CMAKE_CURRENT_BINARY_DIR}/i18n/listery_${lang}.qm")
+        add_custom_command(
+            OUTPUT "${qm}"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/i18n"
+            COMMAND Qt${QT_VERSION_MAJOR}::lrelease "${ts}" -qm "${qm}"
+            DEPENDS "${ts}"
+            COMMENT "lrelease listery_${lang}.ts"
+            VERBATIM)
+        list(APPEND LISTERY_QM_FILES "${qm}")
+        string(APPEND LISTERY_QRC_CONTENT
+               "        <file alias=\"listery_${lang}.qm\">${qm}</file>\n")
+    endforeach()
+    string(APPEND LISTERY_QRC_CONTENT "    </qresource>\n</RCC>\n")
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/listery_translations.qrc" "${LISTERY_QRC_CONTENT}")
+
+    add_custom_target(listery_translations ALL DEPENDS ${LISTERY_QM_FILES})
+    target_sources(listery PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/listery_translations.qrc")
+    add_dependencies(listery listery_translations)
+else()
+    message(WARNING "未找到 Qt LinguistTools：构建出的程序只有简体中文界面")
+endif()
+
 if(WIN32)
-    target_link_libraries(listery PRIVATE shell32 user32 ole32 advapi32)
+    # winhttp：更新检查与插件 HTTP 走 Windows 自带 TLS 栈，不依赖 OpenSSL DLL
+    target_link_libraries(listery PRIVATE shell32 user32 ole32 advapi32 winhttp)
 elseif(APPLE)
     find_library(APPLICATION_SERVICES ApplicationServices REQUIRED)
     target_link_libraries(listery PRIVATE ${APPLICATION_SERVICES})

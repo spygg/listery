@@ -19,11 +19,13 @@
 #include <QImage>
 #include <QLocalSocket>
 #include <QMessageBox>
+#include <QMutex>
 #include <QPainter>
 #include <QTemporaryDir>
 #include <QTimer>
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 #ifdef Q_OS_WIN
@@ -32,6 +34,8 @@
 
 namespace {
 QFile *g_logFile = nullptr;
+/** 日志可能来自 GUI 线程、扫描线程、插件回调：QFile 不是线程安全的，写之前必须串行化。 */
+QMutex g_logMutex;
 
 void logMessageHandler(QtMsgType type, const QMessageLogContext &context, const QString &message)
 {
@@ -44,12 +48,21 @@ void logMessageHandler(QtMsgType type, const QMessageLogContext &context, const 
     const QString line = QStringLiteral("[%1] [%2] %3\n")
                              .arg(listeryIsoTimestamp(), level, message);
 
-    if (g_logFile && g_logFile->isOpen()) {
-        g_logFile->write(line.toUtf8());
-        g_logFile->flush();
-    } else {
-        std::fputs(qPrintable(line), stderr);
+    {
+        QMutexLocker locker(&g_logMutex);
+        if (g_logFile && g_logFile->isOpen()) {
+            g_logFile->write(line.toUtf8());
+            g_logFile->flush();
+            if (type != QtFatalMsg)
+                return;
+        } else {
+            std::fputs(qPrintable(line), stderr);
+        }
     }
+
+    // qFatal 的语义是“记完这条就结束进程”：不 abort 会让程序带着已损坏的状态继续跑
+    if (type == QtFatalMsg)
+        std::abort();
 }
 
 /**
@@ -306,5 +319,17 @@ int main(int argc, char *argv[])
         });
     }
 
-    return app.exec();
+    const int exitCode = app.exec();
+    // 退出时把日志句柄关掉并释放：否则 QFile 及其缓冲要到进程结束才回收，
+    // 调试器/文件监控也会一直认为日志被占用
+    {
+        QMutexLocker locker(&g_logMutex);
+        if (g_logFile) {
+            g_logFile->flush();
+            g_logFile->close();
+            delete g_logFile;
+            g_logFile = nullptr;
+        }
+    }
+    return exitCode;
 }

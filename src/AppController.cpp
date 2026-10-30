@@ -1,6 +1,7 @@
 #include "AppController.h"
 
 #include "Core/LaunchService.h"
+#include "Core/Localization.h"
 #include "Core/PluginHost.h"
 #include "Core/Scanner.h"
 #include "Core/SearchService.h"
@@ -52,6 +53,8 @@ const char *kGitHubReleasesApi = "https://api.github.com/repos/spygg/listery/rel
 const qint64 kUpdateCheckIntervalMs = 24LL * 60 * 60 * 1000;
 /** 启动后延迟几秒再查，先把索引与界面跑顺。 */
 const int kUpdateCheckDelayMs = 8000;
+/** 挂载点枚举（会 stat 每个卷）的缓存时间：一次调度里要连着问两遍，没必要重复问系统。 */
+const qint64 kRootsCacheTtlMs = 60LL * 1000;
 } // namespace
 
 AppController::AppController(QObject *parent)
@@ -71,22 +74,37 @@ AppController::~AppController()
     if (m_usageThread) {
         // finished 信号已在后台线程里触发 UsageRecorder::shutdown（关闭其连接），随后 deleteLater
         m_usageThread->quit();
-        m_usageThread->wait(3000);
+        if (!m_usageThread->wait(3000)) {
+            // 后台线程卡在数据库写入里没退出：把它从对象树上摘下来直接放弃。
+            // QThread 析构时若线程仍在运行会 abort 整个进程，宁可漏一个线程也不要让退出变成崩溃
+            qWarning("Listery: 统计写入线程未在 3 秒内退出，放弃回收");
+            m_usageThread->setParent(nullptr);
+        }
         m_usageThread = nullptr;
         m_usage = nullptr;
     }
     if (m_scanner) {
         m_scanner->requestStop();
-        m_scanner->wait(8000);
+        if (!m_scanner->wait(8000)) {
+            // 同上：扫描线程可能正卡在慢盘的目录遍历上
+            qWarning("Listery: 扫描线程未在 8 秒内退出，放弃回收");
+            m_scanner->setParent(nullptr);
+        }
     }
     if (m_hook) {
         m_hook->requestStop();
-        m_hook->wait(2000);
+        if (!m_hook->wait(2000)) {
+            qWarning("Listery: 热键线程未在 2 秒内退出，放弃回收");
+            m_hook->setParent(nullptr);
+        }
     }
 }
 
 bool AppController::initialize()
 {
+    // 语言必须在创建任何窗口/托盘菜单之前生效；设置里没存过时跟随系统区域
+    Localization::install(m_settings.language());
+
     // 先抢单实例锁：第二个实例不该再去碰索引库或启动检索线程
     if (!setupSingleInstance())
         return false;
@@ -98,7 +116,7 @@ bool AppController::initialize()
     if (!m_database->open(&error)) {
         QMessageBox::critical(nullptr,
                               QStringLiteral("Listery"),
-                              QStringLiteral("无法打开索引库：\n%1\n\n路径：%2")
+                              tr("无法打开索引库：\n%1\n\n路径：%2")
                                   .arg(error, m_settings.databasePath()));
         return false;
     }
@@ -120,7 +138,7 @@ bool AppController::initialize()
 
     m_window = new LauncherWindow(m_searchService, m_settings.maxResults());
     m_window->setHideOnFocusLost(m_settings.hideWhenFocusLost());
-    m_window->setStatusText(QStringLiteral("索引尚未建立"));
+    m_window->setStatusText(tr("索引尚未建立"));
 
     setupPlugins();
     createTrayIcon();
@@ -137,7 +155,7 @@ bool AppController::initialize()
     const bool indexComplete = count > 0 && lastScan > 0 && !interrupted;
 
     if (count == 0) {
-        m_window->setStatusText(QStringLiteral("索引尚未建立 · 首次扫描进行中"));
+        m_window->setStatusText(tr("索引尚未建立 · 首次扫描进行中"));
         if (!m_silentStart)
             QTimer::singleShot(600, this, &AppController::showLauncher);
     }
@@ -159,7 +177,7 @@ bool AppController::initialize()
 
     if (m_tray && !QSystemTrayIcon::isSystemTrayAvailable())
         m_tray->showMessage(QStringLiteral("Listery"),
-                            QStringLiteral("系统托盘不可用，请用热键或托盘外方式启动"),
+                            tr("系统托盘不可用，请用热键或托盘外方式启动"),
                             QSystemTrayIcon::Warning, 4000);
 
     return true;
@@ -240,7 +258,7 @@ void AppController::onHotkeyTriggered(const QString &hotkey)
     if (!info.loaded)
         return;
     m_window->beginPluginSession(pluginId, info.name,
-                                 QStringLiteral("输入要%1的内容，Enter 复制结果").arg(info.name));
+                                 tr("输入要%1的内容，Enter 复制结果").arg(info.name));
 }
 
 void AppController::onPluginAction(const QString &action)
@@ -253,7 +271,7 @@ void AppController::onPluginAction(const QString &action)
         QGuiApplication::clipboard()->setText(text);
         if (m_tray)
             m_tray->showMessage(QStringLiteral("Listery"),
-                                QStringLiteral("已复制：%1").arg(text),
+                                tr("已复制：%1").arg(text),
                                 QSystemTrayIcon::Information, 2500);
         return;
     }
@@ -266,7 +284,7 @@ void AppController::onPluginAction(const QString &action)
         // 交给系统默认处理方式，避免在这里猜测目标类型
         if (!QDesktopServices::openUrl(QUrl::fromLocalFile(path)) && m_tray)
             m_tray->showMessage(QStringLiteral("Listery"),
-                                QStringLiteral("无法打开：%1").arg(path),
+                                tr("无法打开：%1").arg(path),
                                 QSystemTrayIcon::Warning, 3000);
         return;
     }
@@ -289,14 +307,14 @@ void AppController::onPluginSessionClosed()
 void AppController::createTrayIcon()
 {
     m_tray = new QSystemTrayIcon(Branding::appIcon(), this);
-    m_tray->setToolTip(QStringLiteral("Listery · 双击 Ctrl 唤起搜索"));
+    m_tray->setToolTip(tr("Listery · 双击 Ctrl 唤起搜索"));
 
     auto *menu = new QMenu();
-    m_actionShow = menu->addAction(QStringLiteral("打开搜索框"));
-    m_actionRescan = menu->addAction(QStringLiteral("重新扫描全盘"));
-    m_actionSettings = menu->addAction(QStringLiteral("设置…"));
+    m_actionShow = menu->addAction(tr("打开搜索框"));
+    m_actionRescan = menu->addAction(tr("重新扫描全盘"));
+    m_actionSettings = menu->addAction(tr("设置…"));
     if (m_plugins) {
-        m_pluginMenu = menu->addMenu(QStringLiteral("插件"));
+        m_pluginMenu = menu->addMenu(tr("插件"));
         for (const PluginInfo &info : m_plugins->plugins()) {
             if (!info.loaded)
                 continue;
@@ -308,14 +326,14 @@ void AppController::createTrayIcon()
             connect(action, &QAction::triggered, this, [this, pluginId]() {
                 const PluginInfo target = m_plugins->info(pluginId);
                 m_window->beginPluginSession(pluginId, target.name,
-                                             QStringLiteral("输入内容，交给 %1").arg(target.name));
+                                             tr("输入内容，交给 %1").arg(target.name));
             });
         }
         if (m_pluginMenu->isEmpty())
             m_pluginMenu->setEnabled(false);
     }
     menu->addSeparator();
-    m_actionQuit = menu->addAction(QStringLiteral("退出"));
+    m_actionQuit = menu->addAction(tr("退出"));
 
     connect(m_actionShow, &QAction::triggered, this, &AppController::showLauncher);
     connect(m_actionRescan, &QAction::triggered, this,
@@ -345,10 +363,13 @@ void AppController::setupUpdater()
 
     // 托盘菜单里提供手动检查入口
     if (m_tray && m_tray->contextMenu())
-        m_actionCheckUpdate = m_tray->contextMenu()->addAction(QStringLiteral("检查更新…"));
+        m_actionCheckUpdate = m_tray->contextMenu()->addAction(tr("检查更新…"));
     if (m_actionCheckUpdate) {
-        connect(m_actionCheckUpdate, &QAction::triggered, this,
-                &AppController::checkForUpdatesNow);
+        connect(m_actionCheckUpdate, &QAction::triggered, this, [this]() {
+            // 手动检查必须给结果反馈：否则没更新时点完菜单像是没反应
+            m_updateNotify = true;
+            checkForUpdatesNow();
+        });
     }
 
     // 启动时按每天至多一次的频率自动检查；用户关掉开关或距上次不足一天则跳过
@@ -363,15 +384,18 @@ void AppController::checkForUpdatesNow()
     if (!m_updater)
         return;
     m_updater->checkForUpdates(kGitHubReleasesApi);
-    m_settings.setLastUpdateCheck(QDateTime::currentMSecsSinceEpoch());
+    // 检查时间只在拿到结果后记录：断网/被墙时也记成“今天查过”，
+    // 会让自动更新在 24 小时内都不再重试，用户永远看不到新版本
 }
 
 void AppController::onUpdateAvailable(const ReleaseInfo &release, const QString &current)
 {
     m_pendingUpdateUrl = release.htmlUrl;
+    m_updateNotify = false;
+    m_settings.setLastUpdateCheck(QDateTime::currentMSecsSinceEpoch());
     if (m_tray) {
-        m_tray->showMessage(QStringLiteral("Listery 有更新"),
-                            QStringLiteral("发现新版本 %1（当前 %2），点击前往下载")
+        m_tray->showMessage(tr("Listery 有更新"),
+                            tr("发现新版本 %1（当前 %2），点击前往下载")
                                 .arg(release.version, current),
                             QSystemTrayIcon::Information, 10000);
     }
@@ -382,11 +406,24 @@ void AppController::onUpdateAvailable(const ReleaseInfo &release, const QString 
 void AppController::onUpdateUpToDate(const QString &current)
 {
     qInfo("Listery: 已是最新版本 %s", qPrintable(current));
+    m_settings.setLastUpdateCheck(QDateTime::currentMSecsSinceEpoch());
+    if (m_updateNotify && m_tray) {
+        m_tray->showMessage(QStringLiteral("Listery"),
+                            tr("已是最新版本（%1）").arg(current),
+                            QSystemTrayIcon::Information, 3000);
+    }
+    m_updateNotify = false;
 }
 
 void AppController::onUpdateCheckFailed(const QString &error)
 {
     qWarning("Listery: 更新检查失败：%s", qPrintable(error));
+    if (m_updateNotify && m_tray) {
+        m_tray->showMessage(QStringLiteral("Listery"),
+                            tr("检查更新失败：%1").arg(error),
+                            QSystemTrayIcon::Warning, 5000);
+    }
+    m_updateNotify = false;
 }
 
 void AppController::openPendingUpdate()
@@ -399,6 +436,23 @@ void AppController::openPendingUpdate()
 
 bool AppController::setupSingleInstance()
 {
+    const QString key = QString::fromLatin1(AppConstants::kSingleInstanceKey);
+
+    // 先探测有没有活着的实例：Unix 上 removeServer 会把正在使用的 socket 文件直接 unlink 掉，
+    // 单靠 listen 是否成功判断会漏掉，导致两个实例同时抢索引库和全局热键
+    {
+        QLocalSocket probe;
+        probe.connectToServer(key);
+        if (probe.waitForConnected(300)) {
+            // 已有实例：把“打开搜索框”的意图交给它，然后自己安静退出
+            probe.write("show");
+            probe.flush();
+            probe.waitForBytesWritten(300);
+            probe.disconnectFromServer();
+            return false;
+        }
+    }
+
     m_server = new QLocalServer(this);
     connect(m_server, &QLocalServer::newConnection, this, [this]() {
         while (m_server->hasPendingConnections()) {
@@ -413,8 +467,9 @@ bool AppController::setupSingleInstance()
         }
     });
 
-    QLocalServer::removeServer(QString::fromLatin1(AppConstants::kSingleInstanceKey));
-    if (!m_server->listen(QString::fromLatin1(AppConstants::kSingleInstanceKey))) {
+    // 走到这里说明没有活着的实例，残留的 socket 文件（上次异常退出）可以直接清掉
+    QLocalServer::removeServer(key);
+    if (!m_server->listen(key)) {
         // 拿不到单实例锁说明已有实例在运行：只能退出，否则会出现两个钩子和两个扫描线程写同一索引库
         qWarning("Listery: 单实例监听失败，退出：%s", qPrintable(m_server->errorString()));
         return false;
@@ -425,12 +480,12 @@ bool AppController::setupSingleInstance()
 void AppController::setupHotkey()
 {
     if (!GlobalHotkeys::isSupported()) {
-        QString hint = QStringLiteral("当前平台未实现全局双击 Ctrl，请用托盘菜单打开搜索框");
+        QString hint = tr("当前平台未实现全局双击 Ctrl，请用托盘菜单打开搜索框");
 #if defined(Q_OS_LINUX)
         const QString session = qEnvironmentVariable("XDG_SESSION_TYPE");
         if (session.compare(QStringLiteral("wayland"), Qt::CaseInsensitive) == 0
             || QGuiApplication::platformName().contains(QStringLiteral("wayland"))) {
-            hint = QStringLiteral("Wayland 会话下无法监听全局按键，请改用 X11 会话，或从托盘菜单打开搜索框");
+            hint = tr("Wayland 会话下无法监听全局按键，请改用 X11 会话，或从托盘菜单打开搜索框");
         }
 #endif
         if (m_tray)
@@ -447,7 +502,7 @@ void AppController::setupHotkey()
         qWarning("Listery: %s", qPrintable(reason));
         if (m_tray)
             m_tray->showMessage(QStringLiteral("Listery"),
-                                QStringLiteral("双击 Ctrl 不可用：%1\n可先用托盘菜单打开搜索框")
+                                tr("双击 Ctrl 不可用：%1\n可先用托盘菜单打开搜索框")
                                     .arg(reason),
                                 QSystemTrayIcon::Warning, 6000);
     });
@@ -491,12 +546,23 @@ void AppController::scheduleNextScan(int immediateDelayMs)
     m_scanTimer->start(static_cast<int>(qMin<qint64>(delay, kMaxPollIntervalMs)));
 }
 
+QStringList AppController::currentRoots() const
+{
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    if (m_rootsCacheAt > 0 && now - m_rootsCacheAt < kRootsCacheTtlMs)
+        return m_rootsCache;
+
+    m_rootsCache = Scanner::availableRoots(m_settings.includeRemovableDrives());
+    m_rootsCacheAt = now;
+    return m_rootsCache;
+}
+
 QStringList AppController::dueVolumes() const
 {
     if (!m_database)
         return QStringList();
 
-    const QStringList roots = Scanner::availableRoots(m_settings.includeRemovableDrives());
+    const QStringList roots = currentRoots();
     if (roots.isEmpty())
         return QStringList();
 
@@ -526,7 +592,7 @@ qint64 AppController::nextScanDelayMs() const
     if (!m_database)
         return kMaxPollIntervalMs;
 
-    const QStringList roots = Scanner::availableRoots(m_settings.includeRemovableDrives());
+    const QStringList roots = currentRoots();
     if (roots.isEmpty())
         return kMaxPollIntervalMs;
 
@@ -588,6 +654,10 @@ void AppController::showLauncher()
     if (!m_window)
         return;
     qInfo("Listery: 唤起搜索面板");
+    // 双击 Ctrl / 托盘唤起代表“我想找程序”：插件模式下要退出来，
+    // 否则输入会被继续发给上一次的插件，面板看起来像卡住了
+    if (m_window->mode() == LauncherMode::Plugin)
+        m_window->endPluginSession();
     updateStatus();
     m_window->popup();
 }
@@ -604,21 +674,21 @@ void AppController::updateStatus()
 
     const int count = indexCount();
     if (count <= 0) {
-        m_window->setStatusText(QStringLiteral("索引尚未建立"));
+        m_window->setStatusText(tr("索引尚未建立"));
         if (m_tray)
-            m_tray->setToolTip(QStringLiteral("Listery · 正在建立索引"));
+            m_tray->setToolTip(tr("Listery · 正在建立索引"));
         return;
     }
 
     const qint64 lastScan = m_database->meta(QStringLiteral("last_scan_time"), QStringLiteral("0")).toLongLong();
     const QString suffix = lastScan > 0
-        ? QStringLiteral(" · 更新于 %1").arg(QDateTime::fromMSecsSinceEpoch(lastScan).toString(QStringLiteral("MM-dd HH:mm")))
+        ? tr(" · 更新于 %1").arg(QDateTime::fromMSecsSinceEpoch(lastScan).toString(QStringLiteral("MM-dd HH:mm")))
         : QString();
 
-    m_window->setStatusText(QStringLiteral("已索引 %1 个可执行文件%2")
+    m_window->setStatusText(tr("已索引 %1 个可执行文件%2")
                                 .arg(QLocale().toString(count), suffix));
     if (m_tray)
-        m_tray->setToolTip(QStringLiteral("Listery · 已索引 %1 个可执行文件").arg(QLocale().toString(count)));
+        m_tray->setToolTip(tr("Listery · 已索引 %1 个可执行文件").arg(QLocale().toString(count)));
 }
 
 void AppController::startScan(bool notifyUser, bool deep, const QStringList &volumes)
@@ -633,7 +703,7 @@ void AppController::startScan(bool notifyUser, bool deep, const QStringList &vol
             m_pendingVolumes = volumes;
             if (notifyUser && m_tray)
                 m_tray->showMessage(QStringLiteral("Listery"),
-                                    QStringLiteral("已有扫描在进行，完成后会自动再扫一遍"),
+                                    tr("已有扫描在进行，完成后会自动再扫一遍"),
                                     QSystemTrayIcon::Information, 3000);
             return;
         }
@@ -673,10 +743,10 @@ void AppController::startScan(bool notifyUser, bool deep, const QStringList &vol
     });
     scanner->start();
 
-    m_window->setStatusText(QStringLiteral("正在准备扫描…"));
+    m_window->setStatusText(tr("正在准备扫描…"));
     if (notifyUser && m_tray)
         m_tray->showMessage(QStringLiteral("Listery"),
-                            QStringLiteral("开始重建索引，可继续使用已有结果"),
+                            tr("开始重建索引，可继续使用已有结果"),
                             QSystemTrayIcon::Information, 3000);
 }
 
@@ -685,7 +755,7 @@ void AppController::onScanProgress(const QString &root, int directories, int fil
     Q_UNUSED(directories)
     if (!m_window)
         return;
-    m_window->setStatusText(QStringLiteral("正在扫描 %1 · 已找到 %2 个可执行文件")
+    m_window->setStatusText(tr("正在扫描 %1 · 已找到 %2 个可执行文件")
                                 .arg(QDir::toNativeSeparators(root),
                                      QLocale().toString(filesFound)));
 }
@@ -699,10 +769,10 @@ void AppController::onScanFinished(int filesFound, int removed, bool canceled, c
 
     if (!error.isEmpty()) {
         if (m_window)
-            m_window->setStatusText(QStringLiteral("索引失败：%1").arg(error));
+            m_window->setStatusText(tr("索引失败：%1").arg(error));
         if (m_tray)
             m_tray->showMessage(QStringLiteral("Listery"),
-                                QStringLiteral("扫描失败：%1").arg(error),
+                                tr("扫描失败：%1").arg(error),
                                 QSystemTrayIcon::Warning, 6000);
     } else if (!canceled) {
         if (m_window) {
@@ -711,7 +781,7 @@ void AppController::onScanFinished(int filesFound, int removed, bool canceled, c
         updateStatus();
         if (m_scanNotify && m_tray) {
             m_tray->showMessage(QStringLiteral("Listery"),
-                                QStringLiteral("索引完成：%1 个可执行文件，清理 %2 条失效记录")
+                                tr("索引完成：%1 个可执行文件，清理 %2 条失效记录")
                                     .arg(QLocale().toString(filesFound), QLocale().toString(removed)),
                                 QSystemTrayIcon::Information, 4000);
         }
@@ -737,7 +807,7 @@ void AppController::onLaunchRequested(const ExecutableRecord &record, bool asAdm
         // 失败时只用托盘通知，不弹模态对话框骚扰用户
         if (m_tray)
             m_tray->showMessage(QStringLiteral("Listery"),
-                                QStringLiteral("启动失败：\n%1\n%2").arg(record.path, error),
+                                tr("启动失败：\n%1\n%2").arg(record.path, error),
                                 QSystemTrayIcon::Warning, 4000);
         else
             qWarning("Listery: 启动失败：%s | %s", qPrintable(record.path), qPrintable(error));
@@ -757,7 +827,7 @@ void AppController::onRevealRequested(const ExecutableRecord &record)
     if (!LaunchService::revealInFolder(record.path, &error)) {
         if (m_tray)
             m_tray->showMessage(QStringLiteral("Listery"),
-                                QStringLiteral("无法定位：\n%1\n%2").arg(record.path, error),
+                                tr("无法定位：\n%1\n%2").arg(record.path, error),
                                 QSystemTrayIcon::Warning, 4000);
         else
             qWarning("Listery: 无法定位：%s | %s", qPrintable(record.path), qPrintable(error));
@@ -789,6 +859,10 @@ void AppController::openSettings()
 
 void AppController::applySettings()
 {
+    // 语言先于其它设置生效，刷新界面文字时用的就是新翻译
+    if (Localization::install(m_settings.language()))
+        retranslateUi();
+
     if (m_window) {
         m_window->setMaxResults(m_settings.maxResults());
         m_window->setHideOnFocusLost(m_settings.hideWhenFocusLost());
@@ -797,10 +871,38 @@ void AppController::applySettings()
     if (m_hook)
         m_hook->setIntervalMs(m_settings.hotkeyIntervalMs());
 
+    // “包含可移动盘”可能改了：挂载点缓存立即失效，别按旧结论排下一次扫描
+    m_rootsCacheAt = 0;
+
     // 刷新间隔/智能调度改了：按新策略重新排下一次扫描
     scheduleNextScan();
 
     applyAutoStart();
+}
+
+void AppController::retranslateUi()
+{
+    if (m_window)
+        m_window->retranslateUi();
+
+    if (m_tray)
+        m_tray->setToolTip(tr("Listery · 双击 Ctrl 唤起搜索"));
+
+    // 托盘菜单是常驻对象，切换语言后要逐项改文案
+    if (m_actionShow)
+        m_actionShow->setText(tr("打开搜索框"));
+    if (m_actionRescan)
+        m_actionRescan->setText(tr("重新扫描全盘"));
+    if (m_actionSettings)
+        m_actionSettings->setText(tr("设置…"));
+    if (m_pluginMenu)
+        m_pluginMenu->setTitle(tr("插件"));
+    if (m_actionCheckUpdate)
+        m_actionCheckUpdate->setText(tr("检查更新…"));
+    if (m_actionQuit)
+        m_actionQuit->setText(tr("退出"));
+
+    updateStatus();
 }
 
 void AppController::applyAutoStart()

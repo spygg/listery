@@ -3,8 +3,7 @@
 #include <QObject>
 #include <QString>
 
-class QNetworkAccessManager;
-class QNetworkReply;
+class HttpClient;
 
 /** GitHub Release 携带的版本信息。 */
 struct ReleaseInfo
@@ -22,8 +21,8 @@ struct ReleaseInfo
  * 在线升级检查：向 GitHub Releases API 查询最新版本，与本机版本比较。
  *
  * 设计要点：
- * - 全部走 QNetworkAccessManager，网络请求在调用方线程（GUI 线程）发起，
- *   但 reply 的 finished 信号回来时才触发 JSON 解析，不会阻塞界面；
+ * - 网络请求交给 HttpClient（Windows 走 WinHTTP，无需 OpenSSL），
+ *   结果在 GUI 线程回调，不阻塞界面；
  * - 失败时只发 checkFailed 信号，不弹窗——自动检查本就不该打扰用户；
  * - 版本比较用语义化版本号（1.2.0 > 1.10.0 这类易错点已处理）。
  */
@@ -60,8 +59,9 @@ signals:
     void checkFailed(const QString &error);
 
 private slots:
-    void onFinished(QNetworkReply *reply);
+    void onHttpFinished(quint64 requestId, int status, const QByteArray &body,
+                        const QString &error);
 
 private:
-    QNetworkAccessManager *m_network = nullptr;
+    HttpClient *m_http = nullptr;
 };
