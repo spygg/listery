@@ -403,6 +403,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
+          # 用上一个 tag 到本 tag 的提交记录自动生成发布说明，
+          # 否则 release 页面会是空的，用户不知道这一版修了什么
+          generate_release_notes: true
           files: |
             listery-windows.zip
             installer/windows/listery-windows-setup.exe
