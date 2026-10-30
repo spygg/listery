@@ -79,12 +79,16 @@ void SettingsDialog::buildUi()
         "一个都没有的从 4 倍起步、每空一轮再翻倍，最多放宽到 14 天。"));
     indexForm->addRow(QString(), m_smartSchedule);
 
+#ifdef Q_OS_LINUX
+    // locate 是 Linux 专属的快速通道（读取 mlocate/plocate 快照），Windows/macOS 根本没有，
+    // 在这些平台上把这个选项藏掉，免得用户看到一条用不上的设置。
     m_useLocate = new QCheckBox(
-        QStringLiteral("Linux 下优先用 locate 数据库建索引（秒级完成）"), indexGroup);
+        QStringLiteral("优先用 locate 数据库建索引（秒级完成）"), indexGroup);
     m_useLocate->setToolTip(QStringLiteral(
         "读取 mlocate / plocate 的快照而不是遍历整个文件系统；"
         "locate 库由系统每天更新一次，因此新建的程序最多晚一天进入索引。"));
     indexForm->addRow(QString(), m_useLocate);
+#endif
 
     m_rescanMinutes = new QSpinBox(indexGroup);
     m_rescanMinutes->setRange(0, 10080);
@@ -239,7 +243,10 @@ void SettingsDialog::loadValues()
     m_extensions->setText(m_settings->executableExtensions().join(QStringLiteral(", ")));
     m_skipDirectories->setText(m_settings->skipDirectoryPatterns().join(QStringLiteral(", ")));
     m_smartSchedule->setChecked(m_settings->smartSchedule());
-    m_useLocate->setChecked(m_settings->useLocateIndex());
+#ifdef Q_OS_LINUX
+    if (m_useLocate)
+        m_useLocate->setChecked(m_settings->useLocateIndex());
+#endif
     m_autoStart->setChecked(m_settings->autoStart());
     m_hideOnFocusLost->setChecked(m_settings->hideWhenFocusLost());
 }
@@ -258,7 +265,10 @@ void SettingsDialog::saveValues()
     m_settings->setHideWhenFocusLost(m_hideOnFocusLost->isChecked());
     m_settings->setRescanIntervalMinutes(m_rescanMinutes->value());
     m_settings->setSmartSchedule(m_smartSchedule->isChecked());
-    m_settings->setUseLocateIndex(m_useLocate->isChecked());
+#ifdef Q_OS_LINUX
+    if (m_useLocate)
+        m_settings->setUseLocateIndex(m_useLocate->isChecked());
+#endif
     m_settings->setHotkeyIntervalMs(m_hotkeyInterval->value());
     m_settings->setMaxResults(m_maxResults->value());
 

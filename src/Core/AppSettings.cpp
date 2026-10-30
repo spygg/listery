@@ -150,7 +150,9 @@ void AppSettings::setSkipDirectoryPatterns(const QStringList &patterns)
 
 bool AppSettings::includeRemovableDrives() const
 {
-    return m_settings->value(QString::fromLatin1(kKeyIncludeRemovable), true).toBool();
+    // 默认不索引可移动磁盘：U 盘/移动硬盘通常没有要启动的程序，
+    // 而且插拔会触发不必要的全盘遍历，拖慢启动与扫描。
+    return m_settings->value(QString::fromLatin1(kKeyIncludeRemovable), false).toBool();
 }
 
 void AppSettings::setIncludeRemovableDrives(bool on)
