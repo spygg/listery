@@ -200,9 +200,11 @@ jobs:
           & {
             windeployqt --release --no-translations --no-opengl-sw build\Release\listery.exe
             # 带上插件目录（MSVC 多配置生成器会把插件放到 build\plugins\Release\）
+            # 按通配符收全部插件，新增插件时不用再改这里
             New-Item -ItemType Directory -Force -Path build\Release\plugins | Out-Null
-            $pluginDll = Get-ChildItem build\plugins -Recurse -Filter translator.dll | Select-Object -First 1
-            if ($pluginDll) { Copy-Item $pluginDll.FullName build\Release\plugins\ } else { Write-Host "WARN: translator.dll not found" }
+            $pluginDlls = Get-ChildItem build\plugins -Recurse -Filter *.dll
+            if ($pluginDlls) { $pluginDlls | ForEach-Object { Copy-Item $_.FullName build\Release\plugins\ } } else { Write-Host "WARN: plugin dll not found" }
+            Get-ChildItem build\Release\plugins | Select-Object Name
             # 仅从 x64 子目录取运行库：GitHub 的 Windows runner 可能是 ARM64 架构，
             # 用 -Recurse 直接搜会把 ARM64 版 vcruntime140.dll 也收进来，导致 x64 应用
             # 加载到 ARM64 运行库而启动失败（0xC000007B）。应用与 Qt 均为 x64，必须配对。
@@ -343,7 +345,12 @@ jobs:
           mkdir -p listery.app/Contents/MacOS listery.app/Contents/Resources
           cp build/listery listery.app/Contents/MacOS/listery
           mkdir -p listery.app/Contents/MacOS/plugins
-          cp build/plugins/*.dylib listery.app/Contents/MacOS/plugins/ 2>/dev/null || echo "WARN: plugin .dylib missing"
+          # CMake 在 macOS 上把 MODULE 库命名为 libtranslator.so（不是 .dylib），
+          # 只拷 *.dylib 会让发布包里静默缺插件，所以两种后缀都收
+          cp build/plugins/*.dylib build/plugins/*.so listery.app/Contents/MacOS/plugins/ 2>/dev/null || true
+          if ! find listery.app/Contents/MacOS/plugins -maxdepth 1 \( -name '*.so' -o -name '*.dylib' \) | grep -q .; then
+            echo "WARN: plugin library missing (build/plugins 下没有 .dylib/.so)"
+          fi
           ls -la listery.app/Contents/MacOS/plugins
           cat > listery.app/Contents/Info.plist <<'EOF'
           <?xml version="1.0" encoding="UTF-8"?>

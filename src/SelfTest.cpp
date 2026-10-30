@@ -4,6 +4,7 @@
 
 #include "Core/AppSettings.h"
 #include "Core/Database.h"
+#include "Core/Localization.h"
 #include "Core/PluginHost.h"
 #include "Core/Pinyin.h"
 #include "Core/Scanner.h"
@@ -509,8 +510,8 @@ int SelfTest::run()
           QStringLiteral("无候选时不展开列表，窗口高度 %1（期望 148）").arg(compactHeight));
     check(expandedHeight == 203,
           QStringLiteral("有候选时展开列表，窗口高度 %1（期望 203）").arg(expandedHeight));
-    check(inputOnlyHeight == 112,
-          QStringLiteral("空输入只保留输入框，窗口高度 %1（期望 112）").arg(inputOnlyHeight));
+    check(inputOnlyHeight == 148,
+          QStringLiteral("空输入也保留状态栏，窗口高度 %1（期望 148）").arg(inputOnlyHeight));
 
     // ---- 窗口几何：真实“显示过”的窗口展开后必须能缩回 ----
     // 顶层窗口 show() 后，布局的 SetDefaultConstraint 会把 minimumHeight 抬到展开高度，
@@ -526,8 +527,8 @@ int SelfTest::run()
     const int shownCompact = shownWindow.height();
     check(shownExpanded == 203,
           QStringLiteral("显示后的窗口展开到 %1（期望 203）").arg(shownExpanded));
-    check(shownCompact == 112,
-          QStringLiteral("展开后再唤起缩回输入框高度 %1（期望 112）").arg(shownCompact));
+    check(shownCompact == 148,
+          QStringLiteral("展开后再唤起缩回输入框高度 %1（期望 148）").arg(shownCompact));
 
     // 连续输入两次：只允许最新一次请求的结果落进列表
     window.setQueryForPreview(QStringLiteral("alpha"));
@@ -610,11 +611,18 @@ int SelfTest::run()
         bool translatorFound = false;
         bool translatorLoaded = false;
         QString translatorHotkey;
+        bool frenchFound = false;
+        bool frenchLoaded = false;
+        QString frenchHotkey;
         for (const PluginInfo &info : plugins) {
             if (info.id == QStringLiteral("com.listery.translator")) {
                 translatorFound = true;
                 translatorLoaded = info.loaded;
                 translatorHotkey = info.defaultHotkey;
+            } else if (info.id == QStringLiteral("com.listery.french")) {
+                frenchFound = true;
+                frenchLoaded = info.loaded;
+                frenchHotkey = info.defaultHotkey;
             }
         }
         check(translatorFound,
@@ -626,60 +634,94 @@ int SelfTest::run()
         check(host.pluginForHotkey(QStringLiteral("Alt+E"))
                   == QStringLiteral("com.listery.translator"),
               QStringLiteral("按热键能反查到插件"));
+        check(frenchFound, QStringLiteral("plugins 目录里发现法汉翻译插件"));
+        check(frenchLoaded, QStringLiteral("法汉翻译插件初始化成功"));
+        check(frenchHotkey.compare(QStringLiteral("Alt+F"), Qt::CaseInsensitive) == 0,
+              QStringLiteral("法汉翻译插件默认热键为 Alt+F（实际 %1）").arg(frenchHotkey));
+        check(host.pluginForHotkey(QStringLiteral("Alt+F"))
+                  == QStringLiteral("com.listery.french"),
+              QStringLiteral("按 Alt+F 能反查到法汉插件"));
         host.setEnabled(QStringLiteral("com.listery.translator"), false);
         check(host.pluginForHotkey(QStringLiteral("Alt+E")).isEmpty(),
               QStringLiteral("禁用后热键不再命中该插件"));
+        check(host.pluginForHotkey(QStringLiteral("Alt+F"))
+                  == QStringLiteral("com.listery.french"),
+              QStringLiteral("禁用一个插件不影响其它插件热键"));
         host.setEnabled(QStringLiteral("com.listery.translator"), true);
 
-        // 真实网络查询：拿不到结果不算失败（离线/CI 无外网时只做记录）
-        if (translatorLoaded) {
-            quint64 sequence = 0;
-            QVector<PluginRow> rows;
-            QString queryError;
+        // 真实网络查询：拿不到结果不算失败（离线/CI 无外网时只做记录）。
+        // 回调必须绑定本次调用的守卫对象：若挂在 host 上，下一次查询会把结果写进
+        // 已经返回的栈变量，Qt 容器赋值会破坏堆（表现为退出时 0xC0000374）
+        struct QueryProbe
+        {
+            quint64 issued = 0;
             bool finished = false;
-            QObject::connect(&host, &PluginHost::queryFinished,
-                             &host, [&](quint64 seq, QString, QString, QVector<PluginRow> result,
-                                        QString error) {
-                        sequence = seq;
-                        rows = result;
-                        queryError = error;
-                        finished = true;
-                    });
-            const quint64 issued = host.beginQuery(QStringLiteral("com.listery.translator"),
-                                                   QStringLiteral("hello"), 5);
+            QVector<PluginRow> rows;
+            QString error;
+        };
+        auto runPluginQuery = [&host](const QString &pluginId, const QString &text,
+                                      int maxRows) {
+            QueryProbe probe;
+            QObject guard;
             QEventLoop loop;
             QTimer timer;
             timer.setSingleShot(true);
+            QObject::connect(&host, &PluginHost::queryFinished, &guard,
+                             [&probe](quint64 seq, QString, QString,
+                                      QVector<PluginRow> result, QString error) {
+                                 if (seq != probe.issued)
+                                     return;
+                                 probe.rows = result;
+                                 probe.error = error;
+                                 probe.finished = true;
+                             });
             QObject::connect(&timer, &QTimer::timeout, &loop, &QEventLoop::quit);
             QObject::connect(&host, &PluginHost::queryFinished, &loop, &QEventLoop::quit);
-            timer.start(8000);
-            if (issued == 0)
-                finished = true; // 插件没接受请求：直接跳过等待
-            else
-                loop.exec();
 
-            check(issued != 0, QStringLiteral("插件受理了查询请求"));
-            check(finished && sequence == issued,
-                  QStringLiteral("插件回调 finish 且序号一致（seq=%1）").arg(sequence));
-            if (!rows.isEmpty()) {
+            probe.issued = host.beginQuery(pluginId, text, maxRows);
+            if (probe.issued == 0) {
+                probe.finished = true; // 插件没接受请求：直接跳过等待
+            } else {
+                timer.start(8000);
+                loop.exec();
+            }
+            return probe;
+        };
+
+        auto checkQueryResult = [](const QueryProbe &probe, const QString &name) {
+            check(probe.issued != 0, QStringLiteral("%1受理了查询请求").arg(name));
+            check(probe.finished,
+                  QStringLiteral("%1回调 finish 且序号一致（seq=%2）")
+                      .arg(name).arg(probe.issued));
+            if (!probe.rows.isEmpty()) {
                 bool hasTitle = true;
                 bool hasCopyAction = true;
-                for (const PluginRow &row : rows) {
+                for (const PluginRow &row : probe.rows) {
                     if (row.title.isEmpty())
                         hasTitle = false;
                     if (!row.action.startsWith(QStringLiteral("copy:")))
                         hasCopyAction = false;
                 }
                 check(hasTitle && hasCopyAction,
-                      QStringLiteral("翻译结果 %1 条，均带标题与 copy 动作（首条：%2）")
-                          .arg(rows.size()).arg(rows.first().title));
+                      QStringLiteral("%1返回 %2 条，均带标题与 copy 动作（首条：%3）")
+                          .arg(name).arg(probe.rows.size()).arg(probe.rows.first().title));
             } else {
-                qInfo().noquote() << QStringLiteral("[INFO] 翻译插件本次没有返回结果（%1），"
+                qInfo().noquote() << QStringLiteral("[INFO] %1本次没有返回结果（%2），"
                                                      "离线或被限流时属正常")
-                                         .arg(queryError.isEmpty() ? QStringLiteral("无错误信息")
-                                                                  : queryError);
+                                         .arg(name)
+                                         .arg(probe.error.isEmpty() ? QStringLiteral("无错误信息")
+                                                                    : probe.error);
             }
-        }
+        };
+
+        if (translatorLoaded)
+            checkQueryResult(runPluginQuery(QStringLiteral("com.listery.translator"),
+                                            QStringLiteral("hello"), 5),
+                             QStringLiteral("翻译插件"));
+        if (frenchLoaded)
+            checkQueryResult(runPluginQuery(QStringLiteral("com.listery.french"),
+                                            QStringLiteral("bonjour"), 5),
+                             QStringLiteral("法汉插件"));
 
         // 面板插件模式：进入后提示语改变，Esc 后回到程序模式
         LauncherWindow window(nullptr, 10);
@@ -716,6 +758,32 @@ int SelfTest::run()
     check(supported, QStringLiteral("macOS 全局钩子可用"));
 #  endif
 #endif
+
+    // ---- 8. 界面语言 ----
+    {
+        const QStringList languages = Localization::availableLanguages();
+        check(languages.contains(QStringLiteral("en")) && languages.contains(QStringLiteral("fr"))
+                  && languages.contains(QStringLiteral("zh_CN"))
+                  && languages.contains(QStringLiteral("zh_TW")),
+              QStringLiteral("支持简体 / 繁体 / 英文 / 法文四种界面语言"));
+
+        const QString previous = Localization::current();
+        check(Localization::install(QStringLiteral("en")),
+              QStringLiteral("切换到英文（语言包已嵌入 exe）"));
+        check(QCoreApplication::translate("LauncherWindow", "没有结果")
+                  == QStringLiteral("No results"),
+              QStringLiteral("英文翻译生效：%1")
+                  .arg(QCoreApplication::translate("LauncherWindow", "没有结果")));
+
+        Localization::install(QStringLiteral("zh_TW"));
+        check(QCoreApplication::translate("SettingsDialog", "保存") == QStringLiteral("儲存"),
+              QStringLiteral("繁体翻译生效：%1")
+                  .arg(QCoreApplication::translate("SettingsDialog", "保存")));
+
+        Localization::install(previous);
+        check(Localization::current() == previous,
+              QStringLiteral("切回原语言：%1").arg(previous));
+    }
 
     qInfo().noquote() << QStringLiteral("自检结束：%1（失败 %2 项）")
                              .arg(g_failures == 0 ? QStringLiteral("全部通过") : QStringLiteral("存在失败"))
