@@ -4,6 +4,7 @@
 #include "Core/AppSettings.h"
 #include "Core/Database.h"
 #include "Core/SearchService.h"
+#include "Core/Updater.h"
 #include "Platform/Branding.h"
 #include "Platform/WindowUtils.h"
 #include "SelfTest.h"
@@ -214,7 +215,9 @@ int main(int argc, char *argv[])
     app.setApplicationName(QStringLiteral("Listery"));
     app.setApplicationDisplayName(QStringLiteral("Listery"));
     app.setOrganizationName(QStringLiteral("Listery"));
-    app.setApplicationVersion(QStringLiteral("1.0.0"));
+    // 版本号统一由 CMake 注入的 LISTERY_VERSION 决定（自动更新也读这一个），
+    // 之前这里写死 "1.0.0"，和发布版本对不上
+    app.setApplicationVersion(Updater::currentVersion());
     app.setQuitOnLastWindowClosed(false);
 
     WindowUtils::setAppUserModelId(QStringLiteral("Listery.Spotlight.Desktop"));

@@ -72,11 +72,19 @@ void drawHighlightedText(QPainter *painter,
 
     int x = rect.left();
     const int baseline = rect.top() + (rect.height() + metrics.ascent() - metrics.descent()) / 2;
-    for (int i = 0; i < text.size(); ++i) {
-        const QChar ch = text.at(i);
-        painter->setPen(positions.contains(i) ? highlightColor : baseColor);
-        painter->drawText(QPoint(x, baseline), QString(ch));
-        x += textWidth(metrics, QString(ch));
+    // 按「连续高亮 / 连续普通」切成若干段整段绘制。逐字符 drawText 的话一行 30 个字
+    // 就是 30 次绘制调用 + 30 个临时 QString，列表滚动时这一笔开销很显眼。
+    int i = 0;
+    while (i < text.size()) {
+        const bool highlighted = positions.contains(i);
+        int end = i + 1;
+        while (end < text.size() && positions.contains(end) == highlighted)
+            ++end;
+        const QString run = text.mid(i, end - i);
+        painter->setPen(highlighted ? highlightColor : baseColor);
+        painter->drawText(QPoint(x, baseline), run);
+        x += textWidth(metrics, run);
+        i = end;
     }
 }
 } // namespace

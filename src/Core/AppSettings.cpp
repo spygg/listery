@@ -22,6 +22,9 @@ const char *kKeyUseLocate = "index/useLocateIndex";
 const char *kKeyAutoUpdate = "update/autoCheck";
 const char *kKeyLastUpdateCheck = "update/lastCheck";
 const char *kKeySchemaVersion = "meta/schemaVersion";
+/** 跳过目录默认值的版本：升到 2 时把 AppData 下的缓存目录补进老用户的配置。 */
+const char *kKeySkipDirsVersion = "index/skipDirsVersion";
+const int kVSkipDirsVersion = 2;
 
 QStringList defaultExtensions()
 {
@@ -40,7 +43,16 @@ QStringList defaultSkipPatterns()
                          << QStringLiteral("SoftwareDistribution")
                          << QStringLiteral("DriverStore")
                          << QStringLiteral("WindowsApps")
+                         // UWP 的本地数据，几十万个碎片文件且从不放可启动程序
                          << QStringLiteral("Packages")
+                         // 下面这些是 AppData 里的浏览器/编辑器缓存，扫它们纯属浪费 IO
+                         << QStringLiteral("Cache")
+                         << QStringLiteral("Code Cache")
+                         << QStringLiteral("GPUCache")
+                         << QStringLiteral("CachedData")
+                         << QStringLiteral("Service Worker")
+                         << QStringLiteral("Crashpad")
+                         << QStringLiteral("blob_storage")
                          << QStringLiteral("Temp")
                          << QStringLiteral("__pycache__");
 }
@@ -333,6 +345,28 @@ void AppSettings::ensureDefaults()
         m_settings->setValue(QString::fromLatin1(kKeySkipDirs), defaultSkipPatterns());
     if (!m_settings->contains(QString::fromLatin1(kKeySchemaVersion)))
         m_settings->setValue(QString::fromLatin1(kKeySchemaVersion), 1);
+
+    // 跳过目录的默认值会随版本增补。老用户的配置项已经存在，不能整份覆盖（会吞掉用户改过的值），
+    // 只把这一版新增的条目并进去，并记下版本号避免每次启动重复处理。
+    const int skipVersion = m_settings->value(QString::fromLatin1(kKeySkipDirsVersion), 1).toInt();
+    if (skipVersion < kVSkipDirsVersion) {
+        QStringList merged = skipDirectoryPatterns();
+        static const QStringList kAddedInV2 = QStringList()
+            << QStringLiteral("Packages")
+            << QStringLiteral("Cache")
+            << QStringLiteral("Code Cache")
+            << QStringLiteral("GPUCache")
+            << QStringLiteral("CachedData")
+            << QStringLiteral("Service Worker")
+            << QStringLiteral("Crashpad")
+            << QStringLiteral("blob_storage");
+        for (const QString &pattern : kAddedInV2) {
+            if (!merged.contains(pattern, Qt::CaseInsensitive))
+                merged.append(pattern);
+        }
+        m_settings->setValue(QString::fromLatin1(kKeySkipDirs), merged);
+        m_settings->setValue(QString::fromLatin1(kKeySkipDirsVersion), kVSkipDirsVersion);
+    }
 
     // 旧版本遗留的“扫描根目录”配置已废弃，统一改为全盘扫描
     if (m_settings->contains(QStringLiteral("index/roots")))
