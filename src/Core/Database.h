@@ -17,6 +17,7 @@ struct ExecutableRecord
     QString displayName; // 原始大小写的文件名
     QString dir;         // 所在目录（小写，便于匹配）
     QString ext;         // 扩展名（小写，不含点）
+    QString target;      // 快捷方式（.lnk）指向的目标路径，非快捷方式为空
     QString pinyin;      // 汉字名的全拼变体（空格分隔），非中文名为空
     QString pinyinInitials; // 与 pinyin 一一对应的首字母变体
     qint64 size = 0;

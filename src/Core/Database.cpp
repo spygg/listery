@@ -19,7 +19,7 @@ QString selectColumns()
 {
     return QStringLiteral(
         "e.path, e.display_name, e.dir, e.ext, e.size, e.mtime, "
-        "COALESCE(u.launch_count, 0), COALESCE(u.last_used, 0)");
+        "COALESCE(u.launch_count, 0), COALESCE(u.last_used, 0), e.target");
 }
 
 QString selectFrom()
@@ -31,7 +31,8 @@ QString selectFrom()
 /** 粗筛只取匹配需要的列，使用统计随后由 SearchEngine 用快照补齐。 */
 QString lightColumns()
 {
-    return QStringLiteral("e.path, e.display_name, e.dir, e.ext, e.pinyin, e.pinyin_initials");
+    return QStringLiteral("e.path, e.display_name, e.dir, e.ext, e.pinyin, e.pinyin_initials,"
+                          " e.target");
 }
 
 QString lightFrom()
@@ -50,6 +51,7 @@ ExecutableRecord readRecord(const QSqlQuery &query)
     record.mtime = query.value(5).toLongLong();
     record.launchCount = query.value(6).toInt();
     record.lastUsed = query.value(7).toLongLong();
+    record.target = query.value(8).toString();
     return record;
 }
 
@@ -62,6 +64,7 @@ ExecutableRecord readLightRecord(const QSqlQuery &query)
     record.ext = query.value(3).toString();
     record.pinyin = query.value(4).toString();
     record.pinyinInitials = query.value(5).toString();
+    record.target = query.value(6).toString();
     return record;
 }
 
@@ -197,6 +200,7 @@ bool Database::createSchema(QString *errorMessage)
                " ext TEXT NOT NULL,"
                " pinyin TEXT NOT NULL DEFAULT '',"
                " pinyin_initials TEXT NOT NULL DEFAULT '',"
+               " target TEXT NOT NULL DEFAULT '',"
                " size INTEGER NOT NULL DEFAULT 0,"
                " mtime INTEGER NOT NULL DEFAULT 0,"
                " drive TEXT NOT NULL DEFAULT '',"
@@ -251,7 +255,8 @@ bool Database::createSchema(QString *errorMessage)
             existing.append(query.value(1).toString());
     }
     const QStringList addedColumns = QStringList()
-        << QStringLiteral("pinyin") << QStringLiteral("pinyin_initials");
+        << QStringLiteral("pinyin") << QStringLiteral("pinyin_initials")
+        << QStringLiteral("target");
     for (const QString &column : addedColumns) {
         if (existing.contains(column))
             continue;
@@ -393,8 +398,8 @@ bool Database::beginBulk()
         m_upsertQuery->prepare(
             QStringLiteral("INSERT INTO executables"
                            " (path, name, display_name, dir, ext, pinyin, pinyin_initials,"
-                           "  size, mtime, drive, gen)"
-                           " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                           "  target, size, mtime, drive, gen)"
+                           " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
                            " ON CONFLICT(path) DO UPDATE SET"
                            " name = excluded.name,"
                            " display_name = excluded.display_name,"
@@ -402,6 +407,7 @@ bool Database::beginBulk()
                            " ext = excluded.ext,"
                            " pinyin = excluded.pinyin,"
                            " pinyin_initials = excluded.pinyin_initials,"
+                           " target = excluded.target,"
                            " size = excluded.size,"
                            " mtime = excluded.mtime,"
                            " drive = excluded.drive,"
@@ -425,10 +431,11 @@ bool Database::upsertExecutable(const ExecutableRecord &record, qint64 generatio
     m_upsertQuery->bindValue(5, record.pinyin.isNull() ? QStringLiteral("") : record.pinyin);
     m_upsertQuery->bindValue(6, record.pinyinInitials.isNull() ? QStringLiteral("")
                                                                : record.pinyinInitials);
-    m_upsertQuery->bindValue(7, record.size);
-    m_upsertQuery->bindValue(8, record.mtime);
-    m_upsertQuery->bindValue(9, normalizedPath.left(2).toUpper());
-    m_upsertQuery->bindValue(10, generation);
+    m_upsertQuery->bindValue(7, record.target.isNull() ? QStringLiteral("") : record.target);
+    m_upsertQuery->bindValue(8, record.size);
+    m_upsertQuery->bindValue(9, record.mtime);
+    m_upsertQuery->bindValue(10, normalizedPath.left(2).toUpper());
+    m_upsertQuery->bindValue(11, generation);
     const bool ok = m_upsertQuery->exec();
     if (!ok)
         qWarning("Listery: 写入索引失败：%s", qPrintable(m_upsertQuery->lastError().text()));

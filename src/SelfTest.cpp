@@ -40,6 +40,11 @@
 
 #include <cstdio>
 
+#ifdef Q_OS_WIN
+#  include <windows.h>
+#  include <shlobj.h>
+#endif
+
 namespace {
 int g_failures = 0;
 
@@ -75,6 +80,31 @@ void addRecord(Database &database, const QString &path)
     record.mtime = 1;
     database.upsertExecutable(record, 777);
 }
+
+#ifdef Q_OS_WIN
+/** 用系统组件造一个真实 .lnk，供目标解析测试使用。 */
+bool createShortcut(const QString &lnkPath, const QString &targetPath)
+{
+    const HRESULT init = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    bool saved = false;
+    IShellLinkW *link = nullptr;
+    if (SUCCEEDED(CoCreateInstance(CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER,
+                                   IID_IShellLinkW, reinterpret_cast<void **>(&link)))) {
+        const QString nativeTarget = QDir::toNativeSeparators(targetPath);
+        const QString nativeLnk = QDir::toNativeSeparators(lnkPath);
+        link->SetPath(reinterpret_cast<const wchar_t *>(nativeTarget.utf16()));
+        IPersistFile *file = nullptr;
+        if (SUCCEEDED(link->QueryInterface(IID_IPersistFile, reinterpret_cast<void **>(&file)))) {
+            saved = SUCCEEDED(file->Save(reinterpret_cast<const wchar_t *>(nativeLnk.utf16()), TRUE));
+            file->Release();
+        }
+        link->Release();
+    }
+    if (SUCCEEDED(init))
+        CoUninitialize();
+    return saved && QFileInfo(lnkPath).exists();
+}
+#endif
 } // namespace
 
 int SelfTest::run()
@@ -150,6 +180,73 @@ int SelfTest::run()
     Pinyin::buildSearchForms(QStringLiteral("chrome.exe"), &fullPinyin, &initials);
     check(fullPinyin.isEmpty() && initials.isEmpty(),
           QStringLiteral("纯英文名不生成拼音"));
+
+#ifdef Q_OS_WIN
+    // ---- 快捷方式目标解析：检索去重依赖索引里存下的 target ----
+    {
+        const QString targetExe = root + QStringLiteral("/bin/shortcut-target.exe");
+        writeStub(targetExe);
+        const QString shortcutPath = root + QStringLiteral("/bin/目标解析.lnk");
+        if (createShortcut(shortcutPath, targetExe)) {
+            const QString resolved = Scanner::resolveShortcutTarget(shortcutPath);
+            check(QFileInfo(resolved).fileName().compare(QStringLiteral("shortcut-target.exe"),
+                                                         Qt::CaseInsensitive) == 0,
+                  QStringLiteral("解析 .lnk 目标：%1").arg(resolved));
+        } else {
+            qInfo().noquote() << QStringLiteral("[INFO] 当前环境无法创建 .lnk，跳过目标解析测试");
+        }
+    }
+#endif
+
+    // ---- 快捷方式与它指向的程序只保留一条 ----
+    {
+        QTemporaryDir dedupeDir;
+        check(dedupeDir.isValid(), QStringLiteral("创建去重测试目录"));
+        const QString dedupeRoot = dedupeDir.path();
+        Database dedupeDb(dedupeRoot + QStringLiteral("/dedupe.db"));
+        QString dedupeError;
+        check(dedupeDb.open(&dedupeError),
+              QStringLiteral("打开去重测试库：%1").arg(dedupeError));
+
+        ExecutableRecord target;
+        target.path = QDir::toNativeSeparators(dedupeRoot + QStringLiteral("/WeChat/WeChat.exe"));
+        target.displayName = QStringLiteral("WeChat.exe");
+        target.dir = QDir::toNativeSeparators(dedupeRoot + QStringLiteral("/WeChat"));
+        target.ext = QStringLiteral("exe");
+        target.size = 1;
+        target.mtime = 1;
+
+        ExecutableRecord shortcut;
+        shortcut.path = QDir::toNativeSeparators(
+            dedupeRoot + QStringLiteral("/Start Menu/WeChat.lnk"));
+        shortcut.displayName = QStringLiteral("WeChat");
+        shortcut.dir = QDir::toNativeSeparators(dedupeRoot + QStringLiteral("/Start Menu"));
+        shortcut.ext = QStringLiteral("lnk");
+        shortcut.target = target.path;
+        shortcut.size = 1;
+        shortcut.mtime = 1;
+
+        dedupeDb.beginBulk();
+        dedupeDb.upsertExecutable(target, 11);
+        dedupeDb.upsertExecutable(shortcut, 11);
+        dedupeDb.commitBulk();
+
+        SearchEngine dedupeEngine(&dedupeDb);
+        const QVector<SearchResult> bothHits = dedupeEngine.search(QStringLiteral("wechat"), 10);
+        check(bothHits.size() == 1
+                  && bothHits.first().record.ext == QStringLiteral("lnk")
+                  && bothHits.first().record.target.compare(target.path, Qt::CaseInsensitive) == 0,
+              QStringLiteral("快捷方式与目标同时命中时只保留快捷方式（实际 %1 条）")
+                  .arg(bothHits.size()));
+
+        // 快捷方式名字不匹配、只有 exe 名命中时，目标程序照常返回
+        const QVector<SearchResult> exeOnlyHits =
+            dedupeEngine.search(QStringLiteral("wechat.exe"), 10);
+        check(exeOnlyHits.size() == 1
+                  && exeOnlyHits.first().record.ext == QStringLiteral("exe"),
+              QStringLiteral("快捷方式未命中时目标程序照常出现（实际 %1 条）")
+                  .arg(exeOnlyHits.size()));
+    }
 
     // ---- 2. 关键字检索与高亮 ----
     SearchEngine engine(&database);

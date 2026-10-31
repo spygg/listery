@@ -17,6 +17,7 @@
 
 #ifdef Q_OS_WIN
 #  include <windows.h>
+#  include <shlobj.h>
 #endif
 
 #if defined(Q_OS_LINUX)
@@ -272,6 +273,38 @@ QStringList Scanner::availableRoots(bool includeRemovable)
     std::sort(roots.begin(), roots.end());
     return roots;
 }
+
+#ifdef Q_OS_WIN
+QString Scanner::resolveShortcutTarget(const QString &shortcutPath)
+{
+    // 扫描线程与自检线程都会调用；已按其它模式初始化过（RPC_E_CHANGED_MODE）时
+    // 当前 apartment 依然可用，不算失败
+    const HRESULT init = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    const bool releaseCom = SUCCEEDED(init);
+
+    QString target;
+    IShellLinkW *link = nullptr;
+    if (SUCCEEDED(CoCreateInstance(CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER,
+                                   IID_IShellLinkW, reinterpret_cast<void **>(&link)))) {
+        IPersistFile *file = nullptr;
+        if (SUCCEEDED(link->QueryInterface(IID_IPersistFile, reinterpret_cast<void **>(&file)))) {
+            const QString native = QDir::toNativeSeparators(shortcutPath);
+            if (SUCCEEDED(file->Load(reinterpret_cast<const wchar_t *>(native.utf16()),
+                                     STGM_READ))) {
+                wchar_t buffer[MAX_PATH] = {};
+                // 0 表示展开环境变量、解析出最终路径，与索引里存的 exe 路径一致
+                if (SUCCEEDED(link->GetPath(buffer, MAX_PATH, nullptr, 0)) && buffer[0] != L'\0')
+                    target = QDir::toNativeSeparators(QString::fromWCharArray(buffer));
+            }
+            file->Release();
+        }
+        link->Release();
+    }
+    if (releaseCom)
+        CoUninitialize();
+    return target;
+}
+#endif
 
 QString Scanner::locateProgram()
 {
@@ -640,6 +673,11 @@ bool Scanner::ingestFile(const QFileInfo &info, Database &db, bool allowExtensio
 
     ExecutableRecord record;
     record.path = QDir::toNativeSeparators(info.absoluteFilePath());
+#ifdef Q_OS_WIN
+    // 记下快捷方式指向的程序：检索结果里两者只留一条（见 SearchEngine 的去重）
+    if (suffix == QLatin1String("lnk"))
+        record.target = resolveShortcutTarget(record.path);
+#endif
     // 快捷方式显示原名（"腾讯会议"），带上 .lnk 只是噪音
     record.displayName = (suffix == QLatin1String("lnk") || suffix == QLatin1String("url"))
         ? info.completeBaseName()

@@ -46,6 +46,11 @@ public:
     bool isStopping() const;
 
     static QStringList availableRoots(bool includeRemovable);
+#ifdef Q_OS_WIN
+    /** 解析 .lnk 指向的真实目标（环境变量已展开）；解析失败返回空。
+     *  索引里存下它，检索时才能把“快捷方式”与“它指向的程序”合并成一条。 */
+    static QString resolveShortcutTarget(const QString &shortcutPath);
+#endif
     /** 当前用户的 AppData\Local 与 AppData\Roaming（仅 Windows 有意义，其余平台返回空）。
      *  大量用户级应用（豆包、Discord、VS Code 等）装在这里，而这些目录是隐藏目录，
      *  全盘遍历进不去，所以作为显式扫描根单独扫。 */

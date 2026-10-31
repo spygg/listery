@@ -192,6 +192,48 @@ QVector<SearchResult> toResults(const QVector<ExecutableRecord> &records)
     }
     return results;
 }
+
+bool isShortcut(const ExecutableRecord &record)
+{
+    return record.ext.compare(QLatin1String("lnk"), Qt::CaseInsensitive) == 0;
+}
+
+/** 快捷方式与它指向的程序只保留一条。
+ *
+ *  两者是同一个启动入口的两种表示：开始菜单的 "微信.lnk" 和 WeChat.exe 同时出现
+ *  在结果里纯属噪音。保留快捷方式（名字更友好、图标与启动参数都在），同一目标被
+ *  多个快捷方式命中时只留分数最高的那条；目标程序自己单独命中（快捷方式没匹配到
+ *  关键字）时照常返回，不影响按 exe 名搜索。 */
+void collapseShortcutDuplicates(QVector<SearchResult> &results)
+{
+    QHash<QString, int> bestByTarget;
+    for (int i = 0; i < results.size(); ++i) {
+        const ExecutableRecord &record = results.at(i).record;
+        if (!isShortcut(record) || record.target.isEmpty())
+            continue;
+        const QString target = record.target.toLower();
+        const auto it = bestByTarget.constFind(target);
+        if (it == bestByTarget.constEnd() || results.at(*it).score < results.at(i).score)
+            bestByTarget.insert(target, i);
+    }
+    if (bestByTarget.isEmpty())
+        return;
+
+    QVector<SearchResult> kept;
+    kept.reserve(results.size());
+    for (int i = 0; i < results.size(); ++i) {
+        const SearchResult &result = results.at(i);
+        const ExecutableRecord &record = result.record;
+        if (isShortcut(record) && !record.target.isEmpty()) {
+            if (bestByTarget.value(record.target.toLower()) != i)
+                continue;
+        } else if (bestByTarget.contains(record.path.toLower())) {
+            continue;
+        }
+        kept.append(result);
+    }
+    results = kept;
+}
 } // namespace
 
 SearchEngine::SearchEngine(Database *database)
@@ -239,7 +281,9 @@ QVector<SearchResult> SearchEngine::search(const QString &query, int limit) cons
                 records.append(record);
             }
         }
-        return toResults(records);
+        QVector<SearchResult> recentResults = toResults(records);
+        collapseShortcutDuplicates(recentResults);
+        return recentResults;
     }
 
     // 粗筛：FTS5 走倒排索引做词首前缀匹配（20 万条约 5~15ms）；没有 FTS5 时退回索引前缀 + 全模糊
@@ -372,6 +416,9 @@ QVector<SearchResult> SearchEngine::search(const QString &query, int limit) cons
                      [](const SearchResult &left, const SearchResult &right) {
                          return left.score > right.score;
                      });
+
+    // 去重要在截断前做：被截掉的可能正是快捷方式，留下就会重新露出目标程序
+    collapseShortcutDuplicates(results);
 
     if (results.size() > limit)
         results.resize(limit);

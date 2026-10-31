@@ -79,20 +79,35 @@ set(PROJECT_SOURCES
 )
 
 if(WIN32)
-    # MinGW 工具链下若 PATH 上有 MSVC 的 rc.exe，CMake 会选它并生成 COFF 资源，
-    # g++ 链接时无法识别；显式固定 windres。
+    # Windows 下把正式图标编进 exe（资源管理器/任务栏显示，而非空白 exe）。
+    # MinGW 不走 CMake 的 RC 语言：它按 PATH 自动挑资源编译器，CI runner 上会选中
+    # MSVC 的 rc.exe，产出的对象 g++ 链接时报“file format not recognized”。
+    # 这里直接调用与 g++ 同目录的 windres，保证资源对象与工具链配套。
     if(MINGW)
-        find_program(LISTERY_WINDRES NAMES windres REQUIRED)
-        set(CMAKE_RC_COMPILER "${LISTERY_WINDRES}")
+        get_filename_component(LISTERY_MINGW_BIN "${CMAKE_CXX_COMPILER}" DIRECTORY)
+        find_program(LISTERY_WINDRES NAMES windres HINTS "${LISTERY_MINGW_BIN}" REQUIRED)
+        set(LISTERY_RC_SOURCE "${CMAKE_CURRENT_BINARY_DIR}/listery_appicon.rc.o")
+        add_custom_command(
+            OUTPUT "${LISTERY_RC_SOURCE}"
+            COMMAND "${LISTERY_WINDRES}" -O coff
+                    -I "${CMAKE_CURRENT_SOURCE_DIR}/src/resources"
+                    -i "${CMAKE_CURRENT_SOURCE_DIR}/src/resources/appicon.rc"
+                    -o "${LISTERY_RC_SOURCE}"
+            DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/resources/appicon.rc"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/src/resources/appicon.ico"
+            VERBATIM)
+        set_source_files_properties("${LISTERY_RC_SOURCE}" PROPERTIES
+            EXTERNAL_OBJECT TRUE GENERATED TRUE)
+    else()
+        enable_language(RC)
+        set(LISTERY_RC_SOURCE src/resources/appicon.rc)
     endif()
-    enable_language(RC)
 endif()
 
 add_executable(listery ${PROJECT_SOURCES})
 
-# Windows 下把正式图标编进 exe（资源管理器/任务栏显示，而非空白 exe）
 if(WIN32)
-    target_sources(listery PRIVATE src/resources/appicon.rc)
+    target_sources(listery PRIVATE "${LISTERY_RC_SOURCE}")
 endif()
 
 set_target_properties(listery PROPERTIES
