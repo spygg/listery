@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(Listery VERSION 1.3.1 LANGUAGES CXX)
+project(Listery VERSION 1.3.3 LANGUAGES CXX)
 
 # XP 兼容目标（MinGW 5.3）只支持 C++14，可用 -DLISTERY_CXX_STANDARD=14 覆盖
 if(NOT LISTERY_CXX_STANDARD)
