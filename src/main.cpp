@@ -10,6 +10,10 @@
 #include "SelfTest.h"
 #include "Ui/LauncherWindow.h"
 
+#ifdef LISTERY_WITH_BREAKPAD
+#  include "crashhandler.h"
+#endif
+
 #include <QApplication>
 #include <QDateTime>
 #include <QDir>
@@ -34,6 +38,8 @@
 
 namespace {
 QFile *g_logFile = nullptr;
+QString g_logDir;
+QString g_logDate;
 /** 日志可能来自 GUI 线程、扫描线程、插件回调：QFile 不是线程安全的，写之前必须串行化。 */
 QMutex g_logMutex;
 
@@ -50,7 +56,23 @@ void logMessageHandler(QtMsgType type, const QMessageLogContext &context, const 
 
     {
         QMutexLocker locker(&g_logMutex);
-        if (g_logFile && g_logFile->isOpen()) {
+        // 按天分文件：跨过零点后第一条日志自动切到新日期，长时间挂着运行也不会写错文件
+        const QString today = QDate::currentDate().toString(QStringLiteral("yyyyMMdd"));
+        if (!g_logFile || !g_logFile->isOpen() || g_logDate != today) {
+            if (g_logFile && g_logFile->isOpen()) {
+                g_logFile->flush();
+                g_logFile->close();
+            }
+            if (!g_logFile)
+                g_logFile = new QFile;
+            g_logFile->setFileName(g_logDir + QLatin1Char('/') + today + QStringLiteral(".txt"));
+            if (g_logFile->open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text))
+                g_logDate = today;
+            else
+                g_logDate.clear();
+        }
+
+        if (g_logFile->isOpen()) {
             g_logFile->write(line.toUtf8());
             g_logFile->flush();
             if (type != QtFatalMsg)
@@ -66,51 +88,20 @@ void logMessageHandler(QtMsgType type, const QMessageLogContext &context, const 
 }
 
 /**
- * 日志轮转：只保留最近 keepDays 天的记录，更早的整行丢弃。
- * 日志行形如 "[2026-10-30T05:41:14.123] [INFO] ..."，按首部时间戳的日期判断。
- * 无法解析日期的行一律保留，避免误删；没有过期行时不做任何重写（零开销）。
+ * 日志按天分文件（logs/YYYYMMDD.txt），启动时只清理保留窗口外的旧文件。
+ * 相比“单个文件 + 启动时重写裁剪”，省掉每次启动读入并重写整份日志的开销，
+ * 文件也不会越写越大。
  */
-void trimLog(const QString &path, int keepDays)
+void pruneLogs(const QString &dir, int keepDays)
 {
-    QFile file(path);
-    if (!file.exists() || !file.open(QIODevice::ReadOnly | QIODevice::Text))
-        return;
-
-    const QByteArray content = file.readAll();
-    file.close();
-
-    const QStringList lines = QString::fromUtf8(content).split(QLatin1Char('\n'),
-                                                              LISTERY_SKIP_EMPTY_PARTS);
-    if (lines.isEmpty())
-        return;
-
-    const QDate cutoff = QDate::currentDate().addDays(-keepDays);
-    int firstKeep = 0;
-    bool scanning = true;
-    for (int i = 0; i < lines.size() && scanning; ++i) {
-        const QString &line = lines.at(i);
-        const int open = line.indexOf(QLatin1Char('['));
-        const int close = line.indexOf(QLatin1Char(']'), open + 1);
-        if (open < 0 || close < 0)
-            break; // 无法解析：保留本行及之后全部
-        const QString ts = line.mid(open + 1, close - open - 1);
-        const QString datePart = ts.left(ts.indexOf(QLatin1Char('T')));
-        const QDate date = QDate::fromString(datePart, QStringLiteral("yyyy-MM-dd"));
+    const QDate cutoff = QDate::currentDate().addDays(-(keepDays - 1));
+    const QDir logs(dir);
+    const QStringList names = logs.entryList(QStringList() << QStringLiteral("*.txt"), QDir::Files);
+    for (const QString &name : names) {
+        const QDate date = QDate::fromString(QFileInfo(name).completeBaseName(),
+                                             QStringLiteral("yyyyMMdd"));
         if (date.isValid() && date < cutoff)
-            firstKeep = i + 1; // 该行已过期，从下一行起保留
-        else
-            scanning = false;  // 遇到不旧的行，其后全部保留
-    }
-
-    if (firstKeep <= 0)
-        return; // 没有需要丢弃的旧记录
-
-    QFile out(path);
-    if (!out.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate))
-        return;
-    for (int i = firstKeep; i < lines.size(); ++i) {
-        out.write(lines.at(i).toUtf8());
-        out.write("\n");
+            QFile::remove(logs.filePath(name));
     }
 }
 
@@ -237,11 +228,19 @@ int main(int argc, char *argv[])
 
     const QString dataDir = AppSettings::resolveDataDir();
     QDir().mkpath(dataDir);
-    const QString logPath = dataDir + QStringLiteral("/listery.log");
-    // 启动前先按 3 天窗口裁剪，避免日志无限增长
-    trimLog(logPath, 3);
-    g_logFile = new QFile(logPath);
-    g_logFile->open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text);
+
+#ifdef LISTERY_WITH_BREAKPAD
+    // 崩溃转储写到 dataDir/crashes，仅本地保留，不做任何自动上传
+    const QString crashDir = dataDir + QStringLiteral("/crashes");
+    QDir().mkpath(crashDir);
+    Breakpad::CrashHandler::instance()->Init(crashDir);
+#endif
+
+    // 日志按天落到 dataDir/logs/YYYYMMDD.txt，只保留最近 7 个自然日
+    const QString logDir = dataDir + QStringLiteral("/logs");
+    QDir().mkpath(logDir);
+    pruneLogs(logDir, 7);
+    g_logDir = logDir;
     qInstallMessageHandler(logMessageHandler);
 
     QFont appFont = app.font();

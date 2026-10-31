@@ -72,7 +72,7 @@ They need **no Qt and no OpenSSL** — the host performs network requests on the
 - Settings → Plugins lets you enable/disable each plugin and reassign its hotkey (`Alt+E`, `Ctrl+Shift+F1`, …);
 - The tray's Plugins submenu opens a plugin directly (fallback when hotkeys are unavailable);
 - To write your own: [plugin guide](docs/PLUGINS_EN.md) ([中文](docs/PLUGINS.md)) with a minimal sample, the action protocol and a CMake template;
-- Load failures never pop a dialog — the reason is shown in Settings, and plugin logs go to `listery.log`.
+- Load failures never pop a dialog — the reason is shown in Settings, and plugin logs go to `logs/YYYYMMDD.txt`.
 
 ## Smart indexing
 
@@ -187,7 +187,8 @@ Data directory: **next to the executable** (falls back to the platform `AppDataL
 | --- | --- |
 | `index.db` | SQLite index (`executables` / `usage_stats` / `app_meta` / `volume_stats` + an FTS5 inverted index) |
 | `settings.ini` | Extension whitelist, skipped directories, removable drives, smart scheduling, hotkey window, result count, … |
-| `listery.log` | Runtime log (scan errors and hotkey warnings) |
+| `logs/YYYYMMDD.txt` | Runtime log, one file per day, last 7 days kept (scan errors, hotkey warnings, plugin logs) |
+| `crashes/` | Crash dumps (minidumps; Windows builds only, kept locally, never uploaded) |
 
 Delete `index.db` or pick "Rescan everything" to rebuild the index; usage statistics live in `usage_stats` and survive a rebuild.
 

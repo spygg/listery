@@ -71,7 +71,7 @@
 - 「设置 → 插件」里可以逐个启用/禁用、改热键（写法如 `Alt+E`、`Ctrl+Shift+F1`）；
 - 托盘菜单的「插件」子菜单也能直接唤起插件（热键不可用时的兜底）；
 - 想自己写插件：[插件开发指南](docs/PLUGINS.md)（[English](docs/PLUGINS_EN.md)），含最小示例、action 协议与 CMake 模板；
-- 插件加载失败不会弹窗，原因显示在设置页；插件日志写进 `listery.log`。
+- 插件加载失败不会弹窗，原因显示在设置页；插件日志写进 `logs/YYYYMMDD.txt`。
 
 ## 智能索引
 
@@ -186,7 +186,8 @@ Linux / macOS 把 `build\listery.exe` 换成 `./build/listery`，其余参数相
 | --- | --- |
 | `index.db` | SQLite 索引（`executables` / `usage_stats` / `app_meta` / `volume_stats` 表 + FTS5 倒排） |
 | `settings.ini` | 后缀白名单、跳过目录、可移动磁盘、智能调度、热键间隔、结果数量等 |
-| `listery.log` | 运行日志（含扫描错误与热键告警） |
+| `logs/YYYYMMDD.txt` | 运行日志，按天分文件，只保留最近 7 天（扫描错误、热键告警、插件日志） |
+| `crashes/` | 崩溃转储（minidump，仅 Windows 构建生成，本地保留、不上传） |
 
 删除 `index.db` 或点"重新扫描全盘"即可重建索引；使用统计在 `usage_stats` 中，重建索引不会清空。
 

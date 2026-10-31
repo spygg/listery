@@ -260,8 +260,10 @@ QStringList Scanner::availableRoots(bool includeRemovable)
             continue;
 #endif
         // 真实块设备挂载的卷（/dev/sdX、/dev/nvme、/dev/mapper 等），排除网络与伪挂载。
-        // 根分区额外直接收录：btrfs / ZFS / overlay 等文件系统的 device() 并不是 /dev/ 开头
-        if (rootPath == QLatin1String("/") || volume.device().startsWith(QStringLiteral("/dev/")))
+        // 根分区额外直接收录：btrfs / ZFS / overlay 等文件系统的 device() 并不是 /dev/ 开头。
+        // 注意：Unix 上（Qt5 与 Qt6）device() 返回 QByteArray，不能直接和 QString 比较。
+        const QByteArray device = volume.device();
+        if (rootPath == QLatin1String("/") || device.startsWith("/dev/"))
             roots.append(rootPath);
 #endif
     }

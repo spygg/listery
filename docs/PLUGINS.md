@@ -175,7 +175,7 @@ target_include_directories(my_plugin PRIVATE <sdk 目录>)
 
 ## 调试与排错
 
-- 插件调用 `host->log` 的内容会写进 `listery.log`（级别：`LISTERY_LOG_DEBUG/INFO/WARNING`）；
+- 插件调用 `host->log` 的内容会写进 `logs/YYYYMMDD.txt`（按天分文件，保留 7 天；级别：`LISTERY_LOG_DEBUG/INFO/WARNING`）；
 - 加载失败（缺符号、apiVersion 不符、init 非 0）不会弹窗，原因显示在「设置 → 插件」里；
 - 自检 `listery --selftest` 会加载 `plugins/` 目录并跑一次真实查询，可用于验证部署是否完整。
 

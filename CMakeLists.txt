@@ -78,6 +78,16 @@ set(PROJECT_SOURCES
     src/Ui/SettingsDialog.cpp
 )
 
+if(WIN32)
+    # MinGW 工具链下若 PATH 上有 MSVC 的 rc.exe，CMake 会选它并生成 COFF 资源，
+    # g++ 链接时无法识别；显式固定 windres。
+    if(MINGW)
+        find_program(LISTERY_WINDRES NAMES windres REQUIRED)
+        set(CMAKE_RC_COMPILER "${LISTERY_WINDRES}")
+    endif()
+    enable_language(RC)
+endif()
+
 add_executable(listery ${PROJECT_SOURCES})
 
 # Windows 下把正式图标编进 exe（资源管理器/任务栏显示，而非空白 exe）
@@ -156,6 +166,15 @@ if(MSVC)
     target_compile_options(listery PRIVATE /utf-8 /W3)
 else()
     target_compile_options(listery PRIVATE -Wall -Wextra -Wno-unused-parameter)
+endif()
+
+# 崩溃转储：仅 Windows/MSVC 桌面构建启用 Breakpad。
+# XP(MinGW 5.3) 与 Linux/macOS 不启用：随附的 Breakpad 源码较旧，
+# 在那些工具链上编译/链接风险高，会拖累发布流水线。
+if(WIN32 AND MSVC)
+    add_subdirectory(src/thirdparty/breakpad)
+    target_link_libraries(listery PRIVATE listery_breakpad)
+    target_compile_definitions(listery PRIVATE LISTERY_WITH_BREAKPAD=1)
 endif()
 
 # 插件与主程序一起构建（输出到 build/plugins/，主程序从 exe 同目录的 plugins/ 加载）

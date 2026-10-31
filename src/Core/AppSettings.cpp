@@ -3,6 +3,7 @@
 #include "Core/Localization.h"
 
 #include <QCoreApplication>
+#include <QDate>
 #include <QDir>
 #include <QFile>
 #include <QSettings>
@@ -122,7 +123,9 @@ QString AppSettings::databasePath() const
 
 QString AppSettings::logFilePath() const
 {
-    return m_dataDir + QStringLiteral("/listery.log");
+    return m_dataDir + QStringLiteral("/logs/")
+        + QDate::currentDate().toString(QStringLiteral("yyyyMMdd"))
+        + QStringLiteral(".txt");
 }
 
 QString AppSettings::settingsFilePath() const

@@ -176,7 +176,7 @@ target_include_directories(my_plugin PRIVATE <sdk dir>)
 
 ## Debugging
 
-- Anything you send through `host->log` lands in `listery.log` (`LISTERY_LOG_DEBUG/INFO/WARNING`);
+- Anything you send through `host->log` lands in `logs/YYYYMMDD.txt` (one file per day, 7 days kept; `LISTERY_LOG_DEBUG/INFO/WARNING`);
 - Load failures (missing symbol, wrong `apiVersion`, non-zero `init`) never pop a dialog — the reason is listed under Settings → Plugins;
 - `listery --selftest` loads `plugins/` and runs one real query, which is handy to validate a deployment.
 

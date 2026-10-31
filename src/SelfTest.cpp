@@ -17,6 +17,10 @@
 #include "Core/QtCompat.h"
 #include "Ui/LauncherWindow.h"
 
+#ifdef LISTERY_WITH_BREAKPAD
+#  include "crashhandler.h"
+#endif
+
 #include <QAction>
 #include <QApplication>
 #include <QCursor>
@@ -348,6 +352,32 @@ int SelfTest::run()
         Database wxDb(wxDbPath);
         QString wxErr;
         check(wxDb.open(&wxErr), QStringLiteral("打开 wx 测试库：%1").arg(wxErr));
+
+        // 真实场景：wx 开头的 WXWork/WXDrive 占满展示区，其中 WXWork 本身还有使用记录；
+        // 整词缩写命中的微信仍须排第一（kAbbrevExactBonus 要高于使用度权重上限）。
+        {
+            ExecutableRecord wxwork;
+            wxwork.path = QDir::toNativeSeparators(
+                wxRoot + QStringLiteral("/Program Files (x86)/WXWork/WXWork.exe"));
+            wxwork.displayName = QStringLiteral("WXWork.exe");
+            wxwork.dir = QDir::toNativeSeparators(QFileInfo(wxwork.path).absolutePath());
+            wxwork.ext = QStringLiteral("exe");
+            wxwork.size = 1;
+            wxwork.mtime = 1;
+
+            ExecutableRecord wxdrive = wxwork;
+            wxdrive.path = QDir::toNativeSeparators(
+                wxRoot + QStringLiteral("/Program Files (x86)/WXWork/WXDrive.exe"));
+            wxdrive.displayName = QStringLiteral("WXDrive.exe");
+
+            wxDb.beginBulk();
+            wxDb.upsertExecutable(wxwork, 9);
+            wxDb.upsertExecutable(wxdrive, 9);
+            wxDb.commitBulk();
+            for (int i = 0; i < 5; ++i)
+                wxDb.recordLaunch(wxwork.path);
+        }
+
         SearchEngine wxEngine(&wxDb);
 
         // 直接验证前缀检索覆盖拼音首字母（无需 FTS 也能命中）
@@ -371,14 +401,40 @@ int SelfTest::run()
 
         check(prefixOk, QStringLiteral("searchByPrefix(\"wx\") 命中微信（拼音首字母路径）"));
 
-        // 完整检索链路：与用户实际输入一致
+        // 完整检索链路：与用户实际输入一致，首条必须是微信而不是用过的 WXWork
         const QVector<SearchResult> hits = wxEngine.search(QStringLiteral("wx"), 10);
+        check(!hits.isEmpty()
+                  && hits.first().record.displayName == QStringLiteral("微信"),
+              QStringLiteral("输入 wx 首条为微信（缩写整词命中优先于已使用的 WXWork）"));
         bool ok = false;
         for (const SearchResult &r : hits)
             if (r.record.displayName == QStringLiteral("微信"))
                 ok = true;
         check(ok, QStringLiteral("输入 wx 命中微信（完整检索链路）"));
     }
+
+#ifdef LISTERY_WITH_BREAKPAD
+    // ---- Breakpad：确认崩溃处理器已安装且能真正写出 minidump ----
+    {
+        const QDir crashDir(AppSettings::resolveDataDir() + QStringLiteral("/crashes"));
+        const QStringList before = crashDir.entryList(QStringList() << QStringLiteral("*.dmp"),
+                                                     QDir::Files);
+        const bool dumped = Breakpad::CrashHandler::instance()->writeMinidump();
+        const QStringList after = crashDir.entryList(QStringList() << QStringLiteral("*.dmp"),
+                                                    QDir::Files);
+        QString created;
+        for (const QString &name : after) {
+            if (!before.contains(name)) {
+                created = name;
+                break;
+            }
+        }
+        check(dumped && !created.isEmpty(),
+              QStringLiteral("Breakpad 写出 minidump（%1）").arg(created));
+        if (!created.isEmpty())
+            QFile::remove(crashDir.filePath(created));
+    }
+#endif
 
     // ---- 7. 版本比较：语义化大小比较，避开 1.2.0 被误判大于 1.10.0 的坑 ----
     {

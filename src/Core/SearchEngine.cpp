@@ -14,6 +14,12 @@ const double kRecencyHalfLifeDays = 14.0;
 const int kCandidateLimit = 3000;
 const int kPrefixLimit = 600;
 const int kSeedLimit = 64;
+/**
+ * 整词缩写命中（token 恰好等于某个拼音首字母变体，如 wx = 微信）的额外加成。
+ * 略高于使用度权重上限 0.28：缩写是明确的输入意图，不能被一次启动记录掀翻，
+ * 否则 wx 会被同名前缀的 WXWork/WXDrive 压住。
+ */
+const double kAbbrevExactBonus = 0.30;
 /** 使用统计快照的缓存时长（毫秒）。 */
 const qint64 kUsageCacheTtlMs = 1500;
 
@@ -28,11 +34,14 @@ struct TokenMatch
 {
     double score = -1.0;
     QVector<int> positions;
+    /** token 恰好等于某个拼音首字母变体（整词缩写）。 */
+    bool abbrevExact = false;
 };
 
 /** 在拼音变体串（空格分隔）里找关键字；只接受纯 ASCII 关键字，返回 -1 表示不匹配。 */
 double pinyinScore(const QString &token, const QString &variants,
-                   double exactScore, double prefixScore, double containsScore)
+                   double exactScore, double prefixScore, double containsScore,
+                   bool *exactHit = nullptr)
 {
     if (variants.isEmpty() || token.isEmpty())
         return -1.0;
@@ -48,8 +57,11 @@ double pinyinScore(const QString &token, const QString &variants,
     const QStringList list = variants.split(QLatin1Char(' '), QString::SkipEmptyParts);
 #endif
     for (const QString &variant : list) {
-        if (variant.compare(token, Qt::CaseInsensitive) == 0)
+        if (variant.compare(token, Qt::CaseInsensitive) == 0) {
+            if (exactHit)
+                *exactHit = true;
             return exactScore;
+        }
         if (variant.startsWith(token, Qt::CaseInsensitive)) {
             best = qMax(best, prefixScore);
         } else if (containsScore > 0.0 && variant.contains(token, Qt::CaseInsensitive)) {
@@ -124,7 +136,7 @@ TokenMatch matchToken(const QString &token, const QString &name, const QString &
         match.score = pinyinHit;
         return match;
     }
-    const double initialsHit = pinyinScore(token, initials, 1.25, 1.02, -1.0);
+    const double initialsHit = pinyinScore(token, initials, 1.36, 1.02, -1.0, &match.abbrevExact);
     if (initialsHit > 0.0) {
         match.score = initialsHit;
         return match;
@@ -310,6 +322,7 @@ QVector<SearchResult> SearchEngine::search(const QString &query, int limit) cons
         double matchSum = 0.0;
         QVector<int> positions;
         bool matched = true;
+        bool abbrevExact = false;
 
         for (const QString &token : tokens) {
             const TokenMatch tokenMatch = matchToken(token, record.displayName, record.dir,
@@ -319,6 +332,7 @@ QVector<SearchResult> SearchEngine::search(const QString &query, int limit) cons
                 break;
             }
             matchSum += tokenMatch.score;
+            abbrevExact = abbrevExact || tokenMatch.abbrevExact;
             for (int position : tokenMatch.positions) {
                 if (position >= 0 && position < record.displayName.size()
                     && !positions.contains(position))
@@ -349,6 +363,7 @@ QVector<SearchResult> SearchEngine::search(const QString &query, int limit) cons
         result.highlights = positions;
         result.score = kMatchWeight * matchQuality
             + kUsageWeight * usageScore(record, maxFrequency, nowMs)
+            + (abbrevExact ? kAbbrevExactBonus : 0.0)
             + 0.004 * (1.0 - qMin(1.0, static_cast<double>(record.displayName.size()) / 64.0));
         results.append(result);
     }
