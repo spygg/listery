@@ -1,35 +1,35 @@
 === pwd: /d/a/listery/listery
 === ls ===
 total 90
-drwxr-xr-x 1 runneradmin 197121     0 Oct 31 00:03 .
-drwxr-xr-x 1 runneradmin 197121     0 Oct 31 00:01 ..
-drwxr-xr-x 1 runneradmin 197121     0 Oct 31 00:03 .git
-drwxr-xr-x 1 runneradmin 197121     0 Oct 31 00:01 .github
--rw-r--r-- 1 runneradmin 197121   173 Oct 31 00:01 .gitignore
--rw-r--r-- 1 runneradmin 197121  3932 Oct 31 00:03 CMakeLists.txt
--rw-r--r-- 1 runneradmin 197121  1083 Oct 31 00:01 LICENSE
--rw-r--r-- 1 runneradmin 197121 19455 Oct 31 00:01 README.md
--rw-r--r-- 1 runneradmin 197121 20336 Oct 31 00:01 README_EN.md
-drwxr-xr-x 1 runneradmin 197121     0 Oct 31 00:03 build
--rw-r--r-- 1 runneradmin 197121   753 Oct 31 00:01 build.bat
--rw-r--r-- 1 runneradmin 197121  5804 Oct 31 00:03 build.log
-drwxr-xr-x 1 runneradmin 197121     0 Oct 31 00:03 ci-logs
--rw-r--r-- 1 runneradmin 197121   519 Oct 31 00:03 configure.log
--rw-r--r-- 1 runneradmin 197121  1342 Oct 31 00:01 deploy.bat
-drwxr-xr-x 1 runneradmin 197121     0 Oct 31 00:01 docs
-drwxr-xr-x 1 runneradmin 197121     0 Oct 31 00:01 installer
-drwxr-xr-x 1 runneradmin 197121     0 Oct 31 00:03 plugins
-drwxr-xr-x 1 runneradmin 197121     0 Oct 31 00:01 sdk
--rw-r--r-- 1 runneradmin 197121  6831 Oct 31 00:03 setup_qt.log
-drwxr-xr-x 1 runneradmin 197121     0 Oct 31 00:03 src
-drwxr-xr-x 1 runneradmin 197121     0 Oct 31 00:03 tools
+drwxr-xr-x 1 runneradmin 197121     0 Oct 31 01:07 .
+drwxr-xr-x 1 runneradmin 197121     0 Oct 31 01:05 ..
+drwxr-xr-x 1 runneradmin 197121     0 Oct 31 01:07 .git
+drwxr-xr-x 1 runneradmin 197121     0 Oct 31 01:05 .github
+-rw-r--r-- 1 runneradmin 197121   173 Oct 31 01:05 .gitignore
+-rw-r--r-- 1 runneradmin 197121  3932 Oct 31 01:07 CMakeLists.txt
+-rw-r--r-- 1 runneradmin 197121  1083 Oct 31 01:05 LICENSE
+-rw-r--r-- 1 runneradmin 197121 19455 Oct 31 01:07 README.md
+-rw-r--r-- 1 runneradmin 197121 20336 Oct 31 01:07 README_EN.md
+drwxr-xr-x 1 runneradmin 197121     0 Oct 31 01:07 build
+-rw-r--r-- 1 runneradmin 197121   753 Oct 31 01:05 build.bat
+-rw-r--r-- 1 runneradmin 197121  5804 Oct 31 01:07 build.log
+drwxr-xr-x 1 runneradmin 197121     0 Oct 31 01:07 ci-logs
+-rw-r--r-- 1 runneradmin 197121   519 Oct 31 01:07 configure.log
+-rw-r--r-- 1 runneradmin 197121  1342 Oct 31 01:05 deploy.bat
+drwxr-xr-x 1 runneradmin 197121     0 Oct 31 01:07 docs
+drwxr-xr-x 1 runneradmin 197121     0 Oct 31 01:05 installer
+drwxr-xr-x 1 runneradmin 197121     0 Oct 31 01:07 plugins
+drwxr-xr-x 1 runneradmin 197121     0 Oct 31 01:05 sdk
+-rw-r--r-- 1 runneradmin 197121  6831 Oct 31 01:07 setup_qt.log
+drwxr-xr-x 1 runneradmin 197121     0 Oct 31 01:07 src
+drwxr-xr-x 1 runneradmin 197121     0 Oct 31 01:07 tools
 === setup_qt.log ===
 === cache miss: downloading offline installer ===
--rwxr-xr-x 1 runneradmin 197121 1201453136 Oct 31 00:02 qt571.exe
+-rwxr-xr-x 1 runneradmin 197121 1201453136 Oct 31 01:06 qt571.exe
 === layer 1: extract [0] payload container from exe ===
 total 1154864
-drwxr-xr-x 1 runneradmin 197121          0 Oct 31 00:02 .
-drwxr-xr-x 1 runneradmin 197121          0 Oct 31 00:02 ..
+drwxr-xr-x 1 runneradmin 197121          0 Oct 31 01:06 .
+drwxr-xr-x 1 runneradmin 197121          0 Oct 31 01:06 ..
 -rw-r--r-- 1 runneradmin 197121 1182578032 Nov 30  2016 [0]
 === layer 2: split numbered component archives ===
 === layer 3: extract components containing mingw53 ===
@@ -231,7 +231,7 @@ seeded /d/qt571/Tools/mingw530_32/bin/../lib/gcc/i686-w64-mingw32/5.3.0/libgcc_s
 cc1plus_status=0
 === compile smoke test ===
 compile_status=0
--rwxr-xr-x 1 runneradmin 197121 46732 Oct 31 00:03 smoke.exe
+-rwxr-xr-x 1 runneradmin 197121 46732 Oct 31 01:07 smoke.exe
 run_status=0
 === configure.log ===
 -- The CXX compiler identification is GNU 5.3.0
@@ -240,7 +240,7 @@ run_status=0
 -- Check for working CXX compiler: D:/qt571/Tools/mingw530_32/bin/g++.exe - skipped
 -- Detecting CXX compile features
 -- Detecting CXX compile features - done
--- Configuring done (1.7s)
+-- Configuring done (4.6s)
 -- Generating done (0.3s)
 -- Build files have been written to: D:/a/listery/listery/build
 === selected Qt (from CMakeCache) ===
@@ -249,17 +249,17 @@ Qt5Core_DIR:PATH=D:/qt571/5.7/mingw53_32/lib/cmake/Qt5Core
 === build.log ===
 [1/41] Automatic MOC for target listery_translator
 [2/41] Automatic MOC for target listery_french
-[3/41] lrelease listery_en.ts
-Updating 'D:/a/listery/listery/build/i18n/listery_en.qm'...
-    Generated 119 translation(s) (119 finished and 0 unfinished)
-[4/41] lrelease listery_zh_TW.ts
+[3/41] lrelease listery_zh_TW.ts
 Updating 'D:/a/listery/listery/build/i18n/listery_zh_TW.qm'...
+    Generated 119 translation(s) (119 finished and 0 unfinished)
+[4/41] lrelease listery_en.ts
+Updating 'D:/a/listery/listery/build/i18n/listery_en.qm'...
     Generated 119 translation(s) (119 finished and 0 unfinished)
 [5/41] lrelease listery_fr.ts
 Updating 'D:/a/listery/listery/build/i18n/listery_fr.qm'...
     Generated 119 translation(s) (119 finished and 0 unfinished)
-[6/41] Building CXX object plugins/translator/CMakeFiles/listery_translator.dir/listery_translator_autogen/mocs_compilation.cpp.obj
-[7/41] Building CXX object plugins/french/CMakeFiles/listery_french.dir/listery_french_autogen/mocs_compilation.cpp.obj
+[6/41] Building CXX object plugins/french/CMakeFiles/listery_french.dir/listery_french_autogen/mocs_compilation.cpp.obj
+[7/41] Building CXX object plugins/translator/CMakeFiles/listery_translator.dir/listery_translator_autogen/mocs_compilation.cpp.obj
 [8/41] Building CXX object plugins/translator/CMakeFiles/listery_translator.dir/translator.cpp.obj
 [9/41] Building CXX object plugins/french/CMakeFiles/listery_french.dir/french.cpp.obj
 [10/41] Linking CXX shared module plugins\translator.dll
@@ -267,16 +267,16 @@ Updating 'D:/a/listery/listery/build/i18n/listery_fr.qm'...
 [12/41] Automatic MOC for target listery
 [13/41] Automatic RCC for listery_translations.qrc
 [14/41] Building CXX object CMakeFiles/listery.dir/src/Core/AppSettings.cpp.obj
-[15/41] Building CXX object CMakeFiles/listery.dir/src/main.cpp.obj
-[16/41] Building CXX object CMakeFiles/listery.dir/listery_autogen/mocs_compilation.cpp.obj
-[17/41] Building CXX object CMakeFiles/listery.dir/src/Core/Database.cpp.obj
-[18/41] Building CXX object CMakeFiles/listery.dir/src/AppController.cpp.obj
+[15/41] Building CXX object CMakeFiles/listery.dir/listery_autogen/mocs_compilation.cpp.obj
+[16/41] Building CXX object CMakeFiles/listery.dir/src/main.cpp.obj
+[17/41] Building CXX object CMakeFiles/listery.dir/src/AppController.cpp.obj
+[18/41] Building CXX object CMakeFiles/listery.dir/src/Core/Database.cpp.obj
 [19/41] Building CXX object CMakeFiles/listery.dir/src/SelfTest.cpp.obj
 [20/41] Building CXX object CMakeFiles/listery.dir/src/Core/SearchService.cpp.obj
 [21/41] Building CXX object CMakeFiles/listery.dir/src/Core/Scanner.cpp.obj
-[22/41] Building CXX object CMakeFiles/listery.dir/src/Core/Localization.cpp.obj
-[23/41] Building CXX object CMakeFiles/listery.dir/src/Core/LaunchService.cpp.obj
-[24/41] Building CXX object CMakeFiles/listery.dir/src/Core/SearchEngine.cpp.obj
+[22/41] Building CXX object CMakeFiles/listery.dir/src/Core/LaunchService.cpp.obj
+[23/41] Building CXX object CMakeFiles/listery.dir/src/Core/SearchEngine.cpp.obj
+[24/41] Building CXX object CMakeFiles/listery.dir/src/Core/Localization.cpp.obj
 [25/41] Building CXX object CMakeFiles/listery.dir/src/Core/UsageRecorder.cpp.obj
 [26/41] Building CXX object CMakeFiles/listery.dir/src/Core/Pinyin.cpp.obj
 [27/41] Building CXX object CMakeFiles/listery.dir/src/Core/PinyinData.cpp.obj
@@ -284,8 +284,8 @@ Updating 'D:/a/listery/listery/build/i18n/listery_fr.qm'...
 [29/41] Building CXX object CMakeFiles/listery.dir/src/Core/HttpClient.cpp.obj
 [30/41] Building CXX object CMakeFiles/listery.dir/src/Platform/Autostart.cpp.obj
 [31/41] Building CXX object CMakeFiles/listery.dir/src/Core/PluginHost.cpp.obj
-[32/41] Building CXX object CMakeFiles/listery.dir/src/Platform/HotkeyHook.cpp.obj
-[33/41] Building CXX object CMakeFiles/listery.dir/src/Platform/WindowUtils.cpp.obj
+[32/41] Building CXX object CMakeFiles/listery.dir/src/Platform/WindowUtils.cpp.obj
+[33/41] Building CXX object CMakeFiles/listery.dir/src/Platform/HotkeyHook.cpp.obj
 [34/41] Building CXX object CMakeFiles/listery.dir/src/Platform/Branding.cpp.obj
 [35/41] Building CXX object CMakeFiles/listery.dir/src/Ui/ResultModel.cpp.obj
 [36/41] Building CXX object CMakeFiles/listery.dir/listery_autogen/JU62CA5L7X/qrc_listery_translations.cpp.obj
