@@ -1,0 +1,165 @@
+=== pwd: /home/runner/work/listery/listery
+=== ls ===
+total 192
+drwxr-xr-x 12 runner runner  4096 Oct 31 00:02 .
+drwxr-xr-x  4 runner runner  4096 Oct 31 00:02 ..
+drwxr-xr-x  7 runner runner  4096 Oct 31 00:02 .git
+drwxr-xr-x  3 runner runner  4096 Oct 31 00:01 .github
+-rw-r--r--  1 runner runner   158 Oct 31 00:01 .gitignore
+-rw-r--r--  1 runner runner  5830 Oct 31 00:01 CMakeLists.txt
+-rw-r--r--  1 runner runner  1062 Oct 31 00:01 LICENSE
+-rw-r--r--  1 runner runner 19109 Oct 31 00:01 README.md
+-rw-r--r--  1 runner runner 19989 Oct 31 00:01 README_EN.md
+-rw-r--r--  1 runner runner 67052 Oct 31 00:02 aqtinstall.log
+drwxr-xr-x  6 runner runner  4096 Oct 31 00:02 build
+-rw-r--r--  1 runner runner   728 Oct 31 00:01 build.bat
+-rw-r--r--  1 runner runner  7252 Oct 31 00:02 build.log
+drwxr-xr-x  2 runner runner  4096 Oct 31 00:02 ci-logs
+-rw-r--r--  1 runner runner  1635 Oct 31 00:02 configure.log
+-rw-r--r--  1 runner runner  1304 Oct 31 00:01 deploy.bat
+drwxr-xr-x  2 runner runner  4096 Oct 31 00:01 docs
+drwxr-xr-x  3 runner runner  4096 Oct 31 00:01 installer
+drwxr-xr-x  5 runner runner  4096 Oct 31 00:01 plugins
+drwxr-xr-x  2 runner runner  4096 Oct 31 00:01 sdk
+drwxr-xr-x  7 runner runner  4096 Oct 31 00:01 src
+drwxr-xr-x  2 runner runner  4096 Oct 31 00:01 tools
+=== setup_qt.log ===
+cat: setup_qt.log: No such file or directory
+=== configure.log ===
+-- The CXX compiler identification is GNU 11.4.0
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /usr/bin/c++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- Found X11: /usr/include
+-- Looking for XOpenDisplay in /usr/lib/x86_64-linux-gnu/libX11.so;/usr/lib/x86_64-linux-gnu/libXext.so
+-- Looking for XOpenDisplay in /usr/lib/x86_64-linux-gnu/libX11.so;/usr/lib/x86_64-linux-gnu/libXext.so - found
+-- Looking for gethostbyname
+-- Looking for gethostbyname - found
+-- Looking for connect
+-- Looking for connect - found
+-- Looking for remove
+-- Looking for remove - found
+-- Looking for shmat
+-- Looking for shmat - found
+-- Looking for IceConnectionNumber in ICE
+-- Looking for IceConnectionNumber in ICE - found
+CMake Warning at CMakeLists.txt:151 (message):
+  未找到 X11/Xtst：Linux 上将无法注册全局双击
+  Ctrl，托盘与搜索功能仍可用
+
+
+-- Configuring done (1.5s)
+-- Generating done (0.1s)
+-- Build files have been written to: /home/runner/work/listery/listery/build
+=== selected Qt (from CMakeCache) ===
+Qt5Core_DIR:PATH=/home/runner/work/listery/Qt/5.15.2/gcc_64/lib/cmake/Qt5Core
+=== link command ===
+-Wl,-rpath,/home/runner/work/listery/Qt/5.15.2/gcc_64/lib:
+/home/runner/work/listery/Qt/5.15.2/gcc_64/lib/libQt5Widgets.so.5.15.2
+/home/runner/work/listery/Qt/5.15.2/gcc_64/lib/libQt5Sql.so.5.15.2
+/home/runner/work/listery/Qt/5.15.2/gcc_64/lib/libQt5Network.so.5.15.2
+/home/runner/work/listery/Qt/5.15.2/gcc_64/lib/libQt5Gui.so.5.15.2
+/home/runner/work/listery/Qt/5.15.2/gcc_64/lib/libQt5Core.so.5.15.2
+=== build.log ===
+[  2%] lrelease listery_en.ts
+[  4%] lrelease listery_fr.ts
+[  6%] lrelease listery_zh_TW.ts
+[  6%] Built target listery_french_autogen_timestamp_deps
+[  6%] Built target listery_translator_autogen_timestamp_deps
+Updating '/home/runner/work/listery/listery/build/i18n/listery_fr.qm'...
+    Generated 119 translation(s) (119 finished and 0 unfinished)
+Updating '/home/runner/work/listery/listery/build/i18n/listery_zh_TW.qm'...
+[  8%] Automatic MOC for target listery_french
+    Generated 119 translation(s) (119 finished and 0 unfinished)
+Updating '/home/runner/work/listery/listery/build/i18n/listery_en.qm'...
+    Generated 119 translation(s) (119 finished and 0 unfinished)
+[ 10%] Automatic MOC for target listery_translator
+[ 10%] Built target listery_translations
+[ 10%] Built target listery_autogen_timestamp_deps
+[ 13%] Automatic MOC for target listery
+[ 13%] Built target listery_french_autogen
+[ 13%] Built target listery_translator_autogen
+[ 15%] Building CXX object plugins/translator/CMakeFiles/listery_translator.dir/listery_translator_autogen/mocs_compilation.cpp.o
+[ 17%] Building CXX object plugins/translator/CMakeFiles/listery_translator.dir/translator.cpp.o
+[ 19%] Building CXX object plugins/french/CMakeFiles/listery_french.dir/listery_french_autogen/mocs_compilation.cpp.o
+[ 21%] Building CXX object plugins/french/CMakeFiles/listery_french.dir/french.cpp.o
+[ 23%] Linking CXX shared module ../libfrench.so
+[ 23%] Built target listery_autogen
+[ 26%] Automatic RCC for listery_translations.qrc
+[ 28%] Linking CXX shared module ../libtranslator.so
+[ 30%] Building CXX object CMakeFiles/listery.dir/listery_autogen/mocs_compilation.cpp.o
+[ 32%] Building CXX object CMakeFiles/listery.dir/src/main.cpp.o
+[ 34%] Building CXX object CMakeFiles/listery.dir/src/SelfTest.cpp.o
+[ 36%] Building CXX object CMakeFiles/listery.dir/src/AppController.cpp.o
+[ 39%] Building CXX object CMakeFiles/listery.dir/src/Core/AppSettings.cpp.o
+[ 41%] Building CXX object CMakeFiles/listery.dir/src/Core/Database.cpp.o
+[ 43%] Building CXX object CMakeFiles/listery.dir/src/Core/SearchService.cpp.o
+[ 45%] Building CXX object CMakeFiles/listery.dir/src/Core/SearchEngine.cpp.o
+[ 47%] Building CXX object CMakeFiles/listery.dir/src/Core/LaunchService.cpp.o
+[ 50%] Building CXX object CMakeFiles/listery.dir/src/Core/Scanner.cpp.o
+[ 52%] Building CXX object CMakeFiles/listery.dir/src/Core/Localization.cpp.o
+[ 54%] Building CXX object CMakeFiles/listery.dir/src/Core/UsageRecorder.cpp.o
+[ 56%] Building CXX object CMakeFiles/listery.dir/src/Core/Pinyin.cpp.o
+[ 58%] Building CXX object CMakeFiles/listery.dir/src/Core/PinyinData.cpp.o
+[ 60%] Built target listery_french
+[ 63%] Building CXX object CMakeFiles/listery.dir/src/Core/PluginHost.cpp.o
+[ 65%] Building CXX object CMakeFiles/listery.dir/src/Core/Updater.cpp.o
+[ 67%] Building CXX object CMakeFiles/listery.dir/src/Core/HttpClient.cpp.o
+[ 69%] Building CXX object CMakeFiles/listery.dir/src/Platform/HotkeyHook.cpp.o
+[ 71%] Building CXX object CMakeFiles/listery.dir/src/Platform/Autostart.cpp.o
+[ 73%] Building CXX object CMakeFiles/listery.dir/src/Platform/WindowUtils.cpp.o
+[ 76%] Building CXX object CMakeFiles/listery.dir/src/Platform/Branding.cpp.o
+[ 78%] Building CXX object CMakeFiles/listery.dir/src/Ui/LauncherWindow.cpp.o
+[ 80%] Building CXX object CMakeFiles/listery.dir/src/Ui/ResultModel.cpp.o
+[ 82%] Building CXX object CMakeFiles/listery.dir/src/Ui/SettingsDialog.cpp.o
+[ 84%] Building CXX object CMakeFiles/listery.dir/src/Ui/ResultDelegate.cpp.o
+[ 86%] Building CXX object CMakeFiles/listery.dir/listery_autogen/JU62CA5L7X/qrc_listery_translations.cpp.o
+[ 89%] Built target listery_translator
+/home/runner/work/listery/listery/src/Platform/Autostart.cpp:40:9: warning: ‘QString Autostart::{anonymous}::xmlEscaped(const QString&)’ defined but not used [-Wunused-function]
+   40 | QString xmlEscaped(const QString &text)
+      |         ^~~~~~~~~~
+/home/runner/work/listery/listery/src/Core/Scanner.cpp: In static member function ‘static QStringList Scanner::availableRoots(bool)’:
+/home/runner/work/listery/listery/src/Core/Scanner.cpp:264:73: error: no matching function for call to ‘QByteArray::startsWith(QString)’
+  264 |         if (rootPath == QLatin1String("/") || volume.device().startsWith(QStringLiteral("/dev/")))
+      |                                               ~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~
+In file included from /home/runner/work/listery/Qt/5.15.2/gcc_64/include/QtCore/qstring.h:50,
+                 from /home/runner/work/listery/Qt/5.15.2/gcc_64/include/QtCore/qhashfunctions.h:44,
+                 from /home/runner/work/listery/Qt/5.15.2/gcc_64/include/QtCore/qlist.h:47,
+                 from /home/runner/work/listery/Qt/5.15.2/gcc_64/include/QtCore/qhash.h:46,
+                 from /home/runner/work/listery/Qt/5.15.2/gcc_64/include/QtCore/QHash:1,
+                 from /home/runner/work/listery/listery/src/Core/Scanner.h:5,
+                 from /home/runner/work/listery/listery/src/Core/Scanner.cpp:1:
+/home/runner/work/listery/Qt/5.15.2/gcc_64/include/QtCore/qbytearray.h:251:10: note: candidate: ‘bool QByteArray::startsWith(const QByteArray&) const’
+  251 |     bool startsWith(const QByteArray &a) const;
+      |          ^~~~~~~~~~
+/home/runner/work/listery/Qt/5.15.2/gcc_64/include/QtCore/qbytearray.h:251:39: note:   no known conversion for argument 1 from ‘QString’ to ‘const QByteArray&’
+  251 |     bool startsWith(const QByteArray &a) const;
+      |                     ~~~~~~~~~~~~~~~~~~^
+/home/runner/work/listery/Qt/5.15.2/gcc_64/include/QtCore/qbytearray.h:252:10: note: candidate: ‘bool QByteArray::startsWith(char) const’
+  252 |     bool startsWith(char c) const;
+      |          ^~~~~~~~~~
+/home/runner/work/listery/Qt/5.15.2/gcc_64/include/QtCore/qbytearray.h:252:26: note:   no known conversion for argument 1 from ‘QString’ to ‘char’
+  252 |     bool startsWith(char c) const;
+      |                     ~~~~~^
+/home/runner/work/listery/Qt/5.15.2/gcc_64/include/QtCore/qbytearray.h:253:10: note: candidate: ‘bool QByteArray::startsWith(const char*) const’
+  253 |     bool startsWith(const char *c) const;
+      |          ^~~~~~~~~~
+/home/runner/work/listery/Qt/5.15.2/gcc_64/include/QtCore/qbytearray.h:253:33: note:   no known conversion for argument 1 from ‘QString’ to ‘const char*’
+  253 |     bool startsWith(const char *c) const;
+      |                     ~~~~~~~~~~~~^
+gmake[2]: *** [CMakeFiles/listery.dir/build.make:194: CMakeFiles/listery.dir/src/Core/Scanner.cpp.o] Error 1
+gmake[2]: *** Waiting for unfinished jobs....
+/home/runner/work/listery/listery/src/Platform/HotkeyHook.cpp:25:9: warning: ‘QString {anonymous}::matchHotkey(unsigned int, int)’ defined but not used [-Wunused-function]
+   25 | QString matchHotkey(unsigned int mods, int key)
+      |         ^~~~~~~~~~~
+/home/runner/work/listery/listery/src/Platform/HotkeyHook.cpp:16:8: warning: ‘qint64 {anonymous}::monotonicMilliseconds()’ defined but not used [-Wunused-function]
+   16 | qint64 monotonicMilliseconds()
+      |        ^~~~~~~~~~~~~~~~~~~~~
+gmake[1]: *** [CMakeFiles/Makefile2:162: CMakeFiles/listery.dir/all] Error 2
+gmake: *** [Makefile:136: all] Error 2
+=== deploy.log ===
+cat: deploy.log: No such file or directory
+=== installer.log ===
+cat: installer.log: No such file or directory
