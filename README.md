@@ -72,6 +72,8 @@
 | 文件搜索（`filesearch`） | `Alt+S` | 自建紧凑索引全盘检索文件，支持 `ext:pdf`、`path:项目名` 过滤；单击或回车打开结果 |
 
 - 「设置 → 插件管理…」打开独立的插件管理对话框，可逐个启用/禁用、改热键（写法如 `Alt+E`、`Ctrl+Shift+F1`），也能打开插件自带的设置界面；
+- 翻译插件支持自定义查词链接：在插件管理里点「插件设置…」打开 `translator.ini` / `french.ini`，填写 `url=https://example.com/lookup?q={query}` 并可用 `format=youdao|google|text` 指定返回格式，保存后下一次查词立即生效；
+- 文件搜索索引闲置 10 分钟后自动卸载，按 `Alt+S` 打开面板时在后台预热加载（通常 0.2–0.5 秒），平时不白占内存；
 - 托盘菜单的「插件」子菜单也能直接唤起插件（热键不可用时的兜底）；
 - 想自己写插件：[插件开发指南](docs/PLUGINS.md)（[English](docs/PLUGINS_EN.md)），含最小示例、action 协议与 CMake 模板；
 - 插件加载失败不会弹窗，原因显示在插件管理对话框里；插件日志写进 `logs/YYYYMMDD.txt`。

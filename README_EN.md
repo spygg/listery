@@ -73,6 +73,8 @@ They need **no Qt and no OpenSSL** — the host performs network requests on the
 | File search (`filesearch`) | `Alt+S` | Compact self-built index for whole-disk file search, with `ext:pdf` / `path:project` filters; click or press Enter to open a result |
 
 - Settings → Plugin Manager… opens a standalone dialog to enable/disable each plugin, reassign its hotkey (`Alt+E`, `Ctrl+Shift+F1`, …), and open plugin-provided settings;
+- The translator plugins accept a custom lookup URL: open `translator.ini` / `french.ini` from Plugin Manager, set `url=https://example.com/lookup?q={query}` and optionally `format=youdao|google|text`; changes apply on the next query;
+- The file search index unloads after 10 idle minutes and warms up in the background when `Alt+S` opens the panel (usually 0.2–0.5 s), so it doesn't sit on hundreds of megabytes;
 - The tray's Plugins submenu opens a plugin directly (fallback when hotkeys are unavailable);
 - To write your own: [plugin guide](docs/PLUGINS_EN.md) ([中文](docs/PLUGINS.md)) with a minimal sample, the action protocol and a CMake template;
 - Load failures never pop a dialog — the reason is shown in Plugin Manager, and plugin logs go to `logs/YYYYMMDD.txt`.

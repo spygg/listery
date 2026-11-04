@@ -258,12 +258,22 @@ void AppController::onHotkeyTriggered(const QString &hotkey)
     const PluginInfo info = m_plugins->info(pluginId);
     if (!info.loaded)
         return;
+    startPluginSession(pluginId, info.name);
+}
+
+void AppController::startPluginSession(const QString &pluginId, const QString &displayName)
+{
     QString placeholder;
     if (pluginId == QStringLiteral("com.listery.filesearch"))
         placeholder = tr("搜索本机文件：文件名、ext:pdf、path:项目；!help 查看命令");
     else
-        placeholder = tr("输入要%1的内容，Enter 复制结果").arg(info.name);
-    m_window->beginPluginSession(pluginId, info.name, placeholder);
+        placeholder = tr("输入要%1的内容，Enter 复制结果").arg(displayName);
+    m_window->beginPluginSession(pluginId, displayName, placeholder);
+
+    // 文件搜索插件闲置时会卸载内存索引：进入会话时先发一次空查询预热，
+    // 让它趁用户输入前从快照加载。空查询结果不绑定 UI 序列号，不会显示出来。
+    if (pluginId == QStringLiteral("com.listery.filesearch") && m_plugins)
+        m_plugins->beginQuery(pluginId, QString(), 0);
 }
 
 void AppController::onPluginAction(const QString &action)
@@ -359,8 +369,7 @@ void AppController::rebuildPluginMenu()
         const QString pluginId = info.id;
         connect(action, &QAction::triggered, this, [this, pluginId]() {
             const PluginInfo target = m_plugins->info(pluginId);
-            m_window->beginPluginSession(pluginId, target.name,
-                                         tr("输入内容，交给 %1").arg(target.name));
+            startPluginSession(pluginId, target.name);
         });
     }
     m_pluginMenu->setEnabled(!m_pluginMenu->isEmpty());

@@ -75,6 +75,8 @@ private slots:
 
 private:
     void createTrayIcon();
+    /** 进入插件会话：填好占位提示；文件搜索这类插件会顺带预热索引。 */
+    void startPluginSession(const QString &pluginId, const QString &displayName);
     /** 按当前插件状态重建托盘“插件”子菜单（热键/启用状态变化后调用）。 */
     void rebuildPluginMenu();
     bool setupSingleInstance();

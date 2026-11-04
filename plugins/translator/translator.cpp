@@ -6,6 +6,7 @@
  *
  * 数据源：有道词典 suggest 接口（明文 HTTP，中英双向）。
  * 可用环境变量覆盖：LISTERY_TRANSLATOR_ENDPOINT=youdao|google
+ * 也可在插件管理里点“插件设置…”打开 translator.ini，填写自定义查词 URL 模板。
  */
 
 #define LISTERY_DICT_ID "com.listery.translator"

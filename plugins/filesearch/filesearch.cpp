@@ -54,6 +54,8 @@ using filesearch::ScanConfig;
 
 constexpr int kDefaultMaxResults = 12;
 constexpr int kDefaultRescanMinutes = 60;
+/** 闲置多少分钟后释放内存索引；0 = 常驻内存。 */
+constexpr int kDefaultIdleUnloadMinutes = 10;
 constexpr uint32_t kMaxResultsCap = 100;
 
 // ---------------------------------------------------------------------------
@@ -78,14 +80,14 @@ std::atomic<bool> g_forceScan{false};
 std::atomic<bool> g_matchPath{true};
 std::atomic<int> g_rescanMinutes{kDefaultRescanMinutes};
 /** 闲置多少分钟后卸载内存索引（0 = 不卸载）。下次查询时从快照重新加载。 */
-std::atomic<int> g_idleUnloadMinutes{0};
+std::atomic<int> g_idleUnloadMinutes{kDefaultIdleUnloadMinutes};
 std::atomic<uint64_t> g_lastQueryAt{0};
 
 struct AppConfig
 {
     ScanConfig scan;
     int rescanMinutes = kDefaultRescanMinutes;
-    int idleUnloadMinutes = 0;
+    int idleUnloadMinutes = kDefaultIdleUnloadMinutes;
     bool matchPath = true;
 };
 
@@ -115,6 +117,13 @@ bool g_queueStop = false;
 uint64_t nowUnixSeconds()
 {
     return static_cast<uint64_t>(std::time(nullptr));
+}
+
+/** 索引卸载后把工作集还给系统，让任务管理器里的内存尽快降下来。 */
+void trimWorkingSet()
+{
+    SetProcessWorkingSetSize(GetCurrentProcess(), static_cast<SIZE_T>(-1),
+                             static_cast<SIZE_T>(-1));
 }
 
 std::wstring trimWide(const std::wstring &text)
@@ -336,15 +345,17 @@ void writeDefaultConfigIfMissing()
     text += "; include_hidden：是否索引隐藏/系统文件，0 或 1\r\n";
     text += "; match_path：文件名没命中时是否继续匹配目录路径，0 或 1\r\n";
     text += "; rescan_minutes：每隔多少分钟后台重建索引，0 = 只使用现有快照\r\n";
-    text += "; idle_unload_minutes：闲置多少分钟后释放内存索引，下次搜索时自动从快照加载；0 = 常驻内存（默认）\r\n";
+    text += "; idle_unload_minutes：闲置多少分钟后释放内存索引，下次搜索时自动从快照加载；默认 10，0 = 常驻内存\r\n";
+    text += "; config_version：配置格式版本（用于默认值升级），请勿修改\r\n";
     text += "\r\n";
+    text += "config_version=2\r\n";
     text += "roots=\r\n";
     text += "exclude_names=\r\n";
     text += "exclude_prefixes=\r\n";
     text += "include_hidden=0\r\n";
     text += "match_path=1\r\n";
     text += "rescan_minutes=60\r\n";
-    text += "idle_unload_minutes=0\r\n";
+    text += "idle_unload_minutes=10\r\n";
 
     if (!writeFileBytes(g_configPath, text))
         hostLog(LISTERY_LOG_WARNING, "无法写入默认配置文件");
@@ -451,8 +462,9 @@ bool loadConfig()
     config.scan.excludePrefixes = defaultExcludePrefixes();
     config.scan.includeHidden = false;
     config.rescanMinutes = kDefaultRescanMinutes;
-    config.idleUnloadMinutes = 0;
+    config.idleUnloadMinutes = kDefaultIdleUnloadMinutes;
     config.matchPath = true;
+    int configVersion = 1;
 
     std::string raw;
     if (readFileBytes(g_configPath, raw)) {
@@ -520,9 +532,16 @@ bool loadConfig()
             } else if (key == "rescan_minutes") {
                 config.rescanMinutes = parseInt(value, kDefaultRescanMinutes);
             } else if (key == "idle_unload_minutes") {
-                config.idleUnloadMinutes = parseInt(value, 0);
+                config.idleUnloadMinutes = parseInt(value, kDefaultIdleUnloadMinutes);
+            } else if (key == "config_version") {
+                configVersion = parseInt(value, 1);
             }
         }
+
+        // 1.4.x 生成的默认文件把 idle_unload_minutes 写成 0（常驻）。没有版本标记时
+        // 视为旧默认值，迁移到新的 10 分钟；带上 config_version=2 后 0 才是用户选择。
+        if (configVersion < 2 && config.idleUnloadMinutes == 0)
+            config.idleUnloadMinutes = kDefaultIdleUnloadMinutes;
     } else {
         hostLog(LISTERY_LOG_WARNING, "读取配置文件失败，使用默认设置");
     }
@@ -679,8 +698,10 @@ void scanLoop()
                 }
             }
         }
-        if (unloaded)
+        if (unloaded) {
+            trimWorkingSet();
             hostLog(LISTERY_LOG_INFO, "索引已闲置卸载，下次搜索时从快照重新加载");
+        }
 
         const uint64_t now = nowUnixSeconds();
         if (needScan && (forced || lastAttempt == 0 || now - lastAttempt >= 60)) {

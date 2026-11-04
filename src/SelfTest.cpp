@@ -803,9 +803,11 @@ int SelfTest::run()
         bool translatorFound = false;
         bool translatorLoaded = false;
         QString translatorHotkey;
+        bool translatorConfig = false;
         bool frenchFound = false;
         bool frenchLoaded = false;
         QString frenchHotkey;
+        bool frenchConfig = false;
         bool filesearchFound = false;
         bool filesearchLoaded = false;
         QString filesearchHotkey;
@@ -814,10 +816,12 @@ int SelfTest::run()
                 translatorFound = true;
                 translatorLoaded = info.loaded;
                 translatorHotkey = info.defaultHotkey;
+                translatorConfig = info.hasConfigUi;
             } else if (info.id == QStringLiteral("com.listery.french")) {
                 frenchFound = true;
                 frenchLoaded = info.loaded;
                 frenchHotkey = info.defaultHotkey;
+                frenchConfig = info.hasConfigUi;
             } else if (info.id == QStringLiteral("com.listery.filesearch")) {
                 filesearchFound = true;
                 filesearchLoaded = info.loaded;
@@ -833,6 +837,9 @@ int SelfTest::run()
         check(host.pluginForHotkey(QStringLiteral("Alt+E"))
                   == QStringLiteral("com.listery.translator"),
               QStringLiteral("按热键能反查到插件"));
+#ifdef Q_OS_WIN
+        check(translatorConfig, QStringLiteral("翻译插件提供插件设置（自定义查词链接）"));
+#endif
         check(frenchFound, QStringLiteral("plugins 目录里发现法汉翻译插件"));
         check(frenchLoaded, QStringLiteral("法汉翻译插件初始化成功"));
         check(frenchHotkey.compare(QStringLiteral("Alt+F"), Qt::CaseInsensitive) == 0,
@@ -840,6 +847,9 @@ int SelfTest::run()
         check(host.pluginForHotkey(QStringLiteral("Alt+F"))
                   == QStringLiteral("com.listery.french"),
               QStringLiteral("按 Alt+F 能反查到法汉插件"));
+#ifdef Q_OS_WIN
+        check(frenchConfig, QStringLiteral("法汉插件提供插件设置（自定义查词链接）"));
+#endif
 #ifdef Q_OS_WIN
         check(filesearchFound, QStringLiteral("plugins 目录里发现文件搜索插件"));
         check(filesearchLoaded, QStringLiteral("文件搜索插件初始化成功"));

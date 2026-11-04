@@ -16,6 +16,8 @@ set_target_properties(listery_translator PROPERTIES
 if(WIN32)
     # Windows 上插件必须是 translator.dll（不能有 lib 前缀）
     set_target_properties(listery_translator PROPERTIES PREFIX "" SUFFIX ".dll")
+    # pluginConfigure() 用 ShellExecuteW 打开 ini
+    target_link_libraries(listery_translator PRIVATE shell32)
 endif()
 
 target_include_directories(listery_translator PRIVATE
