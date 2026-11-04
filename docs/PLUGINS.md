@@ -12,7 +12,7 @@ Listery 的插件是**普通动态库**，接口是**纯 C 的 ABI**：不传 C+
 1. 复制 `sdk/listery_plugin_api.h` 到你的工程；
 2. 实现 `ListeryPluginV1` 并导出 `listery_plugin_v1`；
 3. 编译成动态库，文件名随意（如 `translator.dll`），放进 Listery 的 `plugins/` 目录；
-4. 重启 Listery —— 插件出现在「设置 → 插件」，热键与启用状态会自动写进 `settings.ini`。
+4. 重启 Listery —— 插件出现在「设置 → 插件管理…」对话框里，热键与启用状态会自动写进 `settings.ini`。
 
 ## 目录与加载规则
 
@@ -115,7 +115,7 @@ g_host->httpGet(g_host->context, url,
 - 写法：`Alt+E`、`Ctrl+Shift+F1`；修饰键支持 `Ctrl/Control`、`Alt/Option`、`Shift`、`Meta/Win/Cmd/Command/Super`；
 - 主键支持 `A–Z`、`0–9`、`F1–F12`、`Space`、`Enter`、`Tab`、`Esc`、`Home`、`End`、`Insert`、`Del`；
 - 修饰键**严格匹配**：登记 `Alt+E` 后，`Ctrl+Alt+E` 不会触发；
-- 用户可在「设置 → 插件」里改热键或清空（清空后只能从托盘的「插件」子菜单进入）。
+- 用户可在「设置 → 插件管理…」里改热键或清空（清空后只能从托盘的「插件」子菜单进入）。
 
 ## 最小插件
 
@@ -176,7 +176,7 @@ target_include_directories(my_plugin PRIVATE <sdk 目录>)
 ## 调试与排错
 
 - 插件调用 `host->log` 的内容会写进 `logs/YYYYMMDD.txt`（按天分文件，保留 7 天；级别：`LISTERY_LOG_DEBUG/INFO/WARNING`）；
-- 加载失败（缺符号、apiVersion 不符、init 非 0）不会弹窗，原因显示在「设置 → 插件」里；
+- 加载失败（缺符号、apiVersion 不符、init 非 0）不会弹窗，原因显示在「设置 → 插件管理…」里；
 - 自检 `listery --selftest` 会加载 `plugins/` 目录并跑一次真实查询，可用于验证部署是否完整。
 
 ## 已知限制

@@ -76,6 +76,8 @@ set(PROJECT_SOURCES
     src/Ui/ResultDelegate.cpp
     src/Ui/SettingsDialog.h
     src/Ui/SettingsDialog.cpp
+    src/Ui/PluginManagerDialog.h
+    src/Ui/PluginManagerDialog.cpp
 )
 
 if(WIN32)

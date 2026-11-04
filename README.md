@@ -33,6 +33,7 @@
 | **越用越准** | 排序分 = `0.72 × 匹配度 + 0.28 × 使用习惯`，常用程序自动上浮 |
 | **智能扫描** | 按分区自适应调度：没装过软件的分区自动降低扫描频率；Linux 上直接读 locate 快照 |
 | **英汉翻译** | `Alt+E` 唤起翻译插件，输入英文给汉语、输入汉语给英文，回车把译文复制到剪贴板 |
+| **文件搜索** | `Alt+S` 唤起，自建紧凑索引全盘检索文件；支持 `ext:` / `path:` 过滤，单击或回车直接打开 |
 | **插件机制** | 纯 C ABI 的插件接口：插件不依赖 Qt / OpenSSL，第三方可自行扩展（见 [插件开发指南](docs/PLUGINS.md)） |
 | **在线升级** | 自动检测 GitHub Release 最新版（语义化版本比较，能正确处理 `1.10.0 > 1.2.0`）；发现新版本时托盘提示，点击直达发布页 |
 | **日志轮转** | 运行日志只保留最近 3 天，启动前自动裁剪，不会无限膨胀 |
@@ -42,7 +43,7 @@
 
 1. 到 [Releases](https://github.com/spygg/listery/releases) 下载对应平台的压缩包，解压；
 2. 运行 `listery`（Windows 为 `listery.exe`），程序静默进托盘并开始建立索引；
-3. **双击 Ctrl**，输入程序名，回车运行。
+3. **双击 Ctrl**，输入程序名，回车或单击结果运行。
 
 > Windows 也可以用 **安装版** `listery-windows-setup.exe`（Inno Setup 打包，免管理员，可选开机启动与桌面快捷方式）；
 > Windows XP 用户请下载 `listery-windows-xp.zip`（MinGW 32 位 + Qt 5.7 构建）。
@@ -52,9 +53,10 @@
 | 按键 | 作用 |
 | --- | --- |
 | `双击 Ctrl` | 唤起 / 隐藏搜索面板 |
-| `Alt+E` | 唤起英汉翻译插件（可在设置里改或清空） |
+| `Alt+E` | 唤起英汉翻译插件（可在插件管理里改或清空） |
+| `Alt+S` | 唤起文件搜索插件（可在插件管理里改或清空） |
 | `↑` `↓` `PgUp` `PgDn` | 在候选里移动 |
-| `Enter` | 运行选中的程序 |
+| `Enter` / 鼠标单击 | 运行选中的结果 |
 | `Ctrl + Enter` | 在文件管理器中定位 |
 | `Shift + Enter` | 以管理员身份运行 |
 | `Esc` | 隐藏面板 |
@@ -67,11 +69,12 @@
 | 内置插件 | 热键 | 说明 |
 | --- | --- | --- |
 | 英汉翻译（`translator`） | `Alt+E` | 有道词典 suggest 接口的中英双向翻译，整句也能翻；回车复制译文，可切换 Google 后端（`LISTERY_TRANSLATOR_ENDPOINT=google`） |
+| 文件搜索（`filesearch`） | `Alt+S` | 自建紧凑索引全盘检索文件，支持 `ext:pdf`、`path:项目名` 过滤；单击或回车打开结果 |
 
-- 「设置 → 插件」里可以逐个启用/禁用、改热键（写法如 `Alt+E`、`Ctrl+Shift+F1`）；
+- 「设置 → 插件管理…」打开独立的插件管理对话框，可逐个启用/禁用、改热键（写法如 `Alt+E`、`Ctrl+Shift+F1`），也能打开插件自带的设置界面；
 - 托盘菜单的「插件」子菜单也能直接唤起插件（热键不可用时的兜底）；
 - 想自己写插件：[插件开发指南](docs/PLUGINS.md)（[English](docs/PLUGINS_EN.md)），含最小示例、action 协议与 CMake 模板；
-- 插件加载失败不会弹窗，原因显示在设置页；插件日志写进 `logs/YYYYMMDD.txt`。
+- 插件加载失败不会弹窗，原因显示在插件管理对话框里；插件日志写进 `logs/YYYYMMDD.txt`。
 
 ## 智能索引
 
@@ -218,6 +221,7 @@ listery/
 ├─ .github/workflows/release.yml   # 四目标（含 XP）矩阵构建 + Windows 安装版
 ├─ sdk/listery_plugin_api.h        # 插件 ABI（纯 C，随发布分发给第三方开发者）
 ├─ plugins/translator/             # 内置插件：英汉翻译（零依赖，只调宿主 httpGet）
+├─ plugins/filesearch/             # 内置插件：文件搜索（自建紧凑索引，Windows）
 ├─ installer/windows/listery.iss   # Inno Setup 安装脚本
 ├─ src/
 │  ├─ main.cpp                 程序入口、单实例、预览与自检开关
@@ -233,16 +237,17 @@ listery/
 │  │  ├─ UsageRecorder.*       使用统计写入（独立线程 + 独立连接）
 │  │  └─ LaunchService.*       启动 / 提权 / 定位（三平台分支）
 │  ├─ Platform/
-│  │  ├─ HotkeyHook.*          全局热键（双击 Ctrl + Alt+E 等组合键，三平台实现）
+│  │  ├─ HotkeyHook.*          全局热键（双击 Ctrl + Alt+E / Alt+S 等组合键，三平台实现）
 │  │  ├─ DoubleCtrlDetector.h  双击 Ctrl 状态机（可单测）
 │  │  ├─ Autostart.*           开机自启动（Run 项 / .desktop / LaunchAgent）
 │  │  ├─ WindowUtils.*         强制前台、屏幕居中靠上定位
 │  │  └─ Branding.*            运行时绘制图标
 │  ├─ Ui/
-│  │  ├─ LauncherWindow.*      搜索面板（无边框 + 阴影 + 键盘导航 + 右键菜单 + 空输入收起）
+│  │  ├─ LauncherWindow.*      搜索面板（无边框 + 阴影 + 键盘导航 + 单击运行 + 右键菜单）
 │  │  ├─ ResultModel.* / ResultDelegate.*  结果模型与行绘制（图标 / 高亮 / 路径 / 次数）
+│  │  ├─ PluginManagerDialog.* 独立插件管理对话框（启用 / 热键 / 插件设置）
 │  │  └─ SettingsDialog.*      设置界面
-│  └─ SelfTest.*               69 项自检
+│  └─ SelfTest.*               自检（索引、插件、界面与热键）
 └─ docs/
    ├─ preview.png
    ├─ PLUGINS.md / PLUGINS_EN.md   插件开发指南（中英）

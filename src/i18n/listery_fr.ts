@@ -261,16 +261,16 @@ Vous pouvez ouvrir la recherche depuis le menu de la zone de notification.</tran
         <translation>Index pas encore construit</translation>
     </message>
     <message>
-        <source>↑↓ 选择 · Enter 运行 · Ctrl+Enter 定位 · Shift+Enter 管理员 · Esc 隐藏</source>
-        <translation>↑↓ sélectionner · Entrée lancer · Ctrl+Entrée localiser · Maj+Entrée admin · Échap masquer</translation>
+        <source>↑↓ 选择 · 单击/Enter 运行 · Ctrl+Enter 定位 · Shift+Enter 管理员 · Esc 隐藏</source>
+        <translation>↑↓ sélectionner · Clic/Entrée lancer · Ctrl+Entrée localiser · Maj+Entrée admin · Échap masquer</translation>
     </message>
     <message>
         <source>输入内容，交给 %1</source>
         <translation>Saisissez le texte à envoyer à %1</translation>
     </message>
     <message>
-        <source>Enter 执行 · Esc 隐藏</source>
-        <translation>Entrée exécuter · Échap masquer</translation>
+        <source>单击/Enter 执行 · Esc 隐藏</source>
+        <translation>Clic/Entrée exécuter · Échap masquer</translation>
     </message>
     <message>
         <source>%1 · 处理中…</source>

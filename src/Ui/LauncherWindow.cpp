@@ -120,7 +120,10 @@ void LauncherWindow::buildUi()
     m_list->setModel(m_model = new ResultModel(this));
     m_list->setItemDelegate(new ResultDelegate(this));
     m_list->setContextMenuPolicy(Qt::CustomContextMenu);
-    connect(m_list, &QListView::doubleClicked, this, [this]() {
+    connect(m_list, &QListView::clicked, this, [this](const QModelIndex &index) {
+        if (!index.isValid())
+            return;
+        m_list->setCurrentIndex(index);
         activateCurrent(false, false);
     });
     connect(m_list, &QWidget::customContextMenuRequested,
@@ -144,7 +147,7 @@ void LauncherWindow::buildUi()
     m_hints = new QLabel(m_footer);
     m_hints->setObjectName(QStringLiteral("hintLabel"));
     m_hints->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    m_hints->setText(tr("↑↓ 选择 · Enter 运行 · Ctrl+Enter 定位 · Shift+Enter 管理员 · Esc 隐藏"));
+    m_hints->setText(tr("↑↓ 选择 · 单击/Enter 运行 · Ctrl+Enter 定位 · Shift+Enter 管理员 · Esc 隐藏"));
     footerLayout->addWidget(m_hints);
     cardLayout->addWidget(m_footer);
 
@@ -234,7 +237,7 @@ void LauncherWindow::enterPluginMode(const QString &pluginId, const QString &dis
     m_edit->setPlaceholderText(placeholder.isEmpty()
                                    ? tr("输入内容，交给 %1").arg(displayName)
                                    : placeholder);
-    m_hints->setText(tr("Enter 执行 · Esc 隐藏"));
+    m_hints->setText(tr("单击/Enter 执行 · Esc 隐藏"));
 }
 
 void LauncherWindow::beginPluginSession(const QString &pluginId, const QString &displayName,
@@ -258,7 +261,7 @@ void LauncherWindow::endPluginSession()
     m_pendingSequence = 0;
     m_appliedSequence = 0;
     m_edit->setPlaceholderText(tr("输入程序名，例如 chrome、excel、git"));
-    m_hints->setText(tr("↑↓ 选择 · Enter 运行 · Ctrl+Enter 定位 · Shift+Enter 管理员 · Esc 隐藏"));
+    m_hints->setText(tr("↑↓ 选择 · 单击/Enter 运行 · Ctrl+Enter 定位 · Shift+Enter 管理员 · Esc 隐藏"));
     if (m_pluginHost && !pluginId.isEmpty())
         m_pluginHost->cancel(pluginId);
     m_status->setText(m_statusBeforePlugin);
@@ -309,11 +312,11 @@ void LauncherWindow::retranslateUi()
 {
     if (m_mode == LauncherMode::Plugin) {
         // 插件模式的占位文字由宿主给出（含插件名），切换语言时不动它
-        m_hints->setText(tr("Enter 执行 · Esc 隐藏"));
+        m_hints->setText(tr("单击/Enter 执行 · Esc 隐藏"));
         return;
     }
     m_edit->setPlaceholderText(tr("输入程序名，例如 chrome、excel、git"));
-    m_hints->setText(tr("↑↓ 选择 · Enter 运行 · Ctrl+Enter 定位 · Shift+Enter 管理员 · Esc 隐藏"));
+    m_hints->setText(tr("↑↓ 选择 · 单击/Enter 运行 · Ctrl+Enter 定位 · Shift+Enter 管理员 · Esc 隐藏"));
 }
 
 void LauncherWindow::setQueryForPreview(const QString &query)

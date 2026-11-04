@@ -13,7 +13,7 @@ Qt 5.15 and Qt 6 builds of Listery.
 1. Copy `sdk/listery_plugin_api.h` into your project;
 2. Implement `ListeryPluginV1` and export `listery_plugin_v1`;
 3. Build a shared library (any file name, e.g. `translator.dll`) and drop it into Listery's `plugins/` folder;
-4. Restart Listery — the plugin shows up under Settings → Plugins; its hotkey and enabled state are stored in `settings.ini`.
+4. Restart Listery — the plugin shows up in the Settings → Plugin Manager… dialog; its hotkey and enabled state are stored in `settings.ini`.
 
 ## Discovery and loading
 
@@ -116,7 +116,7 @@ g_host->httpGet(g_host->context, url,
 - Syntax: `Alt+E`, `Ctrl+Shift+F1`; modifiers accept `Ctrl/Control`, `Alt/Option`, `Shift`, `Meta/Win/Cmd/Command/Super`;
 - Keys: `A–Z`, `0–9`, `F1–F12`, `Space`, `Enter`, `Tab`, `Esc`, `Home`, `End`, `Insert`, `Del`;
 - Modifiers match **exactly**: with `Alt+E` registered, `Ctrl+Alt+E` does not trigger;
-- Users can reassign or clear the hotkey in Settings → Plugins (cleared = only reachable from the tray's Plugins submenu).
+- Users can reassign or clear the hotkey in Settings → Plugin Manager… (cleared = only reachable from the tray's Plugins submenu).
 
 ## Minimal plugin
 
@@ -177,7 +177,7 @@ target_include_directories(my_plugin PRIVATE <sdk dir>)
 ## Debugging
 
 - Anything you send through `host->log` lands in `logs/YYYYMMDD.txt` (one file per day, 7 days kept; `LISTERY_LOG_DEBUG/INFO/WARNING`);
-- Load failures (missing symbol, wrong `apiVersion`, non-zero `init`) never pop a dialog — the reason is listed under Settings → Plugins;
+- Load failures (missing symbol, wrong `apiVersion`, non-zero `init`) never pop a dialog — the reason is listed in Settings → Plugin Manager…;
 - `listery --selftest` loads `plugins/` and runs one real query, which is handy to validate a deployment.
 
 ## Known limitations

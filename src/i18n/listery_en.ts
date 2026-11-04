@@ -261,16 +261,16 @@ You can open the search box from the tray menu.</translation>
         <translation>Index not built yet</translation>
     </message>
     <message>
-        <source>↑↓ 选择 · Enter 运行 · Ctrl+Enter 定位 · Shift+Enter 管理员 · Esc 隐藏</source>
-        <translation>↑↓ select · Enter run · Ctrl+Enter locate · Shift+Enter admin · Esc hide</translation>
+        <source>↑↓ 选择 · 单击/Enter 运行 · Ctrl+Enter 定位 · Shift+Enter 管理员 · Esc 隐藏</source>
+        <translation>↑↓ select · Click/Enter run · Ctrl+Enter locate · Shift+Enter admin · Esc hide</translation>
     </message>
     <message>
         <source>输入内容，交给 %1</source>
         <translation>Type something to send to %1</translation>
     </message>
     <message>
-        <source>Enter 执行 · Esc 隐藏</source>
-        <translation>Enter execute · Esc hide</translation>
+        <source>单击/Enter 执行 · Esc 隐藏</source>
+        <translation>Click/Enter execute · Esc hide</translation>
     </message>
     <message>
         <source>%1 · 处理中…</source>

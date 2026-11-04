@@ -261,16 +261,16 @@
         <translation>索引尚未建立</translation>
     </message>
     <message>
-        <source>↑↓ 选择 · Enter 运行 · Ctrl+Enter 定位 · Shift+Enter 管理员 · Esc 隐藏</source>
-        <translation>↑↓ 選擇 · Enter 執行 · Ctrl+Enter 定位 · Shift+Enter 管理員 · Esc 隱藏</translation>
+        <source>↑↓ 选择 · 单击/Enter 运行 · Ctrl+Enter 定位 · Shift+Enter 管理员 · Esc 隐藏</source>
+        <translation>↑↓ 選擇 · 單擊/Enter 執行 · Ctrl+Enter 定位 · Shift+Enter 管理員 · Esc 隱藏</translation>
     </message>
     <message>
         <source>输入内容，交给 %1</source>
         <translation>輸入內容，交給 %1</translation>
     </message>
     <message>
-        <source>Enter 执行 · Esc 隐藏</source>
-        <translation>Enter 執行 · Esc 隱藏</translation>
+        <source>单击/Enter 执行 · Esc 隐藏</source>
+        <translation>單擊/Enter 執行 · Esc 隱藏</translation>
     </message>
     <message>
         <source>%1 · 处理中…</source>

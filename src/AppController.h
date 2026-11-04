@@ -69,10 +69,14 @@ private slots:
     void onScanProgress(const QString &root, int directories, int filesFound);
     void onScanFinished(int filesFound, int removed, bool canceled, const QString &error);
     void openSettings();
+    /** 独立插件管理对话框：启用状态、热键、插件自带设置。 */
+    void openPluginManager();
     void updateStatus();
 
 private:
     void createTrayIcon();
+    /** 按当前插件状态重建托盘“插件”子菜单（热键/启用状态变化后调用）。 */
+    void rebuildPluginMenu();
     bool setupSingleInstance();
     void setupHotkey();
     void setupPlugins();
@@ -132,6 +136,7 @@ private:
     bool m_updateNotify = false;
     QAction *m_actionRescan = nullptr;
     QAction *m_actionSettings = nullptr;
+    QAction *m_actionPlugins = nullptr;
     QAction *m_actionQuit = nullptr;
 
     bool m_scanNotify = false;

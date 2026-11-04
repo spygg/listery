@@ -33,6 +33,7 @@ A Listary-style quick launcher written in Qt / C++: index every executable → d
 | **Learns your habits** | Score = `0.72 × match quality + 0.28 × usage habit`, so apps you use most bubble up |
 | **Smart scanning** | Per-volume adaptive scheduling: volumes with no software back off automatically; on Linux it just reads the locate snapshot |
 | **EN↔ZH translator** | `Alt+E` opens the translator plugin: type English for Chinese, Chinese for English, press Enter to copy the result |
+| **File search** | `Alt+S` opens the file search plugin: a compact self-built index searches the whole disk, with `ext:` / `path:` filters; click or press Enter to open a result |
 | **Plugins** | Pure-C plugin ABI: plugins need no Qt and no OpenSSL, so anyone can extend Listery — see the [plugin guide](docs/PLUGINS_EN.md) |
 | **Auto-update** | Checks the latest GitHub Release automatically (semantic version compare, so `1.10.0 > 1.2.0` works); shows a tray notification and opens the release page on click |
 | **Log rotation** | Keeps only the last 3 days of logs, trimmed on startup — never grows without bound |
@@ -42,7 +43,7 @@ A Listary-style quick launcher written in Qt / C++: index every executable → d
 
 1. Grab the archive for your platform from [Releases](https://github.com/spygg/listery/releases) and extract it;
 2. Run `listery` (`listery.exe` on Windows). It drops to the tray and starts building the index;
-3. **Double-tap Ctrl**, type a program name, press Enter.
+3. **Double-tap Ctrl**, type a program name, then press Enter or click a result.
 
 > Windows users can also take the **installer** `listery-windows-setup.exe` (Inno Setup package, no admin rights, optional autostart and desktop shortcut).
 > Windows XP users: download `listery-windows-xp.zip` (32-bit MinGW + Qt 5.7 build).
@@ -52,9 +53,10 @@ A Listary-style quick launcher written in Qt / C++: index every executable → d
 | Key | Action |
 | --- | --- |
 | `Double Ctrl` | Show / hide the launcher |
-| `Alt+E` | Open the EN↔ZH translator plugin (reassignable in Settings) |
+| `Alt+E` | Open the EN↔ZH translator plugin (reassignable in Plugin Manager) |
+| `Alt+S` | Open the file search plugin (reassignable in Plugin Manager) |
 | `↑` `↓` `PgUp` `PgDn` | Move through results |
-| `Enter` | Launch the selected program |
+| `Enter` / mouse click | Launch the selected result |
 | `Ctrl + Enter` | Reveal it in the file manager |
 | `Shift + Enter` | Run as administrator |
 | `Esc` | Hide the launcher |
@@ -68,11 +70,12 @@ They need **no Qt and no OpenSSL** — the host performs network requests on the
 | Bundled plugin | Hotkey | What it does |
 | --- | --- | --- |
 | EN↔ZH translator (`translator`) | `Alt+E` | Youdao dictionary suggest API, both directions, whole sentences too; Enter copies the result. Switch backends with `LISTERY_TRANSLATOR_ENDPOINT=google` |
+| File search (`filesearch`) | `Alt+S` | Compact self-built index for whole-disk file search, with `ext:pdf` / `path:project` filters; click or press Enter to open a result |
 
-- Settings → Plugins lets you enable/disable each plugin and reassign its hotkey (`Alt+E`, `Ctrl+Shift+F1`, …);
+- Settings → Plugin Manager… opens a standalone dialog to enable/disable each plugin, reassign its hotkey (`Alt+E`, `Ctrl+Shift+F1`, …), and open plugin-provided settings;
 - The tray's Plugins submenu opens a plugin directly (fallback when hotkeys are unavailable);
 - To write your own: [plugin guide](docs/PLUGINS_EN.md) ([中文](docs/PLUGINS.md)) with a minimal sample, the action protocol and a CMake template;
-- Load failures never pop a dialog — the reason is shown in Settings, and plugin logs go to `logs/YYYYMMDD.txt`.
+- Load failures never pop a dialog — the reason is shown in Plugin Manager, and plugin logs go to `logs/YYYYMMDD.txt`.
 
 ## Smart indexing
 
@@ -219,6 +222,7 @@ listery/
 ├─ .github/workflows/release.yml   # four-target matrix build + Windows installer
 ├─ sdk/listery_plugin_api.h        # plugin ABI (pure C, shipped for third-party devs)
 ├─ plugins/translator/             # bundled plugin: EN<->ZH translator (zero deps)
+├─ plugins/filesearch/             # bundled plugin: file search (compact index, Windows)
 ├─ installer/windows/listery.iss   # Inno Setup script
 ├─ src/
 │  ├─ main.cpp                 entry point, single instance, preview & selftest switches
@@ -234,16 +238,17 @@ listery/
 │  │  ├─ UsageRecorder.*       usage writes (own thread + own connection)
 │  │  └─ LaunchService.*       launch / elevate / reveal (per-platform branches)
 │  ├─ Platform/
-│  │  ├─ HotkeyHook.*          global hotkeys (double Ctrl + combos like Alt+E, all three platforms)
+│  │  ├─ HotkeyHook.*          global hotkeys (double Ctrl + combos like Alt+E / Alt+S, all three platforms)
 │  │  ├─ DoubleCtrlDetector.h  double-Ctrl state machine (unit-testable)
 │  │  ├─ Autostart.*           autostart (Run key / .desktop / LaunchAgent)
 │  │  ├─ WindowUtils.*         force foreground, center-top placement
 │  │  └─ Branding.*            runtime-drawn icon
 │  ├─ Ui/
-│  │  ├─ LauncherWindow.*      search panel (frameless + shadow + keyboard nav + context menu + collapse on empty input)
+│  │  ├─ LauncherWindow.*      search panel (frameless + shadow + keyboard nav + click to launch + context menu)
 │  │  ├─ ResultModel.* / ResultDelegate.*   result model and row painting (icon / highlight / path / count)
+│  │  ├─ PluginManagerDialog.* standalone plugin manager (enable / hotkey / plugin settings)
 │  │  └─ SettingsDialog.*      settings dialog
-│  └─ SelfTest.*               69 self-test checks
+│  └─ SelfTest.*               self-test (index, plugins, UI and hotkeys)
 └─ docs/
    ├─ preview.png
    ├─ PLUGINS.md / PLUGINS_EN.md   plugin guide (ZH / EN)

@@ -26,7 +26,7 @@ enum class LauncherMode
 
 /**
  * 唤起的搜索面板：无边框、置顶、屏幕居中靠上弹出。
- * 输入即搜，有候选时才展开列表；↑↓ 选择，Enter 运行，Ctrl+Enter 定位，Shift+Enter 提权运行。
+ * 输入即搜，有候选时才展开列表；↑↓ 选择，单击或 Enter 运行，Ctrl+Enter 定位，Shift+Enter 提权运行。
  */
 class LauncherWindow : public QWidget
 {

@@ -4,7 +4,7 @@
 #include "Core/Localization.h"
 #include "Core/PluginHost.h"
 #include "Core/QtCompat.h"
-#include "Platform/HotkeyHook.h"
+#include "Ui/PluginManagerDialog.h"
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -13,8 +13,6 @@
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
-#include <QKeySequence>
-#include <QKeySequenceEdit>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
@@ -127,7 +125,7 @@ void SettingsDialog::buildUi()
 
     mainLayout->addWidget(uiGroup);
 
-    buildPluginGroup(mainLayout);
+    buildPluginEntry(mainLayout);
 
     auto *dataRow = new QHBoxLayout();
     auto *dataLabel = new QLabel(tr("数据目录：%1").arg(m_settings->dataDir()), this);
@@ -166,78 +164,38 @@ void SettingsDialog::buildUi()
     mainLayout->addWidget(buttonBox);
 }
 
-void SettingsDialog::buildPluginGroup(QVBoxLayout *mainLayout)
+void SettingsDialog::buildPluginEntry(QVBoxLayout *mainLayout)
 {
     auto *pluginGroup = new QGroupBox(tr("插件"), this);
-    auto *pluginLayout = new QVBoxLayout(pluginGroup);
-    pluginLayout->setSpacing(8);
+    auto *pluginLayout = new QHBoxLayout(pluginGroup);
+    pluginLayout->setSpacing(10);
 
-    const QString pluginDir = m_settings->pluginDir();
-    auto *dirLabel = new QLabel(tr("插件目录：%1").arg(pluginDir), pluginGroup);
-    dirLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    dirLabel->setWordWrap(true);
-    pluginLayout->addWidget(dirLabel);
+    const int count = m_plugins ? m_plugins->plugins().size() : 0;
+    auto *summary = new QLabel(
+        count == 0 ? tr("未发现插件。把 .dll / .so / .dylib 放进插件目录后重启 Listery。")
+                   : tr("已发现 %1 个插件，可在这里逐个启用、修改热键或打开插件设置。").arg(count),
+        pluginGroup);
+    summary->setWordWrap(true);
+    pluginLayout->addWidget(summary, 1);
 
-    const QVector<PluginInfo> plugins = m_plugins ? m_plugins->plugins() : QVector<PluginInfo>();
-    if (plugins.isEmpty()) {
-        auto *empty = new QLabel(tr("未发现插件。把 .dll / .so 放进上面的目录，重启 Listery 即可加载。"),
-                                 pluginGroup);
-        empty->setWordWrap(true);
-        empty->setStyleSheet(QStringLiteral("color: #8A919B;"));
-        pluginLayout->addWidget(empty);
-        mainLayout->addWidget(pluginGroup);
-        return;
-    }
-
-    for (const PluginInfo &info : plugins) {
-        auto *row = new QHBoxLayout();
-        auto *enabled = new QCheckBox(info.name, pluginGroup);
-        enabled->setChecked(info.enabled && info.loaded);
-        enabled->setEnabled(info.loaded);
-        enabled->setToolTip(info.loaded
-                                ? info.filePath
-                                : tr("加载失败：%1").arg(info.error));
-        row->addWidget(enabled, 1);
-
-        auto *version = new QLabel(info.loaded ? info.version : tr("加载失败"), pluginGroup);
-        version->setStyleSheet(QStringLiteral("color: #8A919B;"));
-        row->addWidget(version);
-
-        auto *hotkey = new QKeySequenceEdit(QKeySequence::fromString(info.hotkey, QKeySequence::PortableText),
-                                            pluginGroup);
-        hotkey->setMaximumWidth(110);
-        hotkey->setToolTip(tr("留空表示不占用全局热键（仍可从托盘菜单进入）"));
-        row->addWidget(hotkey);
-
-        if (info.hasConfigUi && info.loaded) {
-            auto *configure = new QPushButton(tr("配置…"), pluginGroup);
-            const QString pluginId = info.id;
-            connect(configure, &QPushButton::clicked, this, [this, pluginId]() {
-                if (m_plugins)
-                    m_plugins->configure(pluginId, reinterpret_cast<void *>(winId()));
-            });
-            row->addWidget(configure);
-        }
-
-        pluginLayout->addLayout(row);
-
-        if (!info.description.isEmpty()) {
-            auto *description = new QLabel(info.description, pluginGroup);
-            description->setWordWrap(true);
-            description->setStyleSheet(QStringLiteral("color: #8A919B; margin-left: 22px;"));
-            pluginLayout->addWidget(description);
-        }
-        if (!info.loaded && !info.error.isEmpty()) {
-            auto *reason = new QLabel(info.error, pluginGroup);
-            reason->setWordWrap(true);
-            reason->setStyleSheet(QStringLiteral("color: #C0504D; margin-left: 22px;"));
-            pluginLayout->addWidget(reason);
-        }
-
-        m_pluginWidgets.append(PluginWidgets{info.id, enabled, hotkey});
-    }
+    auto *manage = new QPushButton(tr("插件管理…"), pluginGroup);
+    manage->setEnabled(m_plugins != nullptr);
+    connect(manage, &QPushButton::clicked, this, &SettingsDialog::openPluginManager);
+    pluginLayout->addWidget(manage);
 
     mainLayout->addWidget(pluginGroup);
+}
+
+void SettingsDialog::openPluginManager()
+{
+    if (!m_plugins)
+        return;
+
+    PluginManagerDialog dialog(m_settings, m_plugins, this);
+    listerySetWindowFlag(&dialog, Qt::WindowStaysOnTopHint, true);
+    connect(&dialog, &PluginManagerDialog::pluginsChanged, this,
+            &SettingsDialog::pluginsChanged);
+    dialog.exec();
 }
 
 void SettingsDialog::loadValues()
@@ -281,26 +239,4 @@ void SettingsDialog::saveValues()
     m_settings->setHotkeyIntervalMs(m_hotkeyInterval->value());
     m_settings->setMaxResults(m_maxResults->value());
     m_settings->setLanguage(m_language->currentData().toString());
-
-    // 插件：写回设置并同步给宿主（热键由 AppController 在对话框关闭后重新注册）
-    for (const PluginWidgets &widget : m_pluginWidgets) {
-        const bool enabled = widget.enabled->isChecked();
-        m_settings->setPluginEnabled(widget.id, enabled);
-
-        QString hotkey = widget.hotkey->keySequence().toString(QKeySequence::PortableText);
-        const QString normalized = normalizeHotkey(hotkey);
-        if (!hotkey.isEmpty() && normalized.isEmpty()) {
-            // 用户按了无法识别的组合：保留插件默认值，避免注册出一个永远触发不了的热键
-            hotkey = m_plugins ? m_plugins->info(widget.id).defaultHotkey : QString();
-        } else {
-            hotkey = normalized;
-        }
-        m_settings->setPluginHotkey(widget.id, hotkey);
-        if (m_plugins) {
-            m_plugins->setEnabled(widget.id, enabled);
-            m_plugins->setHotkey(widget.id, hotkey.isEmpty()
-                                                 ? m_plugins->info(widget.id).defaultHotkey
-                                                 : hotkey);
-        }
-    }
 }

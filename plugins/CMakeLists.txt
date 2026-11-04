@@ -4,3 +4,6 @@
 # 因此同一份源码可以在 Qt 5.7(XP)、Qt 5.15、Qt 6 的 Listery 上加载。
 add_subdirectory(translator)
 add_subdirectory(french)
+if(WIN32)
+    add_subdirectory(filesearch)
+endif()

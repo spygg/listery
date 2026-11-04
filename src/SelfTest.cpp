@@ -28,7 +28,9 @@
 #include <QEventLoop>
 #include <QFile>
 #include <QFileInfo>
+#include <QListView>
 #include <QMenu>
+#include <QMouseEvent>
 #include <QScreen>
 #include <QTemporaryDir>
 #include <QThread>
@@ -689,6 +691,43 @@ int SelfTest::run()
     check(window.waitForSearch(3000) && window.height() == 148,
           QStringLiteral("连续输入时丢弃过期的检索结果"));
 
+    // ---- 鼠标单击结果直接运行 ----
+    {
+        LauncherWindow clickWindow(&service, 10);
+        clickWindow.setAttribute(Qt::WA_DontShowOnScreen, true);
+        clickWindow.show();
+        clickWindow.setQueryForPreview(QStringLiteral("alpha"));
+        clickWindow.waitForSearch(3000);
+
+        bool launched = false;
+        bool launchedAsAdmin = true;
+        QString launchedPath;
+        QObject::connect(&clickWindow, &LauncherWindow::launchRequested, &clickWindow,
+                         [&launched, &launchedAsAdmin, &launchedPath](
+                             const ExecutableRecord &record, bool asAdmin) {
+                             launched = true;
+                             launchedAsAdmin = asAdmin;
+                             launchedPath = record.path;
+                         });
+
+        QListView *list = clickWindow.findChild<QListView *>(QStringLiteral("resultList"));
+        const QModelIndex first = list != nullptr ? list->model()->index(0, 0) : QModelIndex();
+        check(list != nullptr && first.isValid(),
+              QStringLiteral("单击测试：结果列表存在且至少有一条结果"));
+        if (list != nullptr && first.isValid()) {
+            const QPoint center = list->visualRect(first).center();
+            QMouseEvent press(QEvent::MouseButtonPress, center, Qt::LeftButton,
+                              Qt::LeftButton, Qt::NoModifier);
+            QMouseEvent release(QEvent::MouseButtonRelease, center, Qt::LeftButton,
+                                Qt::NoButton, Qt::NoModifier);
+            QApplication::sendEvent(list->viewport(), &press);
+            QApplication::sendEvent(list->viewport(), &release);
+        }
+        check(launched && !launchedAsAdmin && !launchedPath.isEmpty(),
+              QStringLiteral("单击结果直接运行：%1").arg(launchedPath));
+        clickWindow.dismiss();
+    }
+
     SearchResult menuResult;
     menuResult.record.path = QStringLiteral("C:\\Windows\\System32\\cmd.exe");
     QAction *adminAction = nullptr;
@@ -767,6 +806,9 @@ int SelfTest::run()
         bool frenchFound = false;
         bool frenchLoaded = false;
         QString frenchHotkey;
+        bool filesearchFound = false;
+        bool filesearchLoaded = false;
+        QString filesearchHotkey;
         for (const PluginInfo &info : plugins) {
             if (info.id == QStringLiteral("com.listery.translator")) {
                 translatorFound = true;
@@ -776,6 +818,10 @@ int SelfTest::run()
                 frenchFound = true;
                 frenchLoaded = info.loaded;
                 frenchHotkey = info.defaultHotkey;
+            } else if (info.id == QStringLiteral("com.listery.filesearch")) {
+                filesearchFound = true;
+                filesearchLoaded = info.loaded;
+                filesearchHotkey = info.defaultHotkey;
             }
         }
         check(translatorFound,
@@ -794,6 +840,15 @@ int SelfTest::run()
         check(host.pluginForHotkey(QStringLiteral("Alt+F"))
                   == QStringLiteral("com.listery.french"),
               QStringLiteral("按 Alt+F 能反查到法汉插件"));
+#ifdef Q_OS_WIN
+        check(filesearchFound, QStringLiteral("plugins 目录里发现文件搜索插件"));
+        check(filesearchLoaded, QStringLiteral("文件搜索插件初始化成功"));
+        check(filesearchHotkey.compare(QStringLiteral("Alt+S"), Qt::CaseInsensitive) == 0,
+              QStringLiteral("文件搜索插件默认热键为 Alt+S（实际 %1）").arg(filesearchHotkey));
+        check(host.pluginForHotkey(QStringLiteral("Alt+S"))
+                  == QStringLiteral("com.listery.filesearch"),
+              QStringLiteral("按 Alt+S 能反查到文件搜索插件"));
+#endif
         host.setEnabled(QStringLiteral("com.listery.translator"), false);
         check(host.pluginForHotkey(QStringLiteral("Alt+E")).isEmpty(),
               QStringLiteral("禁用后热键不再命中该插件"));

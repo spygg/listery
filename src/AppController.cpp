@@ -10,6 +10,7 @@
 #include "Platform/Branding.h"
 #include "Platform/HotkeyHook.h"
 #include "Ui/LauncherWindow.h"
+#include "Ui/PluginManagerDialog.h"
 #include "Ui/SettingsDialog.h"
 
 #include "Core/UsageRecorder.h"
@@ -257,8 +258,12 @@ void AppController::onHotkeyTriggered(const QString &hotkey)
     const PluginInfo info = m_plugins->info(pluginId);
     if (!info.loaded)
         return;
-    m_window->beginPluginSession(pluginId, info.name,
-                                 tr("输入要%1的内容，Enter 复制结果").arg(info.name));
+    QString placeholder;
+    if (pluginId == QStringLiteral("com.listery.filesearch"))
+        placeholder = tr("搜索本机文件：文件名、ext:pdf、path:项目；!help 查看命令");
+    else
+        placeholder = tr("输入要%1的内容，Enter 复制结果").arg(info.name);
+    m_window->beginPluginSession(pluginId, info.name, placeholder);
 }
 
 void AppController::onPluginAction(const QString &action)
@@ -313,24 +318,10 @@ void AppController::createTrayIcon()
     m_actionShow = menu->addAction(tr("打开搜索框"));
     m_actionRescan = menu->addAction(tr("重新扫描全盘"));
     m_actionSettings = menu->addAction(tr("设置…"));
+    m_actionPlugins = menu->addAction(tr("插件管理…"));
     if (m_plugins) {
         m_pluginMenu = menu->addMenu(tr("插件"));
-        for (const PluginInfo &info : m_plugins->plugins()) {
-            if (!info.loaded)
-                continue;
-            const QString label = info.hotkey.isEmpty()
-                                      ? info.name
-                                      : QStringLiteral("%1（%2）").arg(info.name, info.hotkey);
-            QAction *action = m_pluginMenu->addAction(label);
-            const QString pluginId = info.id;
-            connect(action, &QAction::triggered, this, [this, pluginId]() {
-                const PluginInfo target = m_plugins->info(pluginId);
-                m_window->beginPluginSession(pluginId, target.name,
-                                             tr("输入内容，交给 %1").arg(target.name));
-            });
-        }
-        if (m_pluginMenu->isEmpty())
-            m_pluginMenu->setEnabled(false);
+        rebuildPluginMenu();
     }
     menu->addSeparator();
     m_actionQuit = menu->addAction(tr("退出"));
@@ -339,6 +330,7 @@ void AppController::createTrayIcon()
     connect(m_actionRescan, &QAction::triggered, this,
             [this]() { startScan(true, true); }); // 人工重建：强制全量遍历
     connect(m_actionSettings, &QAction::triggered, this, &AppController::openSettings);
+    connect(m_actionPlugins, &QAction::triggered, this, &AppController::openPluginManager);
     connect(m_actionQuit, &QAction::triggered, qApp, &QApplication::quit);
 
     m_tray->setContextMenu(menu);
@@ -349,6 +341,29 @@ void AppController::createTrayIcon()
             });
     connect(m_tray, &QSystemTrayIcon::messageClicked, this, &AppController::openPendingUpdate);
     m_tray->show();
+}
+
+void AppController::rebuildPluginMenu()
+{
+    if (!m_pluginMenu || !m_plugins)
+        return;
+
+    m_pluginMenu->clear();
+    for (const PluginInfo &info : m_plugins->plugins()) {
+        if (!info.loaded || !info.enabled)
+            continue;
+        const QString label = info.hotkey.isEmpty()
+                                  ? info.name
+                                  : QStringLiteral("%1（%2）").arg(info.name, info.hotkey);
+        QAction *action = m_pluginMenu->addAction(label);
+        const QString pluginId = info.id;
+        connect(action, &QAction::triggered, this, [this, pluginId]() {
+            const PluginInfo target = m_plugins->info(pluginId);
+            m_window->beginPluginSession(pluginId, target.name,
+                                         tr("输入内容，交给 %1").arg(target.name));
+        });
+    }
+    m_pluginMenu->setEnabled(!m_pluginMenu->isEmpty());
 }
 
 void AppController::setupUpdater()
@@ -846,6 +861,10 @@ void AppController::openSettings()
     SettingsDialog dialog(&m_settings, m_plugins);
     listerySetWindowFlag(&dialog, Qt::WindowStaysOnTopHint, true);
     connect(&dialog, &SettingsDialog::rescanRequested, this, [this]() { startScan(true); });
+    connect(&dialog, &SettingsDialog::pluginsChanged, this, [this]() {
+        refreshPluginHotkeys();
+        rebuildPluginMenu();
+    });
 
     if (dialog.exec() == QDialog::Accepted) {
         const bool extensionsChanged = previousExtensions != m_settings.executableExtensions();
@@ -855,6 +874,22 @@ void AppController::openSettings()
         if (extensionsChanged && !(m_scanner && m_scanner->isRunning()))
             startScan(false, true); // 后缀变了要重新遍历，不能用 locate 快照
     }
+}
+
+void AppController::openPluginManager()
+{
+    if (!m_plugins)
+        return;
+    if (m_window)
+        m_window->dismiss();
+
+    PluginManagerDialog dialog(&m_settings, m_plugins);
+    listerySetWindowFlag(&dialog, Qt::WindowStaysOnTopHint, true);
+    connect(&dialog, &PluginManagerDialog::pluginsChanged, this, [this]() {
+        refreshPluginHotkeys();
+        rebuildPluginMenu();
+    });
+    dialog.exec();
 }
 
 void AppController::applySettings()
@@ -895,6 +930,8 @@ void AppController::retranslateUi()
         m_actionRescan->setText(tr("重新扫描全盘"));
     if (m_actionSettings)
         m_actionSettings->setText(tr("设置…"));
+    if (m_actionPlugins)
+        m_actionPlugins->setText(tr("插件管理…"));
     if (m_pluginMenu)
         m_pluginMenu->setTitle(tr("插件"));
     if (m_actionCheckUpdate)
