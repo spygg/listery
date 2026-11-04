@@ -730,18 +730,26 @@ int SelfTest::run()
 
     SearchResult menuResult;
     menuResult.record.path = QStringLiteral("C:\\Windows\\System32\\cmd.exe");
+    QAction *runAction = nullptr;
     QAction *adminAction = nullptr;
     QAction *revealAction = nullptr;
     QAction *copyAction = nullptr;
-    QMenu *contextMenu = window.createResultMenu(menuResult, &adminAction, &revealAction, &copyAction);
+    QMenu *contextMenu = window.createResultMenu(menuResult, &runAction, &adminAction,
+                                                 &revealAction, &copyAction);
+    const QList<QAction *> menuActions = contextMenu ? contextMenu->actions() : QList<QAction *>();
     const bool menuOk = contextMenu != nullptr
-        && contextMenu->actions().size() == 3
-        && adminAction != nullptr && revealAction != nullptr && copyAction != nullptr
-        && adminAction->text() == QStringLiteral("以管理员身份运行")
-        && revealAction->text() == QStringLiteral("打开所在位置")
+        && menuActions.size() == 4
+        && runAction != nullptr && adminAction != nullptr && revealAction != nullptr && copyAction != nullptr
+        && menuActions.at(0) == runAction
+        && menuActions.at(1) == adminAction
+        && menuActions.at(2) == revealAction
+        && menuActions.at(3) == copyAction
+        && runAction->text() == QStringLiteral("执行")
+        && adminAction->text() == QStringLiteral("管理员权限执行")
+        && revealAction->text() == QStringLiteral("打开路径")
         && copyAction->text() == QStringLiteral("复制路径到剪贴板");
     delete contextMenu;
-    check(menuOk, QStringLiteral("结果右键菜单包含“管理员运行 / 打开位置 / 复制路径”三项"));
+    check(menuOk, QStringLiteral("结果右键菜单为“执行 / 管理员权限执行 / 打开路径 / 复制路径”四项且顺序固定"));
 
     // ---- 6. 双击 Ctrl 状态机 ----
     DoubleCtrlDetector detector;

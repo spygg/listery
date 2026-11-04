@@ -289,20 +289,20 @@ Vous pouvez ouvrir la recherche depuis le menu de la zone de notification.</tran
         <translation>%1 · %2 résultats</translation>
     </message>
     <message>
-        <source>以管理员身份运行</source>
+        <source>管理员权限执行</source>
         <translation>Exécuter en tant qu'administrateur</translation>
     </message>
     <message>
-        <source>打开所在位置</source>
-        <translation>Ouvrir l'emplacement du fichier</translation>
+        <source>打开路径</source>
+        <translation>Ouvrir le chemin</translation>
     </message>
     <message>
         <source>复制路径到剪贴板</source>
         <translation>Copier le chemin dans le presse-papiers</translation>
     </message>
     <message>
-        <source>执行（默认动作）</source>
-        <translation>Exécuter (action par défaut)</translation>
+        <source>执行</source>
+        <translation>Exécuter</translation>
     </message>
 </context>
 <context>

@@ -65,6 +65,7 @@ public:
 
     /** 构造结果项右键菜单（自检也用它验证菜单项）。调用方负责 delete。 */
     QMenu *createResultMenu(const SearchResult &result,
+                            QAction **runAction = nullptr,
                             QAction **adminAction = nullptr,
                             QAction **revealAction = nullptr,
                             QAction **copyAction = nullptr) const;

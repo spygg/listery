@@ -459,15 +459,19 @@ bool LauncherWindow::waitForSearch(int timeoutMs)
 }
 
 QMenu *LauncherWindow::createResultMenu(const SearchResult &result,
+                                        QAction **runAction,
                                         QAction **adminAction,
                                         QAction **revealAction,
                                         QAction **copyAction) const
 {
     Q_UNUSED(result)
     QMenu *menu = new QMenu(const_cast<LauncherWindow *>(this));
-    QAction *admin = menu->addAction(tr("以管理员身份运行"));
-    QAction *reveal = menu->addAction(tr("打开所在位置"));
+    QAction *run = menu->addAction(tr("执行"));
+    QAction *admin = menu->addAction(tr("管理员权限执行"));
+    QAction *reveal = menu->addAction(tr("打开路径"));
     QAction *copy = menu->addAction(tr("复制路径到剪贴板"));
+    if (runAction)
+        *runAction = run;
     if (adminAction)
         *adminAction = admin;
     if (revealAction)
@@ -491,7 +495,7 @@ void LauncherWindow::showContextMenu(const QPoint &position)
         if (result.pluginAction.isEmpty())
             return;
         QMenu *menu = new QMenu(this);
-        QAction *run = menu->addAction(tr("执行（默认动作）"));
+        QAction *run = menu->addAction(tr("执行"));
         m_contextMenuOpen = true;
         QAction *chosen = menu->exec(m_list->viewport()->mapToGlobal(position));
         m_contextMenuOpen = false;
@@ -506,16 +510,19 @@ void LauncherWindow::showContextMenu(const QPoint &position)
     if (result.record.path.isEmpty())
         return;
 
+    QAction *runAction = nullptr;
     QAction *adminAction = nullptr;
     QAction *revealAction = nullptr;
     QAction *copyAction = nullptr;
-    QMenu *menu = createResultMenu(result, &adminAction, &revealAction, &copyAction);
+    QMenu *menu = createResultMenu(result, &runAction, &adminAction, &revealAction, &copyAction);
     m_contextMenuOpen = true;
     QAction *chosen = menu->exec(m_list->viewport()->mapToGlobal(position));
     m_contextMenuOpen = false;
     delete menu;
 
-    if (chosen == adminAction) {
+    if (chosen == runAction) {
+        emit launchRequested(result.record, false);
+    } else if (chosen == adminAction) {
         emit launchRequested(result.record, true);
     } else if (chosen == revealAction) {
         emit revealRequested(result.record);

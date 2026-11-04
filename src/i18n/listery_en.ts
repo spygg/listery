@@ -289,20 +289,20 @@ You can open the search box from the tray menu.</translation>
         <translation>%1 · %2 results</translation>
     </message>
     <message>
-        <source>以管理员身份运行</source>
+        <source>管理员权限执行</source>
         <translation>Run as administrator</translation>
     </message>
     <message>
-        <source>打开所在位置</source>
-        <translation>Open file location</translation>
+        <source>打开路径</source>
+        <translation>Open path</translation>
     </message>
     <message>
         <source>复制路径到剪贴板</source>
         <translation>Copy path to clipboard</translation>
     </message>
     <message>
-        <source>执行（默认动作）</source>
-        <translation>Execute (default action)</translation>
+        <source>执行</source>
+        <translation>Execute</translation>
     </message>
 </context>
 <context>

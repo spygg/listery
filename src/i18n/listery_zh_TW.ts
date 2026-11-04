@@ -289,20 +289,20 @@
         <translation>%1 · %2 筆</translation>
     </message>
     <message>
-        <source>以管理员身份运行</source>
-        <translation>以系統管理員身分執行</translation>
+        <source>管理员权限执行</source>
+        <translation>以系統管理員權限執行</translation>
     </message>
     <message>
-        <source>打开所在位置</source>
-        <translation>開啟所在位置</translation>
+        <source>打开路径</source>
+        <translation>開啟路徑</translation>
     </message>
     <message>
         <source>复制路径到剪贴板</source>
         <translation>複製路徑到剪貼簿</translation>
     </message>
     <message>
-        <source>执行（默认动作）</source>
-        <translation>執行（預設動作）</translation>
+        <source>执行</source>
+        <translation>執行</translation>
     </message>
 </context>
 <context>
