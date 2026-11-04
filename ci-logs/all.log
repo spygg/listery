@@ -1,35 +1,35 @@
 === pwd: /d/a/listery/listery
 === ls ===
-total 94
-drwxr-xr-x 1 runneradmin 197121     0 Nov  4 02:01 .
-drwxr-xr-x 1 runneradmin 197121     0 Nov  4 01:59 ..
-drwxr-xr-x 1 runneradmin 197121     0 Nov  4 02:01 .git
-drwxr-xr-x 1 runneradmin 197121     0 Nov  4 01:59 .github
--rw-r--r-- 1 runneradmin 197121   173 Nov  4 01:59 .gitignore
--rw-r--r-- 1 runneradmin 197121  3932 Nov  4 02:01 CMakeLists.txt
--rw-r--r-- 1 runneradmin 197121  1083 Nov  4 01:59 LICENSE
--rw-r--r-- 1 runneradmin 197121 19455 Nov  4 02:01 README.md
--rw-r--r-- 1 runneradmin 197121 20336 Nov  4 02:01 README_EN.md
-drwxr-xr-x 1 runneradmin 197121     0 Nov  4 02:01 build
--rw-r--r-- 1 runneradmin 197121   753 Nov  4 01:59 build.bat
--rw-r--r-- 1 runneradmin 197121  9629 Nov  4 02:01 build.log
-drwxr-xr-x 1 runneradmin 197121     0 Nov  4 02:01 ci-logs
--rw-r--r-- 1 runneradmin 197121   519 Nov  4 02:00 configure.log
--rw-r--r-- 1 runneradmin 197121  1342 Nov  4 01:59 deploy.bat
-drwxr-xr-x 1 runneradmin 197121     0 Nov  4 02:01 docs
-drwxr-xr-x 1 runneradmin 197121     0 Nov  4 01:59 installer
-drwxr-xr-x 1 runneradmin 197121     0 Nov  4 02:01 plugins
-drwxr-xr-x 1 runneradmin 197121     0 Nov  4 01:59 sdk
--rw-r--r-- 1 runneradmin 197121  6831 Nov  4 02:00 setup_qt.log
-drwxr-xr-x 1 runneradmin 197121     0 Nov  4 02:01 src
-drwxr-xr-x 1 runneradmin 197121     0 Nov  4 02:01 tools
+total 90
+drwxr-xr-x 1 runneradmin 197121     0 Nov  4 04:43 .
+drwxr-xr-x 1 runneradmin 197121     0 Nov  4 04:40 ..
+drwxr-xr-x 1 runneradmin 197121     0 Nov  4 04:43 .git
+drwxr-xr-x 1 runneradmin 197121     0 Nov  4 04:40 .github
+-rw-r--r-- 1 runneradmin 197121   173 Nov  4 04:40 .gitignore
+-rw-r--r-- 1 runneradmin 197121  3932 Nov  4 04:43 CMakeLists.txt
+-rw-r--r-- 1 runneradmin 197121  1083 Nov  4 04:40 LICENSE
+-rw-r--r-- 1 runneradmin 197121 19455 Nov  4 04:40 README.md
+-rw-r--r-- 1 runneradmin 197121 20336 Nov  4 04:40 README_EN.md
+drwxr-xr-x 1 runneradmin 197121     0 Nov  4 04:43 build
+-rw-r--r-- 1 runneradmin 197121   753 Nov  4 04:40 build.bat
+-rw-r--r-- 1 runneradmin 197121  4483 Nov  4 04:43 build.log
+drwxr-xr-x 1 runneradmin 197121     0 Nov  4 04:43 ci-logs
+-rw-r--r-- 1 runneradmin 197121   519 Nov  4 04:43 configure.log
+-rw-r--r-- 1 runneradmin 197121  1342 Nov  4 04:40 deploy.bat
+drwxr-xr-x 1 runneradmin 197121     0 Nov  4 04:40 docs
+drwxr-xr-x 1 runneradmin 197121     0 Nov  4 04:40 installer
+drwxr-xr-x 1 runneradmin 197121     0 Nov  4 04:40 plugins
+drwxr-xr-x 1 runneradmin 197121     0 Nov  4 04:40 sdk
+-rw-r--r-- 1 runneradmin 197121  6831 Nov  4 04:43 setup_qt.log
+drwxr-xr-x 1 runneradmin 197121     0 Nov  4 04:43 src
+drwxr-xr-x 1 runneradmin 197121     0 Nov  4 04:43 tools
 === setup_qt.log ===
 === cache miss: downloading offline installer ===
--rwxr-xr-x 1 runneradmin 197121 1201453136 Nov  4 01:59 qt571.exe
+-rwxr-xr-x 1 runneradmin 197121 1201453136 Nov  4 04:42 qt571.exe
 === layer 1: extract [0] payload container from exe ===
 total 1154864
-drwxr-xr-x 1 runneradmin 197121          0 Nov  4 01:59 .
-drwxr-xr-x 1 runneradmin 197121          0 Nov  4 01:59 ..
+drwxr-xr-x 1 runneradmin 197121          0 Nov  4 04:42 .
+drwxr-xr-x 1 runneradmin 197121          0 Nov  4 04:42 ..
 -rw-r--r-- 1 runneradmin 197121 1182578032 Nov 30  2016 [0]
 === layer 2: split numbered component archives ===
 === layer 3: extract components containing mingw53 ===
@@ -231,7 +231,7 @@ seeded /d/qt571/Tools/mingw530_32/bin/../lib/gcc/i686-w64-mingw32/5.3.0/libgcc_s
 cc1plus_status=0
 === compile smoke test ===
 compile_status=0
--rwxr-xr-x 1 runneradmin 197121 46732 Nov  4 02:00 smoke.exe
+-rwxr-xr-x 1 runneradmin 197121 46732 Nov  4 04:43 smoke.exe
 run_status=0
 === configure.log ===
 -- The CXX compiler identification is GNU 5.3.0
@@ -240,107 +240,47 @@ run_status=0
 -- Check for working CXX compiler: D:/qt571/Tools/mingw530_32/bin/g++.exe - skipped
 -- Detecting CXX compile features
 -- Detecting CXX compile features - done
--- Configuring done (1.8s)
+-- Configuring done (1.7s)
 -- Generating done (0.3s)
 -- Build files have been written to: D:/a/listery/listery/build
 === selected Qt (from CMakeCache) ===
 Qt5Core_DIR:PATH=D:/qt571/5.7/mingw53_32/lib/cmake/Qt5Core
 === link command ===
 === build.log ===
-[1/48] Automatic MOC for target listery_french
-[2/48] Automatic MOC for target listery_filesearch
-[3/48] Automatic MOC for target listery_translator
-[4/48] lrelease listery_zh_TW.ts
-Updating 'D:/a/listery/listery/build/i18n/listery_zh_TW.qm'...
-    Generated 119 translation(s) (119 finished and 0 unfinished)
-[5/48] lrelease listery_fr.ts
-Updating 'D:/a/listery/listery/build/i18n/listery_fr.qm'...
-    Generated 119 translation(s) (119 finished and 0 unfinished)
-[6/48] Building CXX object plugins/french/CMakeFiles/listery_french.dir/listery_french_autogen/mocs_compilation.cpp.obj
-[7/48] Building CXX object plugins/translator/CMakeFiles/listery_translator.dir/listery_translator_autogen/mocs_compilation.cpp.obj
-[8/48] lrelease listery_en.ts
-Updating 'D:/a/listery/listery/build/i18n/listery_en.qm'...
-    Generated 119 translation(s) (119 finished and 0 unfinished)
-[9/48] Building CXX object plugins/filesearch/CMakeFiles/listery_filesearch.dir/listery_filesearch_autogen/mocs_compilation.cpp.obj
-[10/48] Building CXX object plugins/french/CMakeFiles/listery_french.dir/french.cpp.obj
-[11/48] Building CXX object plugins/translator/CMakeFiles/listery_translator.dir/translator.cpp.obj
-[12/48] Building CXX object plugins/filesearch/CMakeFiles/listery_filesearch.dir/file_index.cpp.obj
-FAILED: [code=1] plugins/filesearch/CMakeFiles/listery_filesearch.dir/file_index.cpp.obj 
-D:\qt571\Tools\mingw530_32\bin\g++.exe -DNOMINMAX -DWIN32_LEAN_AND_MEAN -D_WIN32_WINNT=0x0601 -Dlistery_filesearch_EXPORTS -ID:/a/listery/listery/build/plugins/filesearch -ID:/a/listery/listery/plugins/filesearch -ID:/a/listery/listery/build/plugins/filesearch/listery_filesearch_autogen/include -ID:/a/listery/listery/plugins/filesearch/../../sdk -O3 -DNDEBUG -std=c++1z -fvisibility=hidden -fno-keep-inline-dllexport -Wall -Wextra -Wno-unused-parameter -MD -MT plugins/filesearch/CMakeFiles/listery_filesearch.dir/file_index.cpp.obj -MF plugins\filesearch\CMakeFiles\listery_filesearch.dir\file_index.cpp.obj.d -o plugins/filesearch/CMakeFiles/listery_filesearch.dir/file_index.cpp.obj -c D:/a/listery/listery/plugins/filesearch/file_index.cpp
-D:/a/listery/listery/plugins/filesearch/file_index.cpp: In function 'std::__cxx11::string filesearch::wideToUtf8(const wstring&)':
-D:/a/listery/listery/plugins/filesearch/file_index.cpp:594:89: error: invalid conversion from 'const char*' to 'LPSTR {aka char*}' [-fpermissive]
-     WideCharToMultiByte(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), out.data(), needed,
-                                                                                         ^
-In file included from D:/qt571/Tools/mingw530_32/i686-w64-mingw32/include/winnls.h:886:0,
-                 from D:/qt571/Tools/mingw530_32/i686-w64-mingw32/include/windows.h:73,
-                 from D:/a/listery/listery/plugins/filesearch/file_index.cpp:9:
-D:/qt571/Tools/mingw530_32/i686-w64-mingw32/include/stringapiset.h:42:25: note:   initializing argument 5 of 'int WideCharToMultiByte(UINT, DWORD, LPCWCH, int, LPSTR, int, LPCCH, LPBOOL)'
-   WINBASEAPI int WINAPI WideCharToMultiByte (UINT CodePage, DWORD dwFlags, LPCWCH lpWideCharStr, int cchWideChar, LPSTR lpMultiByteStr, int cbMultiByte, LPCCH lpDefaultChar, LPBOOL lpUsedDefaultChar);
-                         ^
-D:/a/listery/listery/plugins/filesearch/file_index.cpp: In function 'std::__cxx11::wstring filesearch::utf8ToWide(const string&)':
-D:/a/listery/listery/plugins/filesearch/file_index.cpp:609:89: error: invalid conversion from 'const wchar_t*' to 'LPWSTR {aka wchar_t*}' [-fpermissive]
-     MultiByteToWideChar(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), out.data(), needed);
-                                                                                         ^
-In file included from D:/qt571/Tools/mingw530_32/i686-w64-mingw32/include/winnls.h:886:0,
-                 from D:/qt571/Tools/mingw530_32/i686-w64-mingw32/include/windows.h:73,
-                 from D:/a/listery/listery/plugins/filesearch/file_index.cpp:9:
-D:/qt571/Tools/mingw530_32/i686-w64-mingw32/include/stringapiset.h:41:25: note:   initializing argument 5 of 'int MultiByteToWideChar(UINT, DWORD, LPCCH, int, LPWSTR, int)'
-   WINBASEAPI int WINAPI MultiByteToWideChar (UINT CodePage, DWORD dwFlags, LPCCH lpMultiByteStr, int cbMultiByte, LPWSTR lpWideCharStr, int cchWideChar);
-                         ^
-D:/a/listery/listery/plugins/filesearch/file_index.cpp: At global scope:
-D:/a/listery/listery/plugins/filesearch/file_index.cpp:208:10: warning: 'unsigned int filesearch::{anonymous}::popcount64(uint64_t)' defined but not used [-Wunused-function]
- unsigned popcount64(uint64_t value)
-          ^
-[13/48] Linking CXX shared module plugins\translator.dll
-[14/48] Linking CXX shared module plugins\french.dll
-[15/48] Building CXX object plugins/filesearch/CMakeFiles/listery_filesearch.dir/filesearch.cpp.obj
-FAILED: [code=1] plugins/filesearch/CMakeFiles/listery_filesearch.dir/filesearch.cpp.obj 
-D:\qt571\Tools\mingw530_32\bin\g++.exe -DNOMINMAX -DWIN32_LEAN_AND_MEAN -D_WIN32_WINNT=0x0601 -Dlistery_filesearch_EXPORTS -ID:/a/listery/listery/build/plugins/filesearch -ID:/a/listery/listery/plugins/filesearch -ID:/a/listery/listery/build/plugins/filesearch/listery_filesearch_autogen/include -ID:/a/listery/listery/plugins/filesearch/../../sdk -O3 -DNDEBUG -std=c++1z -fvisibility=hidden -fno-keep-inline-dllexport -Wall -Wextra -Wno-unused-parameter -MD -MT plugins/filesearch/CMakeFiles/listery_filesearch.dir/filesearch.cpp.obj -MF plugins\filesearch\CMakeFiles\listery_filesearch.dir\filesearch.cpp.obj.d -o plugins/filesearch/CMakeFiles/listery_filesearch.dir/filesearch.cpp.obj -c D:/a/listery/listery/plugins/filesearch/filesearch.cpp
-D:/a/listery/listery/plugins/filesearch/filesearch.cpp: In function 'bool {anonymous}::readFileBytes(const wstring&, std::__cxx11::string&)':
-D:/a/listery/listery/plugins/filesearch/filesearch.cpp:287:40: error: invalid conversion from 'const void*' to 'LPVOID {aka void*}' [-fpermissive]
-         if (!ReadFile(file, out.data() + offset, request, &read, nullptr) || read == 0) {
-                                        ^
-In file included from D:/qt571/Tools/mingw530_32/i686-w64-mingw32/include/winbase.h:18:0,
-                 from D:/qt571/Tools/mingw530_32/i686-w64-mingw32/include/windows.h:70,
-                 from D:/a/listery/listery/plugins/filesearch/filesearch.cpp:24:
-D:/qt571/Tools/mingw530_32/i686-w64-mingw32/include/fileapi.h:166:29: note:   initializing argument 2 of 'WINBOOL ReadFile(HANDLE, LPVOID, DWORD, LPDWORD, LPOVERLAPPED)'
-   WINBASEAPI WINBOOL WINAPI ReadFile (HANDLE hFile, LPVOID lpBuffer, DWORD nNumberOfBytesToRead, LPDWORD lpNumberOfBytesRead, LPOVERLAPPED lpOverlapped);
-                             ^
-[16/48] Building CXX object plugins/filesearch/CMakeFiles/listery_filesearch.dir/file_scanner.cpp.obj
-D:/a/listery/listery/plugins/filesearch/file_scanner.cpp:58:14: warning: 'std::__cxx11::wstring filesearch::{anonymous}::toDisplayPath(const wstring&)' defined but not used [-Wunused-function]
- std::wstring toDisplayPath(const std::wstring &path)
-              ^
-[17/48] Automatic MOC for target listery
-[18/48] Automatic RCC for listery_translations.qrc
-[19/48] Generating listery_appicon.rc.o
-[20/48] Building CXX object CMakeFiles/listery.dir/listery_autogen/mocs_compilation.cpp.obj
-[21/48] Building CXX object CMakeFiles/listery.dir/src/Core/AppSettings.cpp.obj
-[22/48] Building CXX object CMakeFiles/listery.dir/src/main.cpp.obj
-[23/48] Building CXX object CMakeFiles/listery.dir/src/Core/Database.cpp.obj
-[24/48] Building CXX object CMakeFiles/listery.dir/src/AppController.cpp.obj
-[25/48] Building CXX object CMakeFiles/listery.dir/src/Core/SearchService.cpp.obj
-[26/48] Building CXX object CMakeFiles/listery.dir/src/SelfTest.cpp.obj
-[27/48] Building CXX object CMakeFiles/listery.dir/src/Core/Localization.cpp.obj
-[28/48] Building CXX object CMakeFiles/listery.dir/src/Core/LaunchService.cpp.obj
-[29/48] Building CXX object CMakeFiles/listery.dir/src/Core/SearchEngine.cpp.obj
-[30/48] Building CXX object CMakeFiles/listery.dir/src/Core/Scanner.cpp.obj
-[31/48] Building CXX object CMakeFiles/listery.dir/src/Core/PinyinData.cpp.obj
-[32/48] Building CXX object CMakeFiles/listery.dir/src/Core/Pinyin.cpp.obj
-[33/48] Building CXX object CMakeFiles/listery.dir/src/Core/UsageRecorder.cpp.obj
-[34/48] Building CXX object CMakeFiles/listery.dir/src/Core/Updater.cpp.obj
-[35/48] Building CXX object CMakeFiles/listery.dir/src/Core/PluginHost.cpp.obj
-[36/48] Building CXX object CMakeFiles/listery.dir/src/Core/HttpClient.cpp.obj
-[37/48] Building CXX object CMakeFiles/listery.dir/src/Platform/WindowUtils.cpp.obj
-[38/48] Building CXX object CMakeFiles/listery.dir/src/Platform/HotkeyHook.cpp.obj
-[39/48] Building CXX object CMakeFiles/listery.dir/src/Platform/Autostart.cpp.obj
-[40/48] Building CXX object CMakeFiles/listery.dir/src/Platform/Branding.cpp.obj
-[41/48] Building CXX object CMakeFiles/listery.dir/src/Ui/ResultModel.cpp.obj
-[42/48] Building CXX object CMakeFiles/listery.dir/src/Ui/ResultDelegate.cpp.obj
-[43/48] Building CXX object CMakeFiles/listery.dir/listery_autogen/JU62CA5L7X/qrc_listery_translations.cpp.obj
-[44/48] Building CXX object CMakeFiles/listery.dir/src/Ui/SettingsDialog.cpp.obj
-[45/48] Building CXX object CMakeFiles/listery.dir/src/Ui/LauncherWindow.cpp.obj
-[46/48] Building CXX object CMakeFiles/listery.dir/src/Ui/PluginManagerDialog.cpp.obj
-[47/48] Linking CXX executable listery.exe
+[1/30] Automatic MOC for target listery_translator
+[2/30] Building CXX object plugins/translator/CMakeFiles/listery_translator.dir/listery_translator_autogen/mocs_compilation.cpp.obj
+[3/30] Building CXX object plugins/translator/CMakeFiles/listery_translator.dir/translator.cpp.obj
+[4/30] Linking CXX shared module plugins\translator.dll
+[5/30] Automatic MOC for target listery
+[6/30] Building CXX object CMakeFiles/listery.dir/src/Core/AppSettings.cpp.obj
+[7/30] Building CXX object CMakeFiles/listery.dir/listery_autogen/mocs_compilation.cpp.obj
+[8/30] Building CXX object CMakeFiles/listery.dir/src/main.cpp.obj
+[9/30] Building CXX object CMakeFiles/listery.dir/src/Core/Database.cpp.obj
+[10/30] Building CXX object CMakeFiles/listery.dir/src/AppController.cpp.obj
+[11/30] Building CXX object CMakeFiles/listery.dir/src/SelfTest.cpp.obj
+[12/30] Building CXX object CMakeFiles/listery.dir/src/Core/SearchService.cpp.obj
+[13/30] Building CXX object CMakeFiles/listery.dir/src/Core/Scanner.cpp.obj
+[14/30] Building CXX object CMakeFiles/listery.dir/src/Core/SearchEngine.cpp.obj
+[15/30] Building CXX object CMakeFiles/listery.dir/src/Core/LaunchService.cpp.obj
+[16/30] Building CXX object CMakeFiles/listery.dir/src/Core/UsageRecorder.cpp.obj
+[17/30] Building CXX object CMakeFiles/listery.dir/src/Core/Pinyin.cpp.obj
+[18/30] Building CXX object CMakeFiles/listery.dir/src/Core/PinyinData.cpp.obj
+[19/30] Building CXX object CMakeFiles/listery.dir/src/Core/Updater.cpp.obj
+[20/30] Building CXX object CMakeFiles/listery.dir/src/Platform/Autostart.cpp.obj
+[21/30] Building CXX object CMakeFiles/listery.dir/src/Core/PluginHost.cpp.obj
+[22/30] Building CXX object CMakeFiles/listery.dir/src/Platform/Branding.cpp.obj
+[23/30] Building CXX object CMakeFiles/listery.dir/src/Platform/WindowUtils.cpp.obj
+[24/30] Building CXX object CMakeFiles/listery.dir/src/Platform/HotkeyHook.cpp.obj
+[25/30] Building CXX object CMakeFiles/listery.dir/src/Ui/ResultModel.cpp.obj
+[26/30] Building CXX object CMakeFiles/listery.dir/src/Ui/ResultDelegate.cpp.obj
+[27/30] Building CXX object CMakeFiles/listery.dir/src/Ui/SettingsDialog.cpp.obj
+[28/30] Building CXX object CMakeFiles/listery.dir/src/Ui/LauncherWindow.cpp.obj
+[29/30] Building RC object CMakeFiles/listery.dir/src/resources/appicon.rc.obj
+[30/30] Linking CXX executable listery.exe
+FAILED: [code=1] listery.exe 
+C:\Windows\system32\cmd.exe /C "cd . && D:\qt571\Tools\mingw530_32\bin\g++.exe -O3 -DNDEBUG -static-libgcc -static-libstdc++  -mwindows CMakeFiles/listery.dir/listery_autogen/mocs_compilation.cpp.obj CMakeFiles/listery.dir/src/main.cpp.obj CMakeFiles/listery.dir/src/AppController.cpp.obj CMakeFiles/listery.dir/src/SelfTest.cpp.obj CMakeFiles/listery.dir/src/Core/AppSettings.cpp.obj CMakeFiles/listery.dir/src/Core/Database.cpp.obj CMakeFiles/listery.dir/src/Core/Scanner.cpp.obj CMakeFiles/listery.dir/src/Core/SearchEngine.cpp.obj CMakeFiles/listery.dir/src/Core/SearchService.cpp.obj CMakeFiles/listery.dir/src/Core/LaunchService.cpp.obj CMakeFiles/listery.dir/src/Core/UsageRecorder.cpp.obj CMakeFiles/listery.dir/src/Core/Pinyin.cpp.obj CMakeFiles/listery.dir/src/Core/PinyinData.cpp.obj CMakeFiles/listery.dir/src/Core/PluginHost.cpp.obj CMakeFiles/listery.dir/src/Core/Updater.cpp.obj CMakeFiles/listery.dir/src/Platform/HotkeyHook.cpp.obj CMakeFiles/listery.dir/src/Platform/Autostart.cpp.obj CMakeFiles/listery.dir/src/Platform/WindowUtils.cpp.obj CMakeFiles/listery.dir/src/Platform/Branding.cpp.obj CMakeFiles/listery.dir/src/Ui/LauncherWindow.cpp.obj CMakeFiles/listery.dir/src/Ui/ResultModel.cpp.obj CMakeFiles/listery.dir/src/Ui/ResultDelegate.cpp.obj CMakeFiles/listery.dir/src/Ui/SettingsDialog.cpp.obj CMakeFiles/listery.dir/src/resources/appicon.rc.obj -o listery.exe -Wl,--out-implib,liblistery.dll.a -Wl,--major-image-version,0,--minor-image-version,0  D:/qt571/5.7/mingw53_32/lib/libQt5Widgets.a  D:/qt571/5.7/mingw53_32/lib/libQt5Sql.a  D:/qt571/5.7/mingw53_32/lib/libQt5Network.a  -lshell32  -luser32  -lole32  -ladvapi32  D:/qt571/5.7/mingw53_32/lib/libQt5Gui.a  D:/qt571/5.7/mingw53_32/lib/libQt5Core.a  D:/qt571/5.7/mingw53_32/lib/libqtmain.a  -lkernel32 -luser32 -lgdi32 -lwinspool -lshell32 -lole32 -loleaut32 -luuid -lcomdlg32 -ladvapi32 && cd ."
+CMakeFiles/listery.dir/src/resources/appicon.rc.obj: file not recognized: File format not recognized
+collect2.exe: error: ld returned 1 exit status
 ninja: build stopped: cannot make progress due to previous errors.
 === deploy.log ===
 cat: deploy.log: No such file or directory
