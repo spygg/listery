@@ -591,7 +591,7 @@ std::string wideToUtf8(const std::wstring &text)
         return std::string();
     std::string out;
     out.resize(static_cast<size_t>(needed));
-    WideCharToMultiByte(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), out.data(), needed,
+    WideCharToMultiByte(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), &out[0], needed,
                         nullptr, nullptr);
     return out;
 }
@@ -606,7 +606,7 @@ std::wstring utf8ToWide(const std::string &text)
         return std::wstring();
     std::wstring out;
     out.resize(static_cast<size_t>(needed));
-    MultiByteToWideChar(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), out.data(), needed);
+    MultiByteToWideChar(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), &out[0], needed);
     return out;
 }
 

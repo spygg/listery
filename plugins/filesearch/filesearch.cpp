@@ -284,7 +284,7 @@ bool readFileBytes(const std::wstring &path, std::string &out)
     while (offset < out.size()) {
         DWORD read = 0;
         const DWORD request = static_cast<DWORD>((std::min)(out.size() - offset, size_t(1 << 20)));
-        if (!ReadFile(file, out.data() + offset, request, &read, nullptr) || read == 0) {
+        if (!ReadFile(file, &out[0] + offset, request, &read, nullptr) || read == 0) {
             CloseHandle(file);
             out.clear();
             return false;

@@ -52,7 +52,7 @@ std::string fromWide(const std::wstring &text)
                                            static_cast<int>(text.size()), nullptr, 0, nullptr,
                                            nullptr);
     std::string out(static_cast<size_t>(needed), '\0');
-    WideCharToMultiByte(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), out.data(), needed,
+    WideCharToMultiByte(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), &out[0], needed,
                         nullptr, nullptr);
     return out;
 }
@@ -64,7 +64,7 @@ std::wstring toWide(const std::string &text)
     const int needed = MultiByteToWideChar(CP_UTF8, 0, text.data(),
                                            static_cast<int>(text.size()), nullptr, 0);
     std::wstring out(static_cast<size_t>(needed), L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), out.data(), needed);
+    MultiByteToWideChar(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), &out[0], needed);
     return out;
 }
 
