@@ -72,9 +72,10 @@ public:
     QString pluginDir() const;
     bool pluginEnabled(const QString &pluginId) const;
     void setPluginEnabled(const QString &pluginId, bool enabled);
-    /** 用户自定义热键，空串表示沿用插件默认值。 */
+    /** 用户自定义热键；空串表示沿用插件默认值，"none" 表示显式不占用。 */
     QString pluginHotkey(const QString &pluginId) const;
     void setPluginHotkey(const QString &pluginId, const QString &hotkey);
+    static bool isHotkeyDisabled(const QString &value);
 
     // 在线升级
     /** 启动时自动检查更新（每天至多一次）。 */

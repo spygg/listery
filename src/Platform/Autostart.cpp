@@ -18,6 +18,26 @@
 namespace Autostart {
 
 namespace {
+
+/** 取出自启动命令行里的可执行文件路径（去掉包裹的引号与 --autostart 这类参数）。 */
+#if defined(Q_OS_WIN) || defined(Q_OS_LINUX)
+QString executableFromCommandLine(const QString &commandLine)
+{
+    const QString trimmed = commandLine.trimmed();
+    if (trimmed.isEmpty())
+        return QString();
+    if (trimmed.startsWith(QLatin1Char('"'))) {
+        const int closing = trimmed.indexOf(QLatin1Char('"'), 1);
+        return closing > 1 ? trimmed.mid(1, closing - 1) : QString();
+    }
+    const QString suffix = QStringLiteral(" --autostart");
+    if (trimmed.endsWith(suffix, Qt::CaseInsensitive))
+        return trimmed.left(trimmed.size() - suffix.size());
+    const int space = trimmed.indexOf(QLatin1Char(' '));
+    return space > 0 ? trimmed.left(space) : trimmed;
+}
+#endif
+
 #ifdef Q_OS_WIN
 const wchar_t *kRunKey = L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
 const wchar_t *kValueName = L"Listery";
@@ -36,6 +56,28 @@ QString autostartFilePath()
     return configDir + QStringLiteral("/autostart/listery.desktop");
 #endif
 }
+
+#if defined(Q_OS_MACOS) || defined(Q_OS_LINUX)
+/** 从 plist / .desktop 自启动文件里取出登记的程序路径。 */
+QString executableFromAutostartFile(const QString &text)
+{
+#ifdef Q_OS_MACOS
+    const int args = text.indexOf(QLatin1String("<key>ProgramArguments</key>"));
+    const int begin = text.indexOf(QLatin1String("<string>"), args < 0 ? 0 : args);
+    if (begin < 0)
+        return QString();
+    const int end = text.indexOf(QLatin1String("</string>"), begin);
+    if (end < 0)
+        return QString();
+    return text.mid(begin + 8, end - begin - 8);
+#else
+    const int exec = text.indexOf(QLatin1String("Exec="));
+    if (exec < 0)
+        return QString();
+    return executableFromCommandLine(text.mid(exec + 5));
+#endif
+}
+#endif
 
 QString xmlEscaped(const QString &text)
 {
@@ -114,6 +156,34 @@ bool isEnabled()
     return result == ERROR_SUCCESS && size > 0;
 #else
     return QFileInfo::exists(autostartFilePath());
+#endif
+}
+
+bool pointsToExistingExecutable()
+{
+#ifdef Q_OS_WIN
+    wchar_t raw[4096] = {0};
+    DWORD size = sizeof(raw);
+    HKEY key = nullptr;
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, kRunKey, 0, KEY_QUERY_VALUE, &key) != ERROR_SUCCESS)
+        return false;
+
+    const LONG result = RegQueryValueExW(key, kValueName, nullptr, nullptr,
+                                         reinterpret_cast<LPBYTE>(raw), &size);
+    RegCloseKey(key);
+    if (result != ERROR_SUCCESS)
+        return false;
+
+    const QString exe = executableFromCommandLine(QString::fromWCharArray(raw));
+    return !exe.isEmpty() && QFileInfo::exists(exe);
+#elif defined(Q_OS_MACOS) || defined(Q_OS_LINUX)
+    QFile file(autostartFilePath());
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+        return false;
+    const QString exe = executableFromAutostartFile(QString::fromUtf8(file.readAll()));
+    return !exe.isEmpty() && QFileInfo::exists(exe);
+#else
+    return false;
 #endif
 }
 

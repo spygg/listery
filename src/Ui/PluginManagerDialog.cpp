@@ -15,6 +15,7 @@
 #include <QKeySequenceEdit>
 #include <QLabel>
 #include <QListWidget>
+#include <QMessageBox>
 #include <QPushButton>
 #include <QStackedWidget>
 #include <QUrl>
@@ -105,8 +106,8 @@ void PluginManagerDialog::buildUi()
     auto *cancelButton = new QPushButton(tr("取消"), buttons);
     buttons->addButton(cancelButton, QDialogButtonBox::RejectRole);
     connect(saveButton, &QPushButton::clicked, this, [this]() {
-        saveValues();
-        accept();
+        if (saveValues())
+            accept();
     });
     connect(cancelButton, &QPushButton::clicked, this, &QDialog::reject);
     mainLayout->addWidget(buttons);
@@ -142,10 +143,12 @@ void PluginManagerDialog::buildPage(const QString &id)
     form->addRow(QString(), widgets.enabled);
 
     const QString currentHotkey = m_settings ? m_settings->pluginHotkey(id) : QString();
+    const QString shownHotkey =
+        AppSettings::isHotkeyDisabled(currentHotkey)
+            ? QString()
+            : (currentHotkey.isEmpty() ? info.hotkey : currentHotkey);
     widgets.hotkey = new QKeySequenceEdit(
-        QKeySequence::fromString(currentHotkey.isEmpty() ? info.hotkey : currentHotkey,
-                                 QKeySequence::PortableText),
-        page);
+        QKeySequence::fromString(shownHotkey, QKeySequence::PortableText), page);
     widgets.hotkey->setToolTip(tr("留空表示不占用全局热键（仍可从托盘菜单进入）"));
     widgets.hotkey->setMaximumWidth(180);
     form->addRow(tr("全局热键"), widgets.hotkey);
@@ -178,8 +181,12 @@ void PluginManagerDialog::buildPage(const QString &id)
     m_pageWidgets.append(widgets);
     m_ids.append(id);
 
-    auto *item = new QListWidgetItem(info.loaded ? info.name : tr("%1（未加载）").arg(info.name),
-                                     m_list);
+    QString label = info.name;
+    if (!info.loaded)
+        label = tr("%1（未加载）").arg(info.name);
+    else if (!info.enabled)
+        label = tr("%1（已停用）").arg(info.name);
+    auto *item = new QListWidgetItem(label, m_list);
     item->setToolTip(info.error.isEmpty() ? info.filePath : info.error);
     if (!info.loaded)
         item->setForeground(QColor(QStringLiteral("#C0504D")));
@@ -203,7 +210,10 @@ void PluginManagerDialog::refreshStatus(Page &page)
     if (!m_plugins || page.status == nullptr)
         return;
     const PluginInfo info = m_plugins->info(page.id);
-    if (info.loaded) {
+    if (!info.enabled) {
+        page.status->setText(tr("已停用"));
+        page.status->setStyleSheet(QStringLiteral("color: #8A919B;"));
+    } else if (info.initialized) {
         page.status->setText(tr("已加载"));
         page.status->setStyleSheet(QStringLiteral("color: #6FA86F;"));
     } else {
@@ -219,45 +229,82 @@ void PluginManagerDialog::openPluginConfig(const QString &id)
     m_plugins->configure(id, reinterpret_cast<void *>(winId()));
 }
 
-void PluginManagerDialog::saveValues()
+bool PluginManagerDialog::saveValues()
 {
     if (!m_plugins)
-        return;
+        return true;
 
-    bool changed = false;
+    struct Pending
+    {
+        QString id;
+        QString name;
+        QString stored;
+        QString effective;
+        bool enabled = true;
+    };
+    QVector<Pending> pending;
+    pending.reserve(m_pageWidgets.size());
     for (const Page &page : m_pageWidgets) {
         const PluginInfo info = m_plugins->info(page.id);
+        const QString typed = page.hotkey->keySequence().toString(QKeySequence::PortableText);
 
-        const bool enabled = page.enabled->isChecked();
-        if (enabled != (m_settings ? m_settings->pluginEnabled(page.id) : info.enabled)) {
-            if (m_settings)
-                m_settings->setPluginEnabled(page.id, enabled);
-            m_plugins->setEnabled(page.id, enabled);
-            changed = true;
-        }
-
-        QString hotkey = page.hotkey->keySequence().toString(QKeySequence::PortableText);
-        const QString normalized = normalizeHotkey(hotkey);
-        if (!hotkey.isEmpty() && normalized.isEmpty()) {
-            // 无法识别的组合：退回插件默认值，避免注册一个永远触发不了的热键。
-            hotkey = info.defaultHotkey;
+        // 空输入 = 显式不占用；无法识别的组合 = 回到插件默认值。
+        Pending item;
+        item.id = page.id;
+        item.name = info.name.isEmpty() ? page.id : info.name;
+        item.enabled = page.enabled->isChecked();
+        if (typed.isEmpty()) {
+            item.stored = QStringLiteral("none");
         } else {
-            hotkey = normalized;
+            item.stored = normalizeHotkey(typed); // 空串表示识别失败，退回默认
         }
-        const QString stored = m_settings ? m_settings->pluginHotkey(page.id) : QString();
-        if (hotkey != stored) {
+        if (AppSettings::isHotkeyDisabled(item.stored))
+            item.effective.clear();
+        else
+            item.effective = item.stored.isEmpty() ? info.defaultHotkey : item.stored;
+        pending.append(item);
+    }
+
+    // 重复热键会被第一个注册的插件独占，后一个永远静默失效，保存前必须拦下
+    for (int i = 0; i < pending.size(); ++i) {
+        if (!pending[i].enabled || pending[i].effective.isEmpty())
+            continue;
+        for (int j = i + 1; j < pending.size(); ++j) {
+            if (!pending[j].enabled || pending[j].effective.isEmpty())
+                continue;
+            if (pending[i].effective.compare(pending[j].effective, Qt::CaseInsensitive) == 0) {
+                QMessageBox::warning(
+                    this, tr("热键冲突"),
+                    tr("%1 和 %2 都使用 %3，后一个将无法触发。请改成不同的组合，或留空表示不占用。")
+                        .arg(pending[i].name, pending[j].name, pending[i].effective));
+                return false;
+            }
+        }
+    }
+
+    bool changed = false;
+    for (const Pending &item : pending) {
+        const PluginInfo info = m_plugins->info(item.id);
+        if (item.enabled != (m_settings ? m_settings->pluginEnabled(item.id) : info.enabled)) {
             if (m_settings)
-                m_settings->setPluginHotkey(page.id, hotkey);
+                m_settings->setPluginEnabled(item.id, item.enabled);
+            m_plugins->setEnabled(item.id, item.enabled);
             changed = true;
         }
-        const QString effective =
-            hotkey.isEmpty() ? info.defaultHotkey : hotkey;
-        if (effective != info.hotkey) {
-            m_plugins->setHotkey(page.id, effective);
+
+        const QString stored = m_settings ? m_settings->pluginHotkey(item.id) : QString();
+        if (item.stored != stored) {
+            if (m_settings)
+                m_settings->setPluginHotkey(item.id, item.stored);
+            changed = true;
+        }
+        if (item.effective != info.hotkey) {
+            m_plugins->setHotkey(item.id, item.effective);
             changed = true;
         }
     }
 
     if (changed)
         emit pluginsChanged();
+    return true;
 }

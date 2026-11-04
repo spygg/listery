@@ -16,4 +16,10 @@ bool setEnabled(bool on, QString *error = nullptr);
 /** 当前程序应写入的启动命令行。 */
 QString commandLine();
 
+/**
+ * 自启动项是否指向一个仍然存在的可执行文件。
+ * 未登记、或登记的 exe 已被移动/删除时返回 false。
+ */
+bool pointsToExistingExecutable();
+
 } // namespace Autostart

@@ -2,6 +2,7 @@
 
 #include <QByteArray>
 #include <QObject>
+#include <QSet>
 #include <QString>
 #include <QStringList>
 #include <QUrl>
@@ -34,4 +35,6 @@ signals:
 
 private:
     quint64 m_nextId = 1;
+    /** 尚未上报结果的请求；总时限先到后，工作线程迟到的结果会被丢弃。 */
+    QSet<quint64> m_pending;
 };

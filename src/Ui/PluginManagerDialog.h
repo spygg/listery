@@ -45,7 +45,7 @@ private:
     void buildUi();
     void buildPage(const QString &id);
     void refreshStatus(Page &page);
-    void saveValues();
+    bool saveValues();
     void openPluginConfig(const QString &id);
 
     AppSettings *m_settings = nullptr;

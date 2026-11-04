@@ -80,13 +80,29 @@ bool isUnderOrEqual(const std::wstring &lowerPath, const std::wstring &lowerRoot
     return next == L'\\' || next == L'/';
 }
 
+bool isUnderOrEqualNoCase(const std::wstring &path, const std::wstring &lowerRoot)
+{
+    if (lowerRoot.empty() || path.size() < lowerRoot.size())
+        return false;
+    for (size_t i = 0; i < lowerRoot.size(); ++i) {
+        if (static_cast<wchar_t>(std::towlower(path[i])) != lowerRoot[i])
+            return false;
+    }
+    if (path.size() == lowerRoot.size())
+        return true;
+    if (lowerRoot.back() == L'\\' || lowerRoot.back() == L'/')
+        return true;
+    const wchar_t next = path[lowerRoot.size()];
+    return next == L'\\' || next == L'/';
+}
+
 bool isExcludedPath(const std::wstring &path, const std::vector<std::wstring> &prefixes)
 {
     if (prefixes.empty())
         return false;
-    const std::wstring lower = lowerWide(path);
+    // 避免为每个目录复制并小写整条路径（几十万次分配）
     for (const std::wstring &prefix : prefixes) {
-        if (isUnderOrEqual(lower, prefix))
+        if (isUnderOrEqualNoCase(path, prefix))
             return true;
     }
     return false;
@@ -239,9 +255,9 @@ bool scanFileSystem(const ScanConfig &config, Index &out, std::atomic<bool> &sto
                 continue;
 
             const std::wstring name(data.cFileName);
-            const std::wstring lowerName = lowerWide(name);
 
             if (isDirectory) {
+                const std::wstring lowerName = lowerWide(name);
                 if (std::binary_search(excludeNames.begin(), excludeNames.end(), lowerName))
                     continue;
 

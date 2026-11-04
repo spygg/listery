@@ -139,6 +139,21 @@ bool writeFile(const std::wstring &path, const std::string &content)
     return ok;
 }
 
+std::string readFile(const std::wstring &path)
+{
+    HANDLE file = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                              nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (file == INVALID_HANDLE_VALUE)
+        return std::string();
+    std::string out;
+    char buffer[4096];
+    DWORD read = 0;
+    while (ReadFile(file, buffer, sizeof(buffer), &read, nullptr) && read > 0)
+        out.append(buffer, read);
+    CloseHandle(file);
+    return out;
+}
+
 std::wstring executableDirectory()
 {
     wchar_t path[MAX_PATH * 4] = {};
@@ -264,6 +279,7 @@ int main()
     };
     const Case cases[] = {
         {"chrome", "chrome-settings.json"},
+        {"测", "测试报告"},
         {"测试", "测试报告"},
         {"ext:cpp", ""},
         {"path:子目录", "嵌套文件"},
@@ -271,6 +287,22 @@ int main()
     };
 
     int failures = 0;
+
+    // 旧配置（没有 config_version）应被迁移并回写，否则 idle_unload_minutes=0 永远不生效
+    {
+        const std::string migrated = readFile(dataDir + L"\\filesearch.ini");
+        const bool versionWritten = migrated.find("config_version=2") != std::string::npos;
+        const bool idleWritten = migrated.find("idle_unload_minutes=10") != std::string::npos;
+        std::printf("配置迁移回写：%s\n", versionWritten && idleWritten ? "通过" : "失败");
+        if (!versionWritten || !idleWritten)
+            ++failures;
+    }
+
+    // 取消（含已完成的 id）不应该影响后续查询或无限堆积
+    plugin->beginQuery(999999, "chrome", 12);
+    plugin->cancelQuery(999999);
+    plugin->cancelQuery(1);
+
     for (const Case &item : cases) {
         if (!query(plugin, item.query, rows, error)) {
             ++failures;

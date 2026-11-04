@@ -210,7 +210,10 @@ void AppController::setupPlugins()
 
     QDir().mkpath(m_settings.pluginDir());
     QString error;
-    const int loaded = m_plugins->loadFromDirectory(m_settings.pluginDir(), &error);
+    // 禁用插件不 init：避免文件搜索在用户关闭它之后仍然后台扫描建索引
+    const int loaded = m_plugins->loadFromDirectory(
+        m_settings.pluginDir(), &error,
+        [this](const QString &id) { return m_settings.pluginEnabled(id); });
     if (loaded > 0) {
         qInfo("Listery: 已加载 %d 个插件", loaded);
     } else if (!error.isEmpty()) {
@@ -221,7 +224,11 @@ void AppController::setupPlugins()
     for (const PluginInfo &info : m_plugins->plugins()) {
         m_plugins->setEnabled(info.id, m_settings.pluginEnabled(info.id));
         const QString custom = m_settings.pluginHotkey(info.id);
-        m_plugins->setHotkey(info.id, custom.isEmpty() ? info.defaultHotkey : custom);
+        const QString effective =
+            AppSettings::isHotkeyDisabled(custom)
+                ? QString()
+                : (custom.isEmpty() ? info.defaultHotkey : custom);
+        m_plugins->setHotkey(info.id, effective);
     }
     refreshPluginHotkeys();
 }
@@ -233,7 +240,7 @@ void AppController::refreshPluginHotkeys()
 
     QVector<HotkeySpec> specs;
     for (const PluginInfo &info : m_plugins->plugins()) {
-        if (!info.enabled || info.hotkey.isEmpty() || !info.loaded)
+        if (!info.enabled || info.hotkey.isEmpty() || !info.initialized)
             continue;
         HotkeySpec spec = parseHotkey(info.hotkey);
         if (!spec.valid()) {
@@ -256,13 +263,16 @@ void AppController::onHotkeyTriggered(const QString &hotkey)
         return;
 
     const PluginInfo info = m_plugins->info(pluginId);
-    if (!info.loaded)
+    if (!info.initialized)
         return;
     startPluginSession(pluginId, info.name);
 }
 
 void AppController::startPluginSession(const QString &pluginId, const QString &displayName)
 {
+    if (m_plugins && !m_plugins->info(pluginId).initialized)
+        return;
+
     QString placeholder;
     if (pluginId == QStringLiteral("com.listery.filesearch"))
         placeholder = tr("搜索本机文件：文件名、ext:pdf、path:项目；!help 查看命令");
@@ -360,7 +370,7 @@ void AppController::rebuildPluginMenu()
 
     m_pluginMenu->clear();
     for (const PluginInfo &info : m_plugins->plugins()) {
-        if (!info.loaded || !info.enabled)
+        if (!info.initialized || !info.enabled)
             continue;
         const QString label = info.hotkey.isEmpty()
                                   ? info.name
@@ -958,9 +968,12 @@ void AppController::applyAutoStart()
 
     QString error;
     if (m_settings.autoStart()) {
-        // 每次启动都重写一次，保证 exe 被移动后注册表里的路径仍然正确
-        if (!Autostart::setEnabled(true, &error))
-            qWarning("Listery: 写入开机自启动失败：%s", qPrintable(error));
+        // 只在没登记、或登记的 exe 已不存在时修正。无脑重写会让构建目录里的一次试跑
+        // 抢走自启项：那份构建旁边没有 Qt 运行库，下次开机就是启动即崩。
+        if (!Autostart::pointsToExistingExecutable()) {
+            if (!Autostart::setEnabled(true, &error))
+                qWarning("Listery: 写入开机自启动失败：%s", qPrintable(error));
+        }
     } else if (Autostart::isEnabled()) {
         if (!Autostart::setEnabled(false, &error))
             qWarning("Listery: 取消开机自启动失败：%s", qPrintable(error));

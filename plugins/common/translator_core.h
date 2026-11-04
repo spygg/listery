@@ -45,6 +45,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <algorithm>
+#include <chrono>
+#include <memory>
 #include <mutex>
 #include <set>
 #include <string>
@@ -77,6 +79,11 @@ struct Request
     int maxResults = 8;
     /** 发起请求时选定的解析格式，回包时按它解析（配置可能中途被改）。 */
     std::string format;
+    /**
+     * 回调是否已经接管并释放了本对象。1.4.1 及更早的宿主在 httpGet 失败时
+     * 会违约地同步回调，这里靠标记避免同一对象被释放两次。
+     */
+    std::shared_ptr<bool> consumed;
 };
 
 const int kMaxEntries = 8;
@@ -686,10 +693,27 @@ void parseConfig(const std::string &raw, Config &config)
 
 Config loadConfig()
 {
+    // 一秒缓存：连续输入时不必每个键都读盘，改完配置仍能很快生效
+    static std::mutex cacheMutex;
+    static Config cached;
+    static std::chrono::steady_clock::time_point cachedAt;
+    const auto now = std::chrono::steady_clock::now();
+    {
+        std::lock_guard<std::mutex> lock(cacheMutex);
+        if (cachedAt.time_since_epoch().count() != 0
+            && now - cachedAt < std::chrono::seconds(1))
+            return cached;
+    }
+
     Config config;
     std::string raw;
     if (readConfigFile(raw))
         parseConfig(raw, config);
+    {
+        std::lock_guard<std::mutex> lock(cacheMutex);
+        cached = config;
+        cachedAt = now;
+    }
     return config;
 }
 
@@ -813,7 +837,10 @@ void LISTERY_PLUGIN_CALL onHttpResponse(void *userData,
     const unsigned long long id = request->id;
     const int limit = request->maxResults > 0 ? request->maxResults : kMaxEntries;
     const std::string format = request->format;
+    const std::shared_ptr<bool> consumed = request->consumed;
     delete request;
+    if (consumed)
+        *consumed = true;
 
     // 已取消：宿主早已收到 finish，这里直接丢弃
     {
@@ -917,6 +944,7 @@ static int LISTERY_PLUGIN_CALL pluginBeginQuery(unsigned long long requestId,
     Request *request = new Request();
     request->id = requestId;
     request->maxResults = maxResults > 0 ? maxResults : kMaxEntries;
+    request->consumed = std::make_shared<bool>(false);
 
     // 每次查询都重新读配置：用户改完 ini 保存即可生效，无需重启。
     const Config config = loadConfig();
@@ -928,7 +956,9 @@ static int LISTERY_PLUGIN_CALL pluginBeginQuery(unsigned long long requestId,
                                    "/1.0\r\nAccept: application/json",
                                    onHttpResponse, request, kTimeoutMs);
     if (rc != 0) {
-        delete request;
+        // 失败的宿主不应回调；只有确认回调没接管时才由这里释放。
+        if (!*request->consumed)
+            delete request;
         finishWithError(requestId, "无法发起网络请求");
         return 0;
     }

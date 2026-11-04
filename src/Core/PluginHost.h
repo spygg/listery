@@ -12,6 +12,7 @@
 #include <QStringList>
 #include <QVector>
 
+#include <functional>
 #include <memory>
 #include <vector>
 
@@ -44,7 +45,10 @@ struct PluginInfo
     /** 当前生效的热键（用户改过就用用户的，否则用插件默认值）。 */
     QString hotkey;
     bool enabled = true;
+    /** 动态库与入口可用（不代表已经 init 运行）。 */
     bool loaded = false;
+    /** init() 已成功，线程与查询接口可用；禁用后为 false。 */
+    bool initialized = false;
     QString error;
     bool hasConfigUi = false;
 };
@@ -60,8 +64,12 @@ public:
     explicit PluginHost(QObject *parent = nullptr);
     ~PluginHost() override;
 
-    /** 扫描目录加载插件（Windows: *.dll，Linux: *.so，macOS: *.dylib）。返回成功加载数量。 */
-    int loadFromDirectory(const QString &directory, QString *errorMessage = nullptr);
+    /**
+     * 扫描目录加载插件（Windows: *.dll，Linux: *.so，macOS: *.dylib）。返回成功初始化数量。
+     * enabledFilter 为空的插件不会 init：文件搜索这类插件不会在禁用时后台扫描。
+     */
+    int loadFromDirectory(const QString &directory, QString *errorMessage = nullptr,
+                          const std::function<bool(const QString &)> &enabledFilter = {});
 
     QVector<PluginInfo> plugins() const;
     PluginInfo info(const QString &id) const;
@@ -100,6 +108,7 @@ private slots:
 
 private:
     struct LoadedPlugin;
+    bool initializePlugin(LoadedPlugin &plugin);
 
     /** 宿主能力表必须是常驻对象：插件在 init() 里保存的是这个指针。 */
     ListeryHostV1 m_hostTable;

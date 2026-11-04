@@ -1,6 +1,7 @@
 #include "Core/HttpClient.h"
 
 #include <QThread>
+#include <QTimer>
 
 #ifdef Q_OS_WIN
 #  ifndef NOMINMAX
@@ -95,8 +96,11 @@ void winHttpGet(const QUrl &url, const QString &userAgent, const QStringList &he
         return;
     }
 
+    // 四个阶段各自计时：沿用同一个值会让总耗时最坏变成 4 倍（离线时尤其明显）。
     const int timeout = qBound(1000, timeoutMs, 60000);
-    WinHttpSetTimeouts(session, timeout, timeout, timeout, timeout);
+    const int resolveTimeout = qMin(timeout, 2500);
+    const int connectTimeout = qMin(timeout, 3000);
+    WinHttpSetTimeouts(session, resolveTimeout, connectTimeout, timeout, timeout);
 
     HINTERNET connection = WinHttpConnect(session, host.c_str(),
                                           static_cast<INTERNET_PORT>(url.port(secure ? 443 : 80)), 0);
@@ -274,10 +278,23 @@ quint64 HttpClient::get(const QUrl &url, const QString &userAgent,
                         const QStringList &headers, int timeoutMs)
 {
     const quint64 id = m_nextId++;
-    auto *worker = new HttpWorker(id, url, userAgent, headers, timeoutMs);
+    const int timeout = qBound(1000, timeoutMs, 60000);
+    m_pending.insert(id);
+    auto *worker = new HttpWorker(id, url, userAgent, headers, timeout);
     // 队列连接：done 在工作线程发射，finished 回到本对象所在线程
-    connect(worker, &HttpWorker::done, this, &HttpClient::finished);
+    connect(worker, &HttpWorker::done, this,
+            [this](quint64 requestId, int status, const QByteArray &body, const QString &error) {
+                if (!m_pending.remove(requestId))
+                    return; // 总时限已上报过，迟到的工作线程结果丢弃
+                emit finished(requestId, status, body, error);
+            });
     connect(worker, &QThread::finished, worker, &QObject::deleteLater);
+    // WinHTTP 的解析/连接/发送/接收各阶段单独计时，叠加后可能远超调用方给的
+    // timeoutMs；离线时插件只能一直等。这里兜底一个总时限，保证按时上报。
+    QTimer::singleShot(timeout, this, [this, id]() {
+        if (m_pending.remove(id))
+            emit finished(id, 0, QByteArray(), QStringLiteral("网络请求超时"));
+    });
     worker->start();
     return id;
 }

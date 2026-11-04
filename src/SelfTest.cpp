@@ -793,6 +793,10 @@ int SelfTest::run()
                   && normalizeHotkey(QStringLiteral("Ctrl+")).isEmpty()
                   && normalizeHotkey(QStringLiteral("Hello")).isEmpty(),
               QStringLiteral("无法识别的热键组合被拒绝"));
+        check(AppSettings::isHotkeyDisabled(QStringLiteral("none"))
+                  && !AppSettings::isHotkeyDisabled(QString())
+                  && !AppSettings::isHotkeyDisabled(QStringLiteral("Alt+E")),
+              QStringLiteral("热键设置区分“未设置”与“显式不占用”"));
 
         PluginHost host;
         const QString pluginDir = QCoreApplication::applicationDirPath()
@@ -862,10 +866,25 @@ int SelfTest::run()
         host.setEnabled(QStringLiteral("com.listery.translator"), false);
         check(host.pluginForHotkey(QStringLiteral("Alt+E")).isEmpty(),
               QStringLiteral("禁用后热键不再命中该插件"));
+        check(!host.info(QStringLiteral("com.listery.translator")).initialized,
+              QStringLiteral("禁用插件会真正 shutdown（不再占用后台线程）"));
         check(host.pluginForHotkey(QStringLiteral("Alt+F"))
                   == QStringLiteral("com.listery.french"),
               QStringLiteral("禁用一个插件不影响其它插件热键"));
         host.setEnabled(QStringLiteral("com.listery.translator"), true);
+        check(host.info(QStringLiteral("com.listery.translator")).initialized,
+              QStringLiteral("重新启用插件会惰性 init 成功"));
+
+        // httpGet 失败时必须不回调：旧实现同步回调会让插件二次释放 userData
+        bool badUrlCallback = false;
+        const int badUrlRc = host.startHttpGet(
+            QStringLiteral("not a url"), QString(),
+            [](void *userData, int, const char *, unsigned int, const char *) {
+                *static_cast<bool *>(userData) = true;
+            },
+            &badUrlCallback, 1000);
+        check(badUrlRc != 0 && !badUrlCallback,
+              QStringLiteral("httpGet 无效地址返回失败且不回调"));
 
         // 真实网络查询：拿不到结果不算失败（离线/CI 无外网时只做记录）。
         // 回调必须绑定本次调用的守卫对象：若挂在 host 上，下一次查询会把结果写进

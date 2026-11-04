@@ -430,7 +430,7 @@ bool buildDirPathInto(const Index &index, uint32_t dirId, std::string &out,
 
 bool matchesFilters(const Index &index, const FileEntry &file, const char *name, size_t nameLen,
                     const ParsedQuery &query, bool allowPathForPlain, std::string &dirBuffer,
-                    std::vector<uint32_t> &ancestorBuffer)
+                    std::vector<uint32_t> &ancestorBuffer, uint32_t &dirCacheId)
 {
     if (!fileExtensionMatches(name, nameLen, query.exts))
         return false;
@@ -440,7 +440,15 @@ bool matchesFilters(const Index &index, const FileEntry &file, const char *name,
     const char *dir = "";
     size_t dirLen = 0;
     if (needDir) {
-        buildDirPathInto(index, file.dirId, dirBuffer, ancestorBuffer);
+        // 同一目录的候选通常连续出现，缓存上一次拼好的路径
+        if (dirCacheId != file.dirId) {
+            if (buildDirPathInto(index, file.dirId, dirBuffer, ancestorBuffer))
+                dirCacheId = file.dirId;
+            else {
+                dirBuffer.clear();
+                dirCacheId = kInvalidIndex;
+            }
+        }
         dir = dirBuffer.data();
         dirLen = dirBuffer.size();
     }
@@ -884,6 +892,16 @@ ParsedQuery parseQuery(const std::string &utf8Query)
     return query;
 }
 
+size_t utf8CodePointCount(const std::string &text)
+{
+    size_t count = 0;
+    for (unsigned char ch : text) {
+        if ((ch & 0xC0) != 0x80)
+            ++count;
+    }
+    return count;
+}
+
 std::vector<uint32_t> searchIndex(const Index &index, const ParsedQuery &query,
                                   int maxResults, bool matchPath)
 {
@@ -906,7 +924,9 @@ std::vector<uint32_t> searchIndex(const Index &index, const ParsedQuery &query,
     auto full = [&results, limit]() { return results.size() >= limit; };
 
     const uint32_t count = static_cast<uint32_t>(index.files.size());
-    const bool singleChar = query.plain.size() == 1 && query.plain.front().size() == 1;
+    // 按码点而不是 UTF-8 字节数判断：一个汉字是 3 字节，否则首键就会扫全库
+    const bool singleChar =
+        query.plain.size() == 1 && utf8CodePointCount(query.plain.front()) == 1;
     const Signature256 pathMask = querySignature256(query.path);
     std::vector<uint64_t> plainMasks;
     plainMasks.reserve(query.plain.size());
@@ -936,22 +956,29 @@ std::vector<uint32_t> searchIndex(const Index &index, const ParsedQuery &query,
 
     // 只有 path: 条件时根本不需要解码文件名。
     if (query.plain.empty() && query.exts.empty() && !query.path.empty()) {
+        // 先按目录算一次完整路径并对命中结果做位图，避免对每个文件重复拼接父路径
+        std::vector<uint8_t> dirHit(index.dirs.size(), 0);
         std::string dirPath;
         std::vector<uint32_t> ancestors;
-        for (uint32_t i = 0; i < count; ++i) {
-            const FileEntry &file = index.files[i];
-            if (!pathMask.empty() && !index.dirSigs[file.dirId].contains(pathMask))
+        for (uint32_t d = 0; d < index.dirs.size(); ++d) {
+            if (!pathMask.empty() && !index.dirSigs[d].contains(pathMask))
                 continue;
-            buildDirPathInto(index, file.dirId, dirPath, ancestors);
-            bool matched = true;
+            if (!buildDirPathInto(index, d, dirPath, ancestors))
+                continue;
+            uint8_t matched = 1;
             for (const std::string &token : query.path) {
                 if (!containsNoCase(dirPath.data(), dirPath.size(), token.data(), token.size())) {
-                    matched = false;
+                    matched = 0;
                     break;
                 }
             }
-            if (matched)
-                add(i);
+            dirHit[d] = matched;
+        }
+        for (uint32_t i = 0; i < count; ++i) {
+            const FileEntry &file = index.files[i];
+            if (file.dirId >= dirHit.size() || !dirHit[file.dirId])
+                continue;
+            add(i);
             if (full())
                 return results;
         }
@@ -960,6 +987,7 @@ std::vector<uint32_t> searchIndex(const Index &index, const ParsedQuery &query,
 
     std::string dirBuffer;
     std::vector<uint32_t> ancestorBuffer;
+    uint32_t dirCacheId = kInvalidIndex;
     NameCursor cursor(index);
 
     // 1. 完整文件名命中（用户输入带扩展名的全名时最快）
@@ -974,7 +1002,7 @@ std::vector<uint32_t> searchIndex(const Index &index, const ParsedQuery &query,
             const FileEntry &file = index.files[pos];
             if (pathMask.empty() || index.dirSigs[file.dirId].contains(pathMask)) {
                 if (matchesFilters(index, file, name.data(), name.size(), query, false,
-                                   dirBuffer, ancestorBuffer))
+                                   dirBuffer, ancestorBuffer, dirCacheId))
                     add(pos);
                 if (full())
                     return results;
@@ -1001,7 +1029,7 @@ std::vector<uint32_t> searchIndex(const Index &index, const ParsedQuery &query,
             const FileEntry &file = index.files[pos];
             if (pathMask.empty() || index.dirSigs[file.dirId].contains(pathMask)) {
                 if (matchesFilters(index, file, name.data(), name.size(), query, false,
-                                   dirBuffer, ancestorBuffer))
+                                   dirBuffer, ancestorBuffer, dirCacheId))
                     add(pos);
                 if (full())
                     return results;
@@ -1051,6 +1079,9 @@ std::vector<uint32_t> searchIndex(const Index &index, const ParsedQuery &query,
                     continue;
                 }
                 if (spansSeparator) {
+                    if (!plainDirMasks[k].empty()
+                        && !index.dirSigs[d].contains(plainDirMasks[k]))
+                        continue;
                     if (!buildDirPathInto(index, d, dirPath, dirStack))
                         continue;
                     if (containsNoCase(dirPath.data(), dirPath.size(), token.data(), token.size()))
@@ -1107,7 +1138,7 @@ std::vector<uint32_t> searchIndex(const Index &index, const ParsedQuery &query,
 
             if (exactPathNeeded) {
                 if (matchesFilters(index, file, nameBuffer.data(), nameBuffer.size(), query,
-                                   allowPathTokens, dirBuffer, ancestorBuffer)) {
+                                   allowPathTokens, dirBuffer, ancestorBuffer, dirCacheId)) {
                     add(i);
                     if (full())
                         return results;

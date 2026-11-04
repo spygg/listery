@@ -108,6 +108,8 @@ std::mutex g_queueMutex;
 std::condition_variable g_queueCv;
 std::deque<QueryRequest> g_queue;
 std::set<unsigned long long> g_cancelled;
+/** 正在处理中的请求（受 g_queueMutex 保护），用于判断取消是否还有必要登记。 */
+unsigned long long g_currentRequest = 0;
 bool g_queueStop = false;
 
 // ---------------------------------------------------------------------------
@@ -117,13 +119,6 @@ bool g_queueStop = false;
 uint64_t nowUnixSeconds()
 {
     return static_cast<uint64_t>(std::time(nullptr));
-}
-
-/** 索引卸载后把工作集还给系统，让任务管理器里的内存尽快降下来。 */
-void trimWorkingSet()
-{
-    SetProcessWorkingSetSize(GetCurrentProcess(), static_cast<SIZE_T>(-1),
-                             static_cast<SIZE_T>(-1));
 }
 
 std::wstring trimWide(const std::wstring &text)
@@ -454,6 +449,61 @@ bool parseBool(const std::string &text, bool fallback)
     return lowered != "0" && lowered != "false" && lowered != "no" && lowered != "off";
 }
 
+/** 替换 ini 中某个键的值（保留其余内容和注释）；键不存在时插到 BOM 之后。 */
+void replaceIniValue(std::string &text, const std::string &key, const std::string &value)
+{
+    size_t lineStart = 0;
+    while (lineStart < text.size()) {
+        const size_t lineEnd = text.find('\n', lineStart);
+        const size_t contentEnd = lineEnd == std::string::npos ? text.size() : lineEnd;
+        size_t pos = lineStart;
+        while (pos < contentEnd && (text[pos] == ' ' || text[pos] == '\t'))
+            ++pos;
+        if (pos < contentEnd && text[pos] != ';' && text[pos] != '#') {
+            size_t eq = pos;
+            while (eq < contentEnd && text[eq] != '=')
+                ++eq;
+            if (eq < contentEnd) {
+                size_t keyEnd = eq;
+                while (keyEnd > pos && (text[keyEnd - 1] == ' ' || text[keyEnd - 1] == '\t'))
+                    --keyEnd;
+                if (text.compare(pos, keyEnd - pos, key) == 0) {
+                    size_t valueEnd = contentEnd;
+                    while (valueEnd > eq + 1
+                           && (text[valueEnd - 1] == '\r' || text[valueEnd - 1] == ' '
+                               || text[valueEnd - 1] == '\t'))
+                        --valueEnd;
+                    size_t valueBegin = eq + 1;
+                    while (valueBegin < valueEnd
+                           && (text[valueBegin] == ' ' || text[valueBegin] == '\t'))
+                        ++valueBegin;
+                    text.replace(valueBegin, valueEnd - valueBegin, value);
+                    return;
+                }
+            }
+        }
+        if (lineEnd == std::string::npos)
+            break;
+        lineStart = lineEnd + 1;
+    }
+
+    const size_t bom = text.compare(0, 3, "\xEF\xBB\xBF") == 0 ? 3 : 0;
+    text.insert(bom, key + "=" + value + "\r\n");
+}
+
+/** 旧配置迁移完成后回写，否则用户之后显式写的 0 会再次被迁移逻辑覆盖。 */
+void persistConfigMigration(int idleUnloadMinutes)
+{
+    std::string raw;
+    if (!readFileBytes(g_configPath, raw))
+        return;
+    replaceIniValue(raw, "config_version", "2");
+    if (idleUnloadMinutes >= 0)
+        replaceIniValue(raw, "idle_unload_minutes", std::to_string(idleUnloadMinutes));
+    if (!writeFileBytes(g_configPath, raw))
+        hostLog(LISTERY_LOG_WARNING, "配置迁移回写失败，下次启动会重复迁移");
+}
+
 bool loadConfig()
 {
     AppConfig config;
@@ -465,6 +515,7 @@ bool loadConfig()
     config.idleUnloadMinutes = kDefaultIdleUnloadMinutes;
     config.matchPath = true;
     int configVersion = 1;
+    bool migrateConfig = false;
 
     std::string raw;
     if (readFileBytes(g_configPath, raw)) {
@@ -540,11 +591,18 @@ bool loadConfig()
 
         // 1.4.x 生成的默认文件把 idle_unload_minutes 写成 0（常驻）。没有版本标记时
         // 视为旧默认值，迁移到新的 10 分钟；带上 config_version=2 后 0 才是用户选择。
-        if (configVersion < 2 && config.idleUnloadMinutes == 0)
-            config.idleUnloadMinutes = kDefaultIdleUnloadMinutes;
+        if (configVersion < 2) {
+            migrateConfig = true;
+            if (config.idleUnloadMinutes == 0)
+                config.idleUnloadMinutes = kDefaultIdleUnloadMinutes;
+        }
     } else {
         hostLog(LISTERY_LOG_WARNING, "读取配置文件失败，使用默认设置");
     }
+
+    // 迁移必须落盘，否则用户升级后显式改回 0 仍会被当成旧默认值。
+    if (migrateConfig)
+        persistConfigMigration(config.idleUnloadMinutes);
 
     std::sort(config.scan.excludeNames.begin(), config.scan.excludeNames.end());
     config.scan.excludeNames.erase(
@@ -676,6 +734,7 @@ void scanLoop()
         const bool forced = g_forceScan.exchange(false);
         bool needScan = forced;
         bool unloaded = false;
+        bool rescan = false;
         if (!needScan) {
             std::lock_guard<std::mutex> lock(g_stateMutex);
             if (!g_index) {
@@ -693,18 +752,25 @@ void scanLoop()
                 } else {
                     const int minutes = g_rescanMinutes.load();
                     if (minutes > 0
-                        && nowUnixSeconds() >= g_builtAt + static_cast<uint64_t>(minutes) * 60)
+                        && nowUnixSeconds() >= g_builtAt + static_cast<uint64_t>(minutes) * 60) {
                         needScan = true;
+                        rescan = true;
+                    }
                 }
             }
         }
         if (unloaded) {
-            trimWorkingSet();
+            // 不裁剪整个进程工作集：那会把主程序页面也赶出去，下次操作反而卡顿。
             hostLog(LISTERY_LOG_INFO, "索引已闲置卸载，下次搜索时从快照重新加载");
         }
 
         const uint64_t now = nowUnixSeconds();
-        if (needScan && (forced || lastAttempt == 0 || now - lastAttempt >= 60)) {
+        const bool recentlyActive =
+            now >= g_lastQueryAt.load() && now - g_lastQueryAt.load() < 60;
+        if (needScan && !forced && rescan && recentlyActive) {
+            // 用户正在使用搜索：周期重扫让路，等空闲后再扫。
+            // 首次建库不受影响，否则启动后一分钟内搜不到任何文件。
+        } else if (needScan && (forced || lastAttempt == 0 || now - lastAttempt >= 60)) {
             lastAttempt = now;
             loadConfig();
             runScan();
@@ -913,8 +979,15 @@ void searchLoop()
                 return;
             request = std::move(g_queue.front());
             g_queue.pop_front();
+            g_currentRequest = request.id;
         }
         processQuery(request);
+        {
+            // 处理完的请求不再需要取消标记：否则取消晚到时 set 会无限增长
+            std::lock_guard<std::mutex> lock(g_queueMutex);
+            g_cancelled.erase(request.id);
+            g_currentRequest = 0;
+        }
     }
 }
 
@@ -1018,12 +1091,31 @@ int LISTERY_PLUGIN_CALL pluginBeginQuery(unsigned long long requestId, const cha
 void LISTERY_PLUGIN_CALL pluginCancelQuery(unsigned long long requestId)
 {
     std::lock_guard<std::mutex> lock(g_queueMutex);
-    g_cancelled.insert(requestId);
+    // 只登记还在队列或正在处理的请求；已完成的请求永远等不到 takeCancelled
+    if (g_currentRequest == requestId) {
+        g_cancelled.insert(requestId);
+        return;
+    }
+    for (const QueryRequest &queued : g_queue) {
+        if (queued.id == requestId) {
+            g_cancelled.insert(requestId);
+            return;
+        }
+    }
 }
 
 int LISTERY_PLUGIN_CALL pluginConfigure(void *nativeParentWindow)
 {
     (void)nativeParentWindow;
+    if (g_configPath.empty()) {
+        // 插件被禁用时没有 init：打开设置仍要能找到（并在需要时生成）配置文件
+        g_dataDir = dataDirectory();
+        g_indexPath = g_dataDir + L"\\index.bin";
+        g_configPath = g_dataDir + L"\\filesearch.ini";
+        SHCreateDirectoryExW(nullptr, g_dataDir.c_str(), nullptr);
+        writeDefaultConfigIfMissing();
+        loadConfig();
+    }
     std::wstring params = L"\"";
     params += g_configPath;
     params += L"\"";

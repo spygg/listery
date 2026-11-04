@@ -349,6 +349,11 @@ void AppSettings::setPluginHotkey(const QString &pluginId, const QString &hotkey
     m_settings->sync();
 }
 
+bool AppSettings::isHotkeyDisabled(const QString &value)
+{
+    return value.compare(QLatin1String("none"), Qt::CaseInsensitive) == 0;
+}
+
 int AppSettings::schemaVersion() const
 {
     return m_settings->value(QString::fromLatin1(kKeySchemaVersion), 1).toInt();

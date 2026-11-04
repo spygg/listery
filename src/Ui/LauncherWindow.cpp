@@ -330,7 +330,11 @@ void LauncherWindow::setQueryForPreview(const QString &query)
 
 void LauncherWindow::scheduleSearch()
 {
-    m_debounce->start();
+    // 文件搜索走本地索引，保持灵敏；需要联网的插件给输入一点节奏，
+    // 否则快速输入会为每个字符各开一个网络线程。
+    const bool localPlugin =
+        m_mode == LauncherMode::Plugin && m_pluginId == QStringLiteral("com.listery.filesearch");
+    m_debounce->start(localPlugin ? 35 : (m_mode == LauncherMode::Plugin ? 140 : 35));
 }
 
 void LauncherWindow::performSearch()

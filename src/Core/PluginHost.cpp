@@ -139,7 +139,8 @@ PluginHost::~PluginHost()
     m_plugins.clear();
 }
 
-int PluginHost::loadFromDirectory(const QString &directory, QString *errorMessage)
+int PluginHost::loadFromDirectory(const QString &directory, QString *errorMessage,
+                                  const std::function<bool(const QString &)> &enabledFilter)
 {
     QDir dir(directory);
     if (!dir.exists()) {
@@ -219,21 +220,40 @@ int PluginHost::loadFromDirectory(const QString &directory, QString *errorMessag
         entry->info.defaultHotkey = QString::fromUtf8(api->defaultHotkey ? api->defaultHotkey : "");
         entry->info.hotkey = entry->info.defaultHotkey;
         entry->info.hasConfigUi = api->configure != nullptr;
-
-        const int rc = api->init(&m_hostTable);
-        if (rc != 0) {
-            entry->info.error = tr("插件初始化失败（错误码 %1）").arg(rc);
-            m_plugins.push_back(std::move(entry));
-            continue;
-        }
-
-        entry->initialized = true;
         entry->info.loaded = true;
-        ++loaded;
+        entry->info.enabled = enabledFilter ? enabledFilter(entry->info.id) : true;
+
+        // 禁用插件不 init：否则文件搜索这类插件仍会在后台扫描、建索引。
+        if (!entry->info.enabled || initializePlugin(*entry)) {
+            if (entry->info.enabled)
+                ++loaded;
+        } else {
+            entry->info.enabled = false;
+            entry->info.loaded = false;
+        }
         m_plugins.push_back(std::move(entry));
     }
 
     return loaded;
+}
+
+bool PluginHost::initializePlugin(LoadedPlugin &plugin)
+{
+    if (plugin.initialized)
+        return true;
+    if (plugin.api == nullptr || plugin.api->init == nullptr)
+        return false;
+
+    const int rc = plugin.api->init(&m_hostTable);
+    if (rc != 0) {
+        plugin.info.error = tr("插件初始化失败（错误码 %1）").arg(rc);
+        plugin.info.initialized = false;
+        return false;
+    }
+    plugin.initialized = true;
+    plugin.info.initialized = true;
+    plugin.info.error.clear();
+    return true;
 }
 
 QVector<PluginInfo> PluginHost::plugins() const
@@ -277,8 +297,26 @@ QString PluginHost::pluginForHotkey(const QString &hotkey) const
 void PluginHost::setEnabled(const QString &id, bool enabled)
 {
     for (auto &plugin : m_plugins) {
-        if (plugin->info.id == id)
-            plugin->info.enabled = enabled;
+        if (plugin->info.id != id)
+            continue;
+
+        if (!enabled) {
+            // 真正停掉后台线程并释放索引，而不是只藏起入口
+            if (plugin->initialized && plugin->api && plugin->api->shutdown) {
+                plugin->api->shutdown();
+                plugin->initialized = false;
+                plugin->info.initialized = false;
+            }
+            plugin->info.enabled = false;
+            return;
+        }
+
+        if (!plugin->info.loaded)
+            return; // 加载/初始化失败过，不能启用
+        if (!plugin->initialized && !initializePlugin(*plugin))
+            return;
+        plugin->info.enabled = true;
+        return;
     }
 }
 
@@ -304,7 +342,7 @@ quint64 PluginHost::beginQuery(const QString &id, const QString &query, int maxR
 {
     LoadedPlugin *target = nullptr;
     for (auto &plugin : m_plugins) {
-        if (plugin->info.id == id && plugin->info.loaded) {
+        if (plugin->info.id == id && plugin->info.loaded && plugin->info.initialized) {
             target = plugin.get();
             break;
         }
@@ -450,8 +488,7 @@ int PluginHost::startHttpGet(const QString &url,
 {
     const QUrl target = QUrl::fromUserInput(url);
     if (!target.isValid() || m_http == nullptr) {
-        if (callback)
-            callback(userData, 0, nullptr, 0, "请求地址无效或宿主没有可用的网络组件");
+        // 契约：返回非 0 表示无法发起，此时绝不回调（否则插件可能已释放 userData）
         return 1;
     }
 
