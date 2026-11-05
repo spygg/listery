@@ -60,7 +60,7 @@ A Listary-style quick launcher written in Qt / C++: index every executable → d
 | `Ctrl + Enter` | Reveal it in the file manager |
 | `Shift + Enter` | Run as administrator |
 | `Esc` | Hide the launcher |
-| Right-click a result | Run as admin / open location / copy path |
+| Right-click a result | Run as admin / open location / copy path; file-search results also offer “Copy file” and “Open containing folder” |
 
 ## Plugins
 

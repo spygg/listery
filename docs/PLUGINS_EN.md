@@ -85,10 +85,13 @@ Rules (please follow them):
 | Value | Behaviour |
 | --- | --- |
 | `copy:text` | Copy to clipboard and show a tray notification |
+| `copyfile:full path` | Copy the file itself to the clipboard (paste directly in Explorer) |
 | `url:https://...` | Open in the default browser |
 | `run:full path` | Open the path with the system default handler |
 | `open:full path` | Reveal the file in the file manager |
 | empty / NULL | Just close the panel |
+
+> For rows with `run:` / `open:`, the right-click menu also offers “Open containing folder”, “Copy” and “Copy path to clipboard”.
 
 `badge` is the short label drawn at the left of the row (the translator uses 译).
 

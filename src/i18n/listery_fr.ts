@@ -33,6 +33,10 @@ Chemin : %2</translation>
         <translation>Copié : %1</translation>
     </message>
     <message>
+        <source>已复制文件：%1</source>
+        <translation>Fichier copié : %1</translation>
+    </message>
+    <message>
         <source>无法打开：%1</source>
         <translation>Impossible d'ouvrir : %1</translation>
     </message>
@@ -295,6 +299,14 @@ Vous pouvez ouvrir la recherche depuis le menu de la zone de notification.</tran
     <message>
         <source>打开路径</source>
         <translation>Ouvrir le chemin</translation>
+    </message>
+    <message>
+        <source>打开所在目录</source>
+        <translation>Ouvrir le dossier contenant</translation>
+    </message>
+    <message>
+        <source>复制</source>
+        <translation>Copier</translation>
     </message>
     <message>
         <source>复制路径到剪贴板</source>

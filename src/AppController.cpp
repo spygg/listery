@@ -28,6 +28,7 @@
 #include <QMenu>
 #include <QMetaObject>
 #include <QMessageBox>
+#include <QMimeData>
 #include <QPainter>
 #include <QPainterPath>
 #include <QSystemTrayIcon>
@@ -291,6 +292,19 @@ void AppController::onPluginAction(const QString &action)
     if (action.isEmpty())
         return;
 
+    // copyfile: 把文件本身放进剪贴板（Windows 上是 CF_HDROP，可直接在资源管理器粘贴）
+    if (action.startsWith(QStringLiteral("copyfile:"))) {
+        const QString path = action.mid(9);
+        QMimeData *data = new QMimeData();
+        data->setUrls(QList<QUrl>() << QUrl::fromLocalFile(path));
+        data->setText(path);
+        QGuiApplication::clipboard()->setMimeData(data);
+        if (m_tray)
+            m_tray->showMessage(QStringLiteral("Listery"),
+                                tr("已复制文件：%1").arg(path),
+                                QSystemTrayIcon::Information, 2500);
+        return;
+    }
     if (action.startsWith(QStringLiteral("copy:"))) {
         const QString text = action.mid(5);
         QGuiApplication::clipboard()->setText(text);

@@ -35,6 +35,16 @@ const int kShadowMarginBottom = 26;
 const int kFooterHeight = 36;
 /** 卡片自身的上下边框（QFrame 1px × 2）：布局的最小高度会把它算进去，手算时也要计入。 */
 const int kCardBorder = 2;
+
+/** 插件行 action 里的文件路径：run:（打开）/ open:（定位）才有路径。 */
+QString pluginActionPath(const QString &action)
+{
+    if (action.startsWith(QStringLiteral("run:")))
+        return action.mid(4);
+    if (action.startsWith(QStringLiteral("open:")))
+        return action.mid(5);
+    return QString();
+}
 } // namespace
 
 LauncherWindow::LauncherWindow(SearchService *service, int maxResults, QWidget *parent)
@@ -492,18 +502,41 @@ void LauncherWindow::showContextMenu(const QPoint &position)
     const SearchResult result = m_model->resultAt(index.row());
 
     if (result.isPluginResult()) {
-        if (result.pluginAction.isEmpty())
-            return;
+        const QString path = pluginActionPath(result.pluginAction);
         QMenu *menu = new QMenu(this);
-        QAction *run = menu->addAction(tr("执行"));
+        QAction *run = nullptr;
+        QAction *reveal = nullptr;
+        QAction *copyFile = nullptr;
+        QAction *copyPath = nullptr;
+        if (!result.pluginAction.isEmpty())
+            run = menu->addAction(tr("执行"));
+        if (!path.isEmpty()) {
+            menu->addSeparator();
+            reveal = menu->addAction(tr("打开所在目录"));
+            copyFile = menu->addAction(tr("复制"));
+            copyPath = menu->addAction(tr("复制路径到剪贴板"));
+        }
+        if (menu->actions().isEmpty()) {
+            delete menu;
+            return;
+        }
+
         m_contextMenuOpen = true;
         QAction *chosen = menu->exec(m_list->viewport()->mapToGlobal(position));
         m_contextMenuOpen = false;
         delete menu;
-        if (chosen == run) {
+
+        if (chosen == nullptr)
+            return;
+        if (chosen == run)
             emit pluginActionRequested(result.pluginAction);
-            dismiss();
-        }
+        else if (chosen == reveal)
+            emit pluginActionRequested(QStringLiteral("open:") + path);
+        else if (chosen == copyFile)
+            emit pluginActionRequested(QStringLiteral("copyfile:") + path);
+        else if (chosen == copyPath)
+            emit pluginActionRequested(QStringLiteral("copy:") + path);
+        dismiss();
         return;
     }
 

@@ -33,6 +33,10 @@ Path: %2</translation>
         <translation>Copied: %1</translation>
     </message>
     <message>
+        <source>已复制文件：%1</source>
+        <translation>Copied file: %1</translation>
+    </message>
+    <message>
         <source>无法打开：%1</source>
         <translation>Cannot open: %1</translation>
     </message>
@@ -295,6 +299,14 @@ You can open the search box from the tray menu.</translation>
     <message>
         <source>打开路径</source>
         <translation>Open path</translation>
+    </message>
+    <message>
+        <source>打开所在目录</source>
+        <translation>Open containing folder</translation>
+    </message>
+    <message>
+        <source>复制</source>
+        <translation>Copy</translation>
     </message>
     <message>
         <source>复制路径到剪贴板</source>

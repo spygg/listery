@@ -33,6 +33,10 @@
         <translation>已複製：%1</translation>
     </message>
     <message>
+        <source>已复制文件：%1</source>
+        <translation>已複製檔案：%1</translation>
+    </message>
+    <message>
         <source>无法打开：%1</source>
         <translation>無法開啟：%1</translation>
     </message>
@@ -295,6 +299,14 @@
     <message>
         <source>打开路径</source>
         <translation>開啟路徑</translation>
+    </message>
+    <message>
+        <source>打开所在目录</source>
+        <translation>開啟所在目錄</translation>
+    </message>
+    <message>
+        <source>复制</source>
+        <translation>複製</translation>
     </message>
     <message>
         <source>复制路径到剪贴板</source>
