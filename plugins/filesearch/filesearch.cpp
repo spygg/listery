@@ -873,7 +873,7 @@ void handleCommand(const QueryRequest &request)
         addRow(request.id, "按目录筛选：path:项目", "例如 path:Downloads 报告；/ 与 \\ 等价", "搜",
                "copy:path:");
         addRow(request.id, "按完整路径搜索：直接粘贴路径",
-               "例如 C:\\Users\\me\\report.docx；也可写成 full:...，/ 与 \\ 等价", "搜",
+               "例如 C:\\Users\\me\\report.docx；支持通配符，如 D:\\*测试*；/ 与 \\ 等价", "搜",
                "copy:full:");
         addRow(request.id, "正则筛选：re:^IMG_.*\\.jpg$",
                "不区分大小写的文件名正则，可和其他条件组合；\\d、\\w 等转义保持原样", "搜",

@@ -15,6 +15,7 @@
 #include <ctime>
 #include <limits>
 #include <memory>
+#include <queue>
 
 namespace filesearch {
 namespace {
@@ -146,6 +147,130 @@ bool containsNoCasePath(const char *text, size_t len, const char *needle, size_t
             return true;
     }
     return false;
+}
+
+inline bool hasPathWildcard(const std::string &token)
+{
+    return token.find('*') != std::string::npos || token.find('?') != std::string::npos;
+}
+
+/** 从 start 开始用通配符匹配 text 的一个前缀；模式消费完即成功。 */
+bool globPrefixMatchNoCasePath(const char *text, size_t len, const char *pattern, size_t patternLen)
+{
+    size_t ti = 0;
+    size_t pi = 0;
+    size_t starPattern = std::string::npos;
+    size_t starText = 0;
+
+    while (pi < patternLen) {
+        const unsigned char current = static_cast<unsigned char>(pattern[pi]);
+        if (current == '*') {
+            starPattern = pi++;
+            starText = ti;
+            continue;
+        }
+        if (ti < len
+            && (current == '?'
+                || normalizePathChar(current)
+                       == normalizePathChar(static_cast<unsigned char>(text[ti])))) {
+            ++ti;
+            ++pi;
+            continue;
+        }
+        if (starPattern != std::string::npos) {
+            if (starText >= len)
+                return false;
+            pi = starPattern + 1;
+            ++starText;
+            ti = starText;
+            continue;
+        }
+        return false;
+    }
+    return true;
+}
+
+/**
+ * 通配符路径匹配：* 匹配任意长度（可以跨目录），? 匹配一个字符。
+ * 语义和 containsNoCasePath 一样是“包含”：模式可以从路径任意位置开始。
+ */
+bool globContainsNoCasePath(const char *text, size_t len, const char *pattern, size_t patternLen)
+{
+    if (patternLen == 0)
+        return true;
+    if (pattern[0] == '*')
+        return globPrefixMatchNoCasePath(text, len, pattern, patternLen);
+
+    const unsigned char first = static_cast<unsigned char>(pattern[0]);
+    const bool anyFirst = first == '?';
+    for (size_t start = 0; start < len; ++start) {
+        if (!anyFirst
+            && normalizePathChar(first)
+                   != normalizePathChar(static_cast<unsigned char>(text[start])))
+            continue;
+        if (globPrefixMatchNoCasePath(text + start, len - start, pattern, patternLen))
+            return true;
+    }
+    return false;
+}
+
+/** 路径片段是否命中：含 * 或 ? 时按通配符匹配，否则按子串匹配。 */
+bool pathTextMatches(const char *text, size_t len, const char *token, size_t tokenLen)
+{
+    if (std::memchr(token, '*', tokenLen) != nullptr
+        || std::memchr(token, '?', tokenLen) != nullptr)
+        return globContainsNoCasePath(text, len, token, tokenLen);
+    return containsNoCasePath(text, len, token, tokenLen);
+}
+
+bool pathTokenMatches(const char *text, size_t len, const std::string &token)
+{
+    return pathTextMatches(text, len, token.data(), token.size());
+}
+
+/**
+ * 取出模式里最长的一段纯字面量，用来判断“命中在文件名里的位置”。
+ * 通配符 * ? 会把字面量切成多段；返回最长的一段（找不到时返回空串）。
+ */
+std::string longestLiteralRun(const std::string &pattern)
+{
+    std::string best;
+    std::string current;
+    auto flush = [&best, &current]() {
+        if (current.size() > best.size())
+            best = current;
+        current.clear();
+    };
+    for (char ch : pattern) {
+        if (ch == '*' || ch == '?') {
+            flush();
+            continue;
+        }
+        current.push_back(ch);
+    }
+    flush();
+    return best;
+}
+
+/** needle 在 text 里第一次出现的位置；找不到返回 len（排序时排最后）。 */
+uint32_t literalPositionNoCase(const char *text, size_t len, const std::string &needle)
+{
+    if (needle.empty())
+        return 0;
+    if (needle.size() > len)
+        return static_cast<uint32_t>(len);
+    const size_t last = len - needle.size();
+    for (size_t i = 0; i <= last; ++i) {
+        size_t j = 0;
+        for (; j < needle.size(); ++j) {
+            if (lowerAscii(static_cast<unsigned char>(text[i + j]))
+                != lowerAscii(static_cast<unsigned char>(needle[j])))
+                break;
+        }
+        if (j == needle.size())
+            return static_cast<uint32_t>(i);
+    }
+    return static_cast<uint32_t>(len);
 }
 
 inline bool isAsciiAlnum(unsigned char c)
@@ -366,8 +491,10 @@ Signature256 nameSignature256(const char *text, size_t len)
 Signature256 querySignature256(const std::vector<std::string> &tokens)
 {
     Signature256 mask;
-    for (const std::string &token : tokens)
-        mask.merge(nameSignature256(token.data(), token.size()));
+    for (const std::string &token : tokens) {
+        if (!hasPathWildcard(token))
+            mask.merge(nameSignature256(token.data(), token.size()));
+    }
     return mask;
 }
 
@@ -621,7 +748,7 @@ bool matchesFilters(const Index &index, const FileEntry &file, const char *name,
     }
 
     for (const std::string &token : query.path) {
-        if (!containsNoCasePath(dir, dirLen, token.data(), token.size()))
+        if (!pathTokenMatches(dir, dirLen, token))
             return false;
     }
 
@@ -629,7 +756,7 @@ bool matchesFilters(const Index &index, const FileEntry &file, const char *name,
     if (!query.fullPath.empty()) {
         bool spansName = false;
         for (const std::string &token : query.fullPath) {
-            if (!containsNoCasePath(dir, dirLen, token.data(), token.size())) {
+            if (!pathTokenMatches(dir, dirLen, token)) {
                 spansName = true;
                 break;
             }
@@ -641,8 +768,7 @@ bool matchesFilters(const Index &index, const FileEntry &file, const char *name,
                 fullPathBuffer.push_back('\\');
             fullPathBuffer.append(name, nameLen);
             for (const std::string &token : query.fullPath) {
-                if (!containsNoCasePath(fullPathBuffer.data(), fullPathBuffer.size(),
-                                        token.data(), token.size()))
+                if (!pathTokenMatches(fullPathBuffer.data(), fullPathBuffer.size(), token))
                     return false;
             }
         }
@@ -652,7 +778,7 @@ bool matchesFilters(const Index &index, const FileEntry &file, const char *name,
         for (const std::string &token : query.plain) {
             if (containsNoCase(name, nameLen, token.data(), token.size()))
                 continue;
-            if (allowPathForPlain && containsNoCasePath(dir, dirLen, token.data(), token.size()))
+            if (allowPathForPlain && pathTokenMatches(dir, dirLen, token))
                 continue;
             return false;
         }
@@ -1153,6 +1279,7 @@ std::vector<uint32_t> searchIndex(const Index &index, const ParsedQuery &query,
     // 按码点而不是 UTF-8 字节数判断：一个汉字是 3 字节，否则首键就会扫全库
     const bool singleChar =
         query.plain.size() == 1 && utf8CodePointCount(query.plain.front()) == 1;
+    // 通配符里的 * ? 不能参与签名预筛，querySignature256 会自动跳过这些片段
     const Signature256 pathMask = querySignature256(query.path);
     std::vector<uint64_t> plainMasks;
     plainMasks.reserve(query.plain.size());
@@ -1174,6 +1301,8 @@ std::vector<uint32_t> searchIndex(const Index &index, const ParsedQuery &query,
             return results;
     }
     for (const std::string &token : query.path) {
+        if (hasPathWildcard(token))
+            continue;
         if (!signaturePossible(index.dirSigUnion, token))
             return results;
     }
@@ -1202,8 +1331,7 @@ std::vector<uint32_t> searchIndex(const Index &index, const ParsedQuery &query,
                     continue;
                 uint8_t matched = 1;
                 for (const std::string &token : query.path) {
-                    if (!containsNoCasePath(dirPath.data(), dirPath.size(), token.data(),
-                                            token.size())) {
+                    if (!pathTokenMatches(dirPath.data(), dirPath.size(), token)) {
                         matched = 0;
                         break;
                     }
@@ -1214,7 +1342,7 @@ std::vector<uint32_t> searchIndex(const Index &index, const ParsedQuery &query,
                     const size_t sep = token.find_last_of("\\/");
                     if (sep == std::string::npos || sep == 0)
                         continue;
-                    if (!containsNoCasePath(dirPath.data(), dirPath.size(), token.data(), sep))
+                    if (!pathTextMatches(dirPath.data(), dirPath.size(), token.data(), sep))
                         matched = 0;
                 }
                 dirHit[d] = matched;
@@ -1226,6 +1354,42 @@ std::vector<uint32_t> searchIndex(const Index &index, const ParsedQuery &query,
         std::string fullPathBuffer;
         std::vector<uint32_t> ancestorBuffer;
         uint32_t dirCacheId = kInvalidIndex;
+
+        // 文件名命中的结果排在“只是目录命中”的前面：D:\*测试* 这种查询里，
+        // 明显是文件名里带“测试”的那个才是用户要找的。
+        // 文件名命中内部再按命中位置排序：名字以关键字开头的优先，
+        // 否则索引按文件名排序时，“6 大气…测试报告”会排在“测试功率…”前面。
+        std::vector<std::string> nameLiterals;
+        nameLiterals.reserve(query.fullPath.size());
+        for (const std::string &token : query.fullPath) {
+            const size_t sep = token.find_last_of("\\/");
+            const size_t offset = sep == std::string::npos ? 0 : sep + 1;
+            nameLiterals.push_back(offset < token.size()
+                                       ? longestLiteralRun(token.substr(offset))
+                                       : std::string());
+        }
+        const bool rankByName = !query.fullPath.empty();
+
+        struct NameCandidate
+        {
+            uint32_t fileIndex;
+            uint32_t position; // 关键字在文件名里的位置，越小越靠前
+        };
+        auto betterCandidate = [](const NameCandidate &a, const NameCandidate &b) {
+            if (a.position != b.position)
+                return a.position < b.position;
+            // 位置相同就保持索引本来的文件名排序，结果顺序更稳定
+            return a.fileIndex < b.fileIndex;
+        };
+        // 堆顶是当前最差的一条，堆大小只保留 limit 条，避免宽泛通配符吃内存
+        std::priority_queue<NameCandidate, std::vector<NameCandidate>,
+                            decltype(betterCandidate)>
+            ranked(betterCandidate);
+
+        std::vector<uint32_t> nameHits;
+        std::vector<uint32_t> dirOnlyHits;
+        nameHits.reserve(limit);
+        dirOnlyHits.reserve(limit);
         for (uint32_t i = 0; i < count; ++i) {
             if ((i & 0x3FFF) == 0 && isCancelled())
                 break;
@@ -1239,7 +1403,58 @@ std::vector<uint32_t> searchIndex(const Index &index, const ParsedQuery &query,
                                     false, dirBuffer, fullPathBuffer, ancestorBuffer, dirCacheId))
                     continue;
             }
-            add(i);
+
+            bool byName = false;
+            for (size_t k = 0; !byName && k < query.fullPath.size(); ++k) {
+                const std::string &token = query.fullPath[k];
+                const size_t sep = token.find_last_of("\\/");
+                const size_t offset = sep == std::string::npos ? 0 : sep + 1;
+                if (offset >= token.size())
+                    continue;
+                byName = pathTextMatches(nameBuffer.data(), nameBuffer.size(),
+                                         token.data() + offset, token.size() - offset);
+            }
+            if (byName) {
+                if (!rankByName) {
+                    nameHits.push_back(i);
+                    if (nameHits.size() >= limit)
+                        break;
+                } else {
+                    uint32_t bestPosition =
+                        literalPositionNoCase(nameBuffer.data(), nameBuffer.size(),
+                                              nameLiterals.front());
+                    for (size_t k = 1; k < nameLiterals.size(); ++k) {
+                        const uint32_t position =
+                            literalPositionNoCase(nameBuffer.data(), nameBuffer.size(),
+                                                  nameLiterals[k]);
+                        if (position < bestPosition)
+                            bestPosition = position;
+                    }
+                    ranked.push(NameCandidate{i, bestPosition});
+                    if (ranked.size() > limit)
+                        ranked.pop();
+                }
+            } else if (dirOnlyHits.size() < limit) {
+                dirOnlyHits.push_back(i);
+            }
+        }
+
+        if (rankByName) {
+            nameHits.resize(ranked.size());
+            size_t write = nameHits.size();
+            while (!ranked.empty() && write > 0) {
+                nameHits[--write] = ranked.top().fileIndex;
+                ranked.pop();
+            }
+        }
+
+        for (uint32_t idx : nameHits) {
+            add(idx);
+            if (full())
+                return results;
+        }
+        for (uint32_t idx : dirOnlyHits) {
+            add(idx);
             if (full())
                 return results;
         }

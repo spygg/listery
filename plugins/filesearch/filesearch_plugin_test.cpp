@@ -205,6 +205,9 @@ int main()
     SHCreateDirectoryExW(nullptr, dataDir.c_str(), nullptr);
 
     writeFile(root + L"\\测试报告 2026.txt", "hello");
+    // 名字里“测试”在中间，且按文件名排序会排在“测试报告”前面；
+    // 用来验证通配符查询会优先返回文件名开头命中的结果。
+    writeFile(root + L"\\abc测试排序.txt", "order");
     writeFile(root + L"\\chrome-settings.json", "{}");
     writeFile(root + L"\\sample.cpp", "int main(){}");
     writeFile(root + L"\\子目录\\嵌套文件.md", "# nested");
@@ -337,10 +340,14 @@ int main()
     const std::string fullPathQuery = rootText + "\\子目录\\嵌套文件.md";
     const ExtraCase extra[] = {
         {"re:^chrome.*json$", "chrome-settings.json"},
-        {"re:测试.*\\.txt", "测试报告"},
+        {"re:^测试.*\\.txt", "测试报告"},
         {"re:^s[a-z]{4}e\\.cpp$", "sample.cpp"},
         {"re:^chrome-settings\\.(json|xml)$", "chrome-settings.json"},
         {"子目录/嵌套", "嵌套文件"},
+        {rootText + "\\*嵌套*", "嵌套文件"},
+        // 文件名开头命中优先于中间命中：abc测试排序.txt 排序在前，但首条应是“测试报告”
+        {rootText + "\\*测试*", "测试报告"},
+        {"path:*子目录*", "嵌套文件"},
         {fullPathQuery, "嵌套文件"},
         {"full:" + rootText + "\\子目录", "嵌套文件"},
     };

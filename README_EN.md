@@ -33,7 +33,7 @@ A Listary-style quick launcher written in Qt / C++: index every executable → d
 | **Learns your habits** | Score = `0.72 × match quality + 0.28 × usage habit`, so apps you use most bubble up |
 | **Smart scanning** | Per-volume adaptive scheduling: volumes with no software back off automatically; on Linux it just reads the locate snapshot |
 | **EN↔ZH translator** | `Alt+E` opens the translator plugin: type English for Chinese, Chinese for English, press Enter to copy the result |
-| **File search** | `Alt+S` opens the file search plugin: a compact self-built index searches the whole disk, with `ext:` / `path:` / `full:` / `re:` filters and pasted full paths; click or press Enter to open a result |
+| **File search** | `Alt+S` opens the file search plugin: a compact self-built index searches the whole disk, with `ext:` / `path:` / `full:` / `re:` filters and wildcard paths like `D:\*keyword*`; click or press Enter to open a result |
 | **Plugins** | Pure-C plugin ABI: plugins need no Qt and no OpenSSL, so anyone can extend Listery — see the [plugin guide](docs/PLUGINS_EN.md) |
 | **Auto-update** | Checks the latest GitHub Release automatically (semantic version compare, so `1.10.0 > 1.2.0` works); shows a tray notification and opens the release page on click |
 | **Log rotation** | Keeps only the last 3 days of logs, trimmed on startup — never grows without bound |
@@ -70,7 +70,7 @@ They need **no Qt and no OpenSSL** — the host performs network requests on the
 | Bundled plugin | Hotkey | What it does |
 | --- | --- | --- |
 | EN↔ZH translator (`translator`) | `Alt+E` | Youdao dictionary suggest API, both directions, whole sentences too; Enter copies the result. Switch backends with `LISTERY_TRANSLATOR_ENDPOINT=google` |
-| File search (`filesearch`) | `Alt+S` | Compact self-built index for whole-disk file search, with `ext:pdf` / `path:project` filters plus `re:` regex and `full:` path search; click or press Enter to open a result |
+| File search (`filesearch`) | `Alt+S` | Compact self-built index for whole-disk file search, with `ext:pdf` / `path:project` filters plus `re:` regex, `full:` path search and `D:\*keyword*` wildcards; click or press Enter to open a result |
 
 - Settings → Plugin Manager… opens a standalone dialog to enable/disable each plugin, reassign its hotkey (`Alt+E`, `Ctrl+Shift+F1`, …), and open plugin-provided settings;
 - The translator plugins accept a custom lookup URL: open `translator.ini` / `french.ini` from Plugin Manager, set `url=https://example.com/lookup?q={query}` and optionally `format=youdao|google|text`; changes apply on the next query;

@@ -61,7 +61,7 @@ std::wstring currentDirectory()
 void printUsage()
 {
     std::printf("用法: filesearch_bench [root ...] [--query 关键字] [--iterations N] "
-                "[--save 文件] [--load 文件] [--exclude-name 名称] "
+                "[--limit N] [--save 文件] [--load 文件] [--exclude-name 名称] "
                 "[--exclude-prefix 路径] [--include-hidden]\n");
 }
 
@@ -81,6 +81,7 @@ int main()
     filesearch::ScanConfig config;
     std::vector<std::string> queries;
     int iterations = 5;
+    int limit = 12;
     std::wstring savePath;
     std::wstring loadPath;
 
@@ -97,6 +98,10 @@ int main()
         }
         if (arg == L"--iterations" && i + 1 < argc) {
             iterations = static_cast<int>(wcstol(argv[++i], nullptr, 10));
+            continue;
+        }
+        if (arg == L"--limit" && i + 1 < argc) {
+            limit = static_cast<int>(wcstol(argv[++i], nullptr, 10));
             continue;
         }
         if (arg == L"--save" && i + 1 < argc) {
@@ -188,7 +193,7 @@ int main()
         std::vector<uint32_t> hits;
         for (int i = 0; i < iterations; ++i) {
             const auto started = std::chrono::steady_clock::now();
-            hits = filesearch::searchIndex(index, query, 12, true);
+            hits = filesearch::searchIndex(index, query, limit, true);
             const double ms = elapsedMs(started, std::chrono::steady_clock::now());
             best = (std::min)(best, ms);
             total += ms;
@@ -200,18 +205,15 @@ int main()
             if (filesearch::fileNameAt(index, hits.front(), name))
                 std::printf("，首条：%s", name.c_str());
         }
-        if (std::getenv("FILESEARCH_DEBUG") != nullptr && !query.exts.empty()) {
+        if (std::getenv("FILESEARCH_DEBUG") != nullptr) {
             std::printf("\n");
             for (uint32_t hit : hits) {
                 std::string name;
                 if (!filesearch::fileNameAt(index, hit, name))
                     continue;
-                const size_t dot = name.find_last_of('.');
-                const std::string ext = dot == std::string::npos ? std::string() : name.substr(dot + 1);
-                bool ok = false;
-                for (const std::string &want : query.exts)
-                    ok = ok || ext == want;
-                std::printf("    %s %s\n", ok ? "ok  " : "BAD ", name.c_str());
+                std::string dir;
+                filesearch::buildDirPath(index, index.files[hit].dirId, dir);
+                std::printf("    %s\\%s\n", dir.c_str(), name.c_str());
             }
         }
         std::printf("\n");
