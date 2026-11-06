@@ -2,6 +2,7 @@
 
 #include "Core/LaunchService.h"
 #include "Core/PluginHost.h"
+#include "Core/QtCompat.h"
 #include "Core/SearchService.h"
 #include "Platform/WindowUtils.h"
 #include "Ui/ResultDelegate.h"
@@ -14,6 +15,7 @@
 #include <QCursor>
 #include <QEventLoop>
 #include <QFontMetrics>
+#include <QGuiApplication>
 #include <QGraphicsDropShadowEffect>
 #include <QHBoxLayout>
 #include <QKeyEvent>
@@ -21,6 +23,7 @@
 #include <QLineEdit>
 #include <QListView>
 #include <QMenu>
+#include <QScreen>
 #include <QSignalBlocker>
 #include <QTimer>
 #include <QVBoxLayout>
@@ -35,6 +38,44 @@ const int kShadowMarginBottom = 26;
 const int kFooterHeight = 36;
 /** 卡片自身的上下边框（QFrame 1px × 2）：布局的最小高度会把它算进去，手算时也要计入。 */
 const int kCardBorder = 2;
+/**
+ * 插件一次最多返回多少条结果。
+ * 程序检索仍按“最大候选数”显示前几条；插件（尤其是文件搜索）要求把命中都列出来，
+ * 面板按屏幕剩余高度展开，装不下的部分用滚动条浏览。
+ */
+const int kPluginResultLimit = 10000;
+/** 面板底边与屏幕可用区底边之间保留的缝隙。 */
+const int kScreenBottomGap = 8;
+
+/**
+ * 插件模式下列表能展开成多少行。
+ * 插件（文件搜索尤甚）一次可能命中上千条，面板高度不再按“最大候选数”封顶，
+ * 而是尽量铺满所在屏幕的剩余高度，超出部分交给列表滚动条。
+ */
+int pluginRowsFittingScreen(const QRect &panelGeometry, int minRows)
+{
+    // 以面板自己所在的屏幕为准：多显示器时按鼠标所在屏幕算会算错（placeCenterTop 也按同一屏幕摆放）
+    QScreen *screen = nullptr;
+    const QList<QScreen *> screens = QGuiApplication::screens();
+    for (QScreen *candidate : screens) {
+        if (candidate->geometry().contains(panelGeometry.topLeft())) {
+            screen = candidate;
+            break;
+        }
+    }
+    if (screen == nullptr)
+        screen = listeryScreenAtCursor();
+    if (screen == nullptr)
+        screen = QGuiApplication::primaryScreen();
+    if (screen == nullptr)
+        return minRows;
+
+    const int chromeHeight = kEditHeight + kCardBorder + kFooterHeight + 1
+                             + kShadowMarginTop + kShadowMarginBottom;
+    const int room = screen->availableGeometry().bottom() - panelGeometry.top()
+                     - kScreenBottomGap - chromeHeight;
+    return qMax(minRows, room / kRowHeight);
+}
 
 /** 插件行 action 里的文件路径：run:（打开）/ open:（定位）才有路径。 */
 QString pluginActionPath(const QString &action)
@@ -367,7 +408,7 @@ void LauncherWindow::performSearch()
         if (!m_pluginHost)
             return;
         m_status->setText(tr("%1 · 处理中…").arg(m_pluginName));
-        const quint64 sequence = m_pluginHost->beginQuery(m_pluginId, query, m_maxResults);
+        const quint64 sequence = m_pluginHost->beginQuery(m_pluginId, query, kPluginResultLimit);
         if (sequence == 0) {
             m_status->setText(tr("插件不可用"));
             return;
@@ -620,7 +661,10 @@ void LauncherWindow::updateGeometryForResults(int rowCount)
     if (noRows) {
         m_list->setFixedHeight(0);
     } else {
-        const int visibleRows = qMin(rowCount, m_maxResults);
+        const int rowLimit = m_mode == LauncherMode::Plugin
+            ? pluginRowsFittingScreen(geometry(), m_maxResults)
+            : m_maxResults;
+        const int visibleRows = qMin(rowCount, rowLimit);
         m_list->setFixedHeight(visibleRows * kRowHeight);
         contentHeight += 1 + m_list->height();
     }

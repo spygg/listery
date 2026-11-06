@@ -95,7 +95,7 @@ void LISTERY_PLUGIN_CALL hostLog(void *, int level, const char *message)
 }
 
 bool query(const ListeryPluginV1 *plugin, const std::string &text, std::vector<Row> &rows,
-           std::string &error, int timeoutMs = 5000)
+           std::string &error, int maxResults = 12, int timeoutMs = 5000)
 {
     unsigned long long id = 0;
     {
@@ -108,7 +108,7 @@ bool query(const ListeryPluginV1 *plugin, const std::string &text, std::vector<R
         g_rows.clear();
     }
 
-    if (plugin->beginQuery(id, text.c_str(), 12) != 0) {
+    if (plugin->beginQuery(id, text.c_str(), maxResults) != 0) {
         std::printf("beginQuery 拒绝：%s\n", text.c_str());
         return false;
     }
@@ -208,6 +208,12 @@ int main()
     // 名字里“测试”在中间，且按文件名排序会排在“测试报告”前面；
     // 用来验证通配符查询会优先返回文件名开头命中的结果。
     writeFile(root + L"\\abc测试排序.txt", "order");
+    // 结果数超过面板可见行数时，插件应把命中全部返回，由宿主的滚动条展示。
+    for (int i = 0; i < 40; ++i) {
+        char name[64];
+        std::snprintf(name, sizeof(name), "zzbulk-%02d.txt", i);
+        writeFile(root + L"\\" + toWide(name), "bulk");
+    }
     writeFile(root + L"\\chrome-settings.json", "{}");
     writeFile(root + L"\\sample.cpp", "int main(){}");
     writeFile(root + L"\\子目录\\嵌套文件.md", "# nested");
@@ -361,6 +367,19 @@ int main()
             std::printf("  [FAIL] 期望首条包含 %s\n", item.expect);
             ++failures;
         }
+    }
+
+    // 宿主要求一次取回全部命中：命中数超过面板可见行数时不能只给 12 条，
+    // 面板拉高后剩下的靠滚动条浏览。
+    {
+        std::vector<Row> bulkRows;
+        std::string bulkError;
+        const bool issued = query(plugin, "zzbulk", bulkRows, bulkError, 1000);
+        const bool allReturned = issued && bulkRows.size() >= 40;
+        std::printf("一次取回全部命中：%s（%zu 条）\n",
+                    allReturned ? "通过" : "失败", bulkRows.size());
+        if (!allReturned)
+            ++failures;
     }
 
     // 非法正则应该明确报错，而不是静默返回空结果

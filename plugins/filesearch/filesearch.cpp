@@ -57,7 +57,11 @@ constexpr int kDefaultMaxResults = 12;
 constexpr int kDefaultRescanMinutes = 60;
 /** 闲置多少分钟后释放内存索引；0 = 常驻内存。 */
 constexpr int kDefaultIdleUnloadMinutes = 10;
-constexpr uint32_t kMaxResultsCap = 100;
+/**
+ * 宿主可以一次要走全部命中：面板固定高度 + 滚动条浏览。
+ * 上限只是防止“*.jpg”这类极宽查询把内存撑爆，正常搜索远达不到。
+ */
+constexpr uint32_t kMaxResultsCap = 20000;
 
 // ---------------------------------------------------------------------------
 // 插件全局状态

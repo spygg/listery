@@ -1262,7 +1262,8 @@ std::vector<uint32_t> searchIndex(const Index &index, const ParsedQuery &query,
 
     auto isCancelled = [&cancelled]() { return cancelled && cancelled(); };
 
-    const size_t limit = static_cast<size_t>((std::min)(maxResults, 100));
+    // 允许一次取回大量命中（宿主要求全部显示）；上限防止极宽查询撑爆内存。
+    const size_t limit = static_cast<size_t>((std::min)(maxResults, 20000));
     results.reserve(limit);
 
     auto alreadySelected = [&results](uint32_t fileIdx) {
