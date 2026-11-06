@@ -316,6 +316,10 @@ Vous pouvez ouvrir la recherche depuis le menu de la zone de notification.</tran
         <source>执行</source>
         <translation>Exécuter</translation>
     </message>
+    <message>
+        <source>打开</source>
+        <translation>Ouvrir</translation>
+    </message>
 </context>
 <context>
     <name>PluginHost</name>

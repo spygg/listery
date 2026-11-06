@@ -3,6 +3,7 @@
  *
  *  - 后台线程扫描用户目录、Public 和非系统固定磁盘；
  *  - 内存索引按文件名排序，检索走“全名 → 前缀 → 子串 → 路径”；
+ *  - 支持 ext: 扩展名、path: 目录、full: 完整路径、re: 正则等过滤条件；
  *  - 索引二进制快照保存在 %LOCALAPPDATA%\Listery\FileSearch\index.bin；
  *  - 配置文件 filesearch.ini 与快照同目录，可用 !config 打开；
  *  - 面板里输入 !status / !reindex / !config 查看状态或重建索引。
@@ -869,8 +870,14 @@ void handleCommand(const QueryRequest &request)
                "copy:!help");
         addRow(request.id, "按扩展名筛选：ext:pdf、ext:jpg,png、*.docx", "可以和其他关键字组合",
                "搜", "copy:ext:pdf");
-        addRow(request.id, "按目录筛选：path:项目", "例如 path:Downloads 报告", "搜",
+        addRow(request.id, "按目录筛选：path:项目", "例如 path:Downloads 报告；/ 与 \\ 等价", "搜",
                "copy:path:");
+        addRow(request.id, "按完整路径搜索：直接粘贴路径",
+               "例如 C:\\Users\\me\\report.docx；也可写成 full:...，/ 与 \\ 等价", "搜",
+               "copy:full:");
+        addRow(request.id, "正则筛选：re:^IMG_.*\\.jpg$",
+               "不区分大小写的文件名正则，可和其他条件组合；\\d、\\w 等转义保持原样", "搜",
+               "copy:re:");
         addRow(request.id, "!status 查看索引状态", "显示文件数、扫描时间和索引位置", "搜",
                "copy:!status");
         addRow(request.id, "!reindex 重新扫描", "修改配置或文件变化很大时使用", "搜",
@@ -932,6 +939,10 @@ void processQuery(const QueryRequest &request)
     }
 
     const ParsedQuery parsed = filesearch::parseQuery(request.text);
+    if (!parsed.regexError.empty()) {
+        finishQuery(request.id, parsed.regexError.c_str());
+        return;
+    }
     if (parsed.empty()) {
         finishQuery(request.id, nullptr);
         return;
@@ -942,7 +953,8 @@ void processQuery(const QueryRequest &request)
         limit = static_cast<int>(kMaxResultsCap);
 
     const std::vector<uint32_t> hits =
-        filesearch::searchIndex(*index, parsed, limit, g_matchPath.load());
+        filesearch::searchIndex(*index, parsed, limit, g_matchPath.load(),
+                                [&request]() { return takeCancelled(request.id); });
 
     if (takeCancelled(request.id)) {
         finishQuery(request.id, nullptr);

@@ -316,6 +316,10 @@
         <source>执行</source>
         <translation>執行</translation>
     </message>
+    <message>
+        <source>打开</source>
+        <translation>開啟</translation>
+    </message>
 </context>
 <context>
     <name>PluginHost</name>

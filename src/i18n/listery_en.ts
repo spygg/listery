@@ -316,6 +316,10 @@ You can open the search box from the tray menu.</translation>
         <source>执行</source>
         <translation>Execute</translation>
     </message>
+    <message>
+        <source>打开</source>
+        <translation>Open</translation>
+    </message>
 </context>
 <context>
     <name>PluginHost</name>

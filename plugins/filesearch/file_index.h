@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
+#include <regex>
 #include <string>
 #include <vector>
 
@@ -141,11 +143,18 @@ bool saveIndex(const std::wstring &path, const Index &index, std::wstring *error
 
 struct ParsedQuery
 {
-    std::vector<std::string> plain; // 文件名（默认）/ 路径（allowPath 时）
-    std::vector<std::string> path;  // path:xxx，强制匹配目录
-    std::vector<std::string> exts;  // ext:pdf 或 *.pdf
+    std::vector<std::string> plain;     // 文件名（默认）/ 路径（allowPath 时）
+    std::vector<std::string> path;      // path:xxx，强制匹配目录
+    std::vector<std::string> fullPath;  // full:xxx 或带分隔符的裸词，匹配完整路径
+    std::vector<std::regex> regex;      // re:xxx，不区分大小写的文件名正则
+    std::vector<std::string> regexKeys; // 与 regex 一一对应：正则里必须出现的字面量
+    std::vector<std::string> exts;      // ext:pdf 或 *.pdf
+    std::string regexError;             // 正则语法错误说明（UTF-8）
 
-    bool empty() const { return plain.empty() && path.empty() && exts.empty(); }
+    bool empty() const
+    {
+        return plain.empty() && path.empty() && fullPath.empty() && regex.empty() && exts.empty();
+    }
 };
 
 ParsedQuery parseQuery(const std::string &utf8Query);
@@ -153,9 +162,11 @@ ParsedQuery parseQuery(const std::string &utf8Query);
 /**
  * 检索。结果按“完全匹配 → 前缀 → 子串 → 路径命中”的顺序返回，最多 maxResults 条。
  * matchPath=false 时只匹配文件名；true 时在前两轮没填满的情况下再匹配目录路径。
+ * cancelled 可选：返回 true 时尽快放弃（长正则扫描时用来响应输入变化）。
  */
 std::vector<uint32_t> searchIndex(const Index &index, const ParsedQuery &query,
-                                  int maxResults, bool matchPath);
+                                  int maxResults, bool matchPath,
+                                  const std::function<bool()> &cancelled = std::function<bool()>());
 
 /** 计算一段文本（文件名或路径）的 64 位 bigram 签名。 */
 uint64_t textSignature(const char *text, size_t len);

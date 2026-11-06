@@ -327,6 +327,43 @@ int main()
         }
     }
 
+    // 正则 / 完整路径 / 错误提示
+    struct ExtraCase
+    {
+        std::string queryText;
+        const char *expect;
+    };
+    const std::string rootText = fromWide(root);
+    const std::string fullPathQuery = rootText + "\\子目录\\嵌套文件.md";
+    const ExtraCase extra[] = {
+        {"re:^chrome.*json$", "chrome-settings.json"},
+        {"re:测试.*\\.txt", "测试报告"},
+        {"re:^s[a-z]{4}e\\.cpp$", "sample.cpp"},
+        {"re:^chrome-settings\\.(json|xml)$", "chrome-settings.json"},
+        {"子目录/嵌套", "嵌套文件"},
+        {fullPathQuery, "嵌套文件"},
+        {"full:" + rootText + "\\子目录", "嵌套文件"},
+    };
+    for (const ExtraCase &item : extra) {
+        if (!query(plugin, item.queryText, rows, error)) {
+            ++failures;
+            continue;
+        }
+        printRows(item.queryText, rows, error);
+        if (rows.empty() || rows.front().title.find(item.expect) == std::string::npos) {
+            std::printf("  [FAIL] 期望首条包含 %s\n", item.expect);
+            ++failures;
+        }
+    }
+
+    // 非法正则应该明确报错，而不是静默返回空结果
+    if (query(plugin, "re:(", rows, error) && rows.empty() && !error.empty()) {
+        std::printf("非法正则提示：通过（%s）\n", error.c_str());
+    } else {
+        std::printf("非法正则提示：失败\n");
+        ++failures;
+    }
+
     plugin->shutdown();
     // 插件线程已在 shutdown 里 join，这里可以安全卸载。
     FreeLibrary(library);

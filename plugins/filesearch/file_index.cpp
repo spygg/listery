@@ -118,6 +118,172 @@ bool containsNoCase(const char *text, size_t len, const char *needle, size_t nee
     return false;
 }
 
+/** 路径比较：忽略大小写，并且 '/' 与 '\' 视为同一个分隔符。 */
+inline unsigned char normalizePathChar(unsigned char c)
+{
+    return c == '/' ? '\\' : lowerAscii(c);
+}
+
+bool containsNoCasePath(const char *text, size_t len, const char *needle, size_t needleLen)
+{
+    if (needleLen == 0)
+        return true;
+    if (needleLen > len)
+        return false;
+
+    const unsigned char first = normalizePathChar(static_cast<unsigned char>(needle[0]));
+    const size_t last = len - needleLen;
+    for (size_t i = 0; i <= last; ++i) {
+        if (normalizePathChar(static_cast<unsigned char>(text[i])) != first)
+            continue;
+        size_t j = 1;
+        for (; j < needleLen; ++j) {
+            if (normalizePathChar(static_cast<unsigned char>(text[i + j]))
+                != normalizePathChar(static_cast<unsigned char>(needle[j])))
+                break;
+        }
+        if (j == needleLen)
+            return true;
+    }
+    return false;
+}
+
+inline bool isAsciiAlnum(unsigned char c)
+{
+    return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+}
+
+/**
+ * 从正则里挑出最长的一段“必须出现”的字面量，用来做签名预筛。
+ * 字符类、量词和 \d \w \s 之类的转义不算字面量；\. 这种转义标点按标点本身算。
+ * 只要出现分组或或运算就放弃预筛：那会改变“必须出现”的语义，宁可慢也不能漏。
+ * 返回小写的字面量；长度 < 2 时返回空串（没有可用的预筛关键字）。
+ */
+std::string regexLiteralKey(const std::string &pattern)
+{
+    // 先扫一遍：括号和 | 意味着可选分组或分支，字面量不再保证出现
+    for (size_t i = 0; i < pattern.size(); ++i) {
+        const char ch = pattern[i];
+        if (ch == '\\') {
+            ++i;
+            continue;
+        }
+        if (ch == '[') {
+            size_t j = i + 1;
+            if (j < pattern.size() && pattern[j] == '^')
+                ++j;
+            if (j < pattern.size() && pattern[j] == ']')
+                ++j;
+            while (j < pattern.size() && pattern[j] != ']') {
+                if (pattern[j] == '\\')
+                    ++j;
+                ++j;
+            }
+            i = j < pattern.size() ? j : pattern.size();
+            continue;
+        }
+        if (ch == '(' || ch == '|')
+            return std::string();
+    }
+
+    std::string best;
+    std::string current;
+    auto flush = [&best, &current]() {
+        if (current.size() > best.size())
+            best = current;
+        current.clear();
+    };
+
+    for (size_t i = 0; i < pattern.size(); ++i) {
+        const unsigned char ch = static_cast<unsigned char>(pattern[i]);
+        if (ch == '\\') {
+            if (i + 1 >= pattern.size()) {
+                flush();
+                break;
+            }
+            const unsigned char next = static_cast<unsigned char>(pattern[i + 1]);
+            if (isAsciiAlnum(next)) {
+                flush(); // \d \w \s \b 等：字符类或断言，不是固定的字面量
+                // \x41、\1 之类的转义把后面的字符也吃掉了，跳过它们
+                size_t digits = 0;
+                if (next == 'x')
+                    digits = 2;
+                else if (next == 'u')
+                    digits = 4;
+                else if (next == 'U')
+                    digits = 8;
+                else if (next >= '0' && next <= '9')
+                    digits = pattern.size();
+                while (digits > 0 && i + 2 < pattern.size() && isAsciiAlnum(
+                           static_cast<unsigned char>(pattern[i + 2]))) {
+                    ++i;
+                    --digits;
+                }
+            } else {
+                current.push_back(static_cast<char>(lowerAscii(next)));
+            }
+            ++i;
+            continue;
+        }
+        if (ch == '[') {
+            flush();
+            size_t j = i + 1;
+            if (j < pattern.size() && pattern[j] == '^')
+                ++j;
+            if (j < pattern.size() && pattern[j] == ']')
+                ++j;
+            while (j < pattern.size() && pattern[j] != ']') {
+                if (pattern[j] == '\\')
+                    ++j;
+                ++j;
+            }
+            i = j < pattern.size() ? j : pattern.size();
+            continue;
+        }
+        if (ch == '{') {
+            // {m,n} 量词里的数字不是字面量；m == 0 时前一个字符可能不出现
+            size_t j = i + 1;
+            bool hasMin = false;
+            unsigned minValue = 0;
+            while (j < pattern.size() && pattern[j] >= '0' && pattern[j] <= '9') {
+                hasMin = true;
+                minValue = minValue * 10 + static_cast<unsigned>(pattern[j] - '0');
+                if (minValue > 1000)
+                    minValue = 1000;
+                ++j;
+            }
+            if ((!hasMin || minValue == 0) && !current.empty())
+                current.pop_back();
+            flush();
+            while (i + 1 < pattern.size() && pattern[i + 1] != '}')
+                ++i;
+            if (i + 1 < pattern.size())
+                ++i;
+            continue;
+        }
+        if (ch == '*' || ch == '?') {
+            // 0 次也可能匹配：前一个字符不是必须出现，保守起见从关键字里去掉
+            if (!current.empty())
+                current.pop_back();
+            flush();
+            continue;
+        }
+        if (ch == '+') {
+            // 至少 1 次，前一个字符仍然必须出现，整段保留
+            flush();
+            continue;
+        }
+        if (ch == '.' || ch == '^' || ch == '$' || ch == ')' || ch == '}') {
+            flush();
+            continue;
+        }
+        current.push_back(static_cast<char>(lowerAscii(ch)));
+    }
+    flush();
+
+    return best.size() >= 2 ? best : std::string();
+}
+
 /**
  * 64 位 bigram 签名。子串的所有 bigram 一定出现在父串的签名里，
  * 因此可以用 (nameSig & queryMask) == queryMask 先过滤掉绝大多数候选。
@@ -430,12 +596,13 @@ bool buildDirPathInto(const Index &index, uint32_t dirId, std::string &out,
 
 bool matchesFilters(const Index &index, const FileEntry &file, const char *name, size_t nameLen,
                     const ParsedQuery &query, bool allowPathForPlain, std::string &dirBuffer,
-                    std::vector<uint32_t> &ancestorBuffer, uint32_t &dirCacheId)
+                    std::string &fullPathBuffer, std::vector<uint32_t> &ancestorBuffer,
+                    uint32_t &dirCacheId)
 {
     if (!fileExtensionMatches(name, nameLen, query.exts))
         return false;
 
-    const bool needDir = !query.path.empty()
+    const bool needDir = !query.path.empty() || !query.fullPath.empty()
                          || (allowPathForPlain && !query.plain.empty());
     const char *dir = "";
     size_t dirLen = 0;
@@ -454,18 +621,46 @@ bool matchesFilters(const Index &index, const FileEntry &file, const char *name,
     }
 
     for (const std::string &token : query.path) {
-        if (!containsNoCase(dir, dirLen, token.data(), token.size()))
+        if (!containsNoCasePath(dir, dirLen, token.data(), token.size()))
             return false;
+    }
+
+    // full: 关键字可能整个落在目录部分，也可能跨过目录和文件名的分隔符。
+    if (!query.fullPath.empty()) {
+        bool spansName = false;
+        for (const std::string &token : query.fullPath) {
+            if (!containsNoCasePath(dir, dirLen, token.data(), token.size())) {
+                spansName = true;
+                break;
+            }
+        }
+        if (spansName) {
+            fullPathBuffer.assign(dir, dirLen);
+            if (!fullPathBuffer.empty() && fullPathBuffer.back() != '\\'
+                && fullPathBuffer.back() != '/')
+                fullPathBuffer.push_back('\\');
+            fullPathBuffer.append(name, nameLen);
+            for (const std::string &token : query.fullPath) {
+                if (!containsNoCasePath(fullPathBuffer.data(), fullPathBuffer.size(),
+                                        token.data(), token.size()))
+                    return false;
+            }
+        }
     }
 
     if (!query.plain.empty()) {
         for (const std::string &token : query.plain) {
             if (containsNoCase(name, nameLen, token.data(), token.size()))
                 continue;
-            if (allowPathForPlain && containsNoCase(dir, dirLen, token.data(), token.size()))
+            if (allowPathForPlain && containsNoCasePath(dir, dirLen, token.data(), token.size()))
                 continue;
             return false;
         }
+    }
+
+    for (const std::regex &pattern : query.regex) {
+        if (!std::regex_search(name, name + nameLen, pattern))
+            return false;
     }
     return true;
 }
@@ -847,11 +1042,33 @@ ParsedQuery parseQuery(const std::string &utf8Query)
         size_t end = pos;
         while (end < lowered.size() && !isAsciiSpaceChar(lowered[end]))
             ++end;
-        std::string token = lowered.substr(pos, end - pos);
+        const std::string token = lowered.substr(pos, end - pos);
+        // 正则要保留原始大小写：\D 与 \d 语义不同，lowered 与原文逐字节等长，可直接切片
+        const std::string original = utf8Query.substr(pos, end - pos);
         pos = end;
 
         if (token.empty() || token == "*")
             continue;
+        if (token.rfind("re:", 0) == 0) {
+            const std::string pattern = original.substr(3);
+            if (!pattern.empty()) {
+                try {
+                    query.regex.emplace_back(pattern, std::regex::ECMAScript | std::regex::icase);
+                    query.regexKeys.push_back(regexLiteralKey(pattern));
+                } catch (const std::regex_error &error) {
+                    if (query.regexError.empty()) {
+                        query.regexError = "正则表达式无效：" + pattern;
+                        const char *reason = error.what();
+                        if (reason != nullptr && *reason != '\0') {
+                            query.regexError += "（";
+                            query.regexError += reason;
+                            query.regexError += "）";
+                        }
+                    }
+                }
+            }
+            continue;
+        }
         if (token.rfind("ext:", 0) == 0) {
             std::string values = token.substr(4);
             size_t begin = 0;
@@ -877,13 +1094,20 @@ ParsedQuery parseQuery(const std::string &utf8Query)
                 query.path.push_back(value);
             continue;
         }
+        if (token.rfind("full:", 0) == 0) {
+            const std::string value = trimAscii(token.substr(5));
+            if (!value.empty())
+                query.fullPath.push_back(value);
+            continue;
+        }
         if (token.size() > 2 && token.rfind("*.", 0) == 0
             && token.find_first_of("*?", 1) == std::string::npos) {
             query.exts.push_back(token.substr(2));
             continue;
         }
         if (token.find('\\') != std::string::npos || token.find('/') != std::string::npos) {
-            query.path.push_back(token);
+            // 带分隔符的裸词按完整路径匹配：粘贴 C:\Users\me\report.docx 也能直接命中
+            query.fullPath.push_back(token);
             continue;
         }
         if (std::find(query.plain.begin(), query.plain.end(), token) == query.plain.end())
@@ -903,12 +1127,14 @@ size_t utf8CodePointCount(const std::string &text)
 }
 
 std::vector<uint32_t> searchIndex(const Index &index, const ParsedQuery &query,
-                                  int maxResults, bool matchPath)
+                                  int maxResults, bool matchPath,
+                                  const std::function<bool()> &cancelled)
 {
     std::vector<uint32_t> results;
-    if (maxResults <= 0 || index.files.empty() || query.empty())
+    if (maxResults <= 0 || index.files.empty() || query.empty() || !query.regexError.empty())
         return results;
 
+    auto isCancelled = [&cancelled]() { return cancelled && cancelled(); };
 
     const size_t limit = static_cast<size_t>((std::min)(maxResults, 100));
     results.reserve(limit);
@@ -936,6 +1162,11 @@ std::vector<uint32_t> searchIndex(const Index &index, const ParsedQuery &query,
     plainDirMasks.reserve(query.plain.size());
     for (const std::string &token : query.plain)
         plainDirMasks.push_back(nameSignature256(token.data(), token.size()));
+    // 正则没法直接做签名预筛，但正则里固定的字面量可以：先挡住绝大多数不可能命中的文件。
+    std::vector<uint64_t> regexMasks;
+    regexMasks.reserve(query.regexKeys.size());
+    for (const std::string &key : query.regexKeys)
+        regexMasks.push_back(nameSignature(key.data(), key.size()));
     // 粗筛：签名并集都不包含某个关键字的 bigram，说明全库不可能命中。
     for (const std::string &token : query.plain) {
         if (!signaturePossible(index.nameSigUnion, token)
@@ -954,30 +1185,60 @@ std::vector<uint32_t> searchIndex(const Index &index, const ParsedQuery &query,
             extAllowed[extensionTokenHash(token)] = true;
     }
 
-    // 只有 path: 条件时根本不需要解码文件名。
-    if (query.plain.empty() && query.exts.empty() && !query.path.empty()) {
+    // 只有路径 / 扩展名条件时不需要按文件名检索：先定位目录，再枚举其中的文件。
+    const bool dirDriven = query.plain.empty() && query.regex.empty()
+                           && (!query.path.empty() || !query.fullPath.empty() || hasExtFilter);
+    if (dirDriven) {
         // 先按目录算一次完整路径并对命中结果做位图，避免对每个文件重复拼接父路径
-        std::vector<uint8_t> dirHit(index.dirs.size(), 0);
+        std::vector<uint8_t> dirHit;
         std::string dirPath;
         std::vector<uint32_t> ancestors;
-        for (uint32_t d = 0; d < index.dirs.size(); ++d) {
-            if (!pathMask.empty() && !index.dirSigs[d].contains(pathMask))
-                continue;
-            if (!buildDirPathInto(index, d, dirPath, ancestors))
-                continue;
-            uint8_t matched = 1;
-            for (const std::string &token : query.path) {
-                if (!containsNoCase(dirPath.data(), dirPath.size(), token.data(), token.size())) {
-                    matched = 0;
-                    break;
+        if (!query.path.empty() || !query.fullPath.empty()) {
+            dirHit.assign(index.dirs.size(), 0);
+            for (uint32_t d = 0; d < index.dirs.size() && !isCancelled(); ++d) {
+                if (!pathMask.empty() && !index.dirSigs[d].contains(pathMask))
+                    continue;
+                if (!buildDirPathInto(index, d, dirPath, ancestors))
+                    continue;
+                uint8_t matched = 1;
+                for (const std::string &token : query.path) {
+                    if (!containsNoCasePath(dirPath.data(), dirPath.size(), token.data(),
+                                            token.size())) {
+                        matched = 0;
+                        break;
+                    }
                 }
+                // full: 关键字先用目录部分粗筛，跨到文件名的部分留给逐文件确认
+                for (size_t k = 0; matched && k < query.fullPath.size(); ++k) {
+                    const std::string &token = query.fullPath[k];
+                    const size_t sep = token.find_last_of("\\/");
+                    if (sep == std::string::npos || sep == 0)
+                        continue;
+                    if (!containsNoCasePath(dirPath.data(), dirPath.size(), token.data(), sep))
+                        matched = 0;
+                }
+                dirHit[d] = matched;
             }
-            dirHit[d] = matched;
         }
+
+        std::string nameBuffer;
+        std::string dirBuffer;
+        std::string fullPathBuffer;
+        std::vector<uint32_t> ancestorBuffer;
+        uint32_t dirCacheId = kInvalidIndex;
         for (uint32_t i = 0; i < count; ++i) {
+            if ((i & 0x3FFF) == 0 && isCancelled())
+                break;
             const FileEntry &file = index.files[i];
-            if (file.dirId >= dirHit.size() || !dirHit[file.dirId])
+            if (!dirHit.empty() && (file.dirId >= dirHit.size() || !dirHit[file.dirId]))
                 continue;
+            if (!query.fullPath.empty() || hasExtFilter) {
+                if (!decodeFileNameInto(index, i, nameBuffer))
+                    continue;
+                if (!matchesFilters(index, file, nameBuffer.data(), nameBuffer.size(), query,
+                                    false, dirBuffer, fullPathBuffer, ancestorBuffer, dirCacheId))
+                    continue;
+            }
             add(i);
             if (full())
                 return results;
@@ -986,6 +1247,7 @@ std::vector<uint32_t> searchIndex(const Index &index, const ParsedQuery &query,
     }
 
     std::string dirBuffer;
+    std::string fullPathBuffer;
     std::vector<uint32_t> ancestorBuffer;
     uint32_t dirCacheId = kInvalidIndex;
     NameCursor cursor(index);
@@ -1002,7 +1264,7 @@ std::vector<uint32_t> searchIndex(const Index &index, const ParsedQuery &query,
             const FileEntry &file = index.files[pos];
             if (pathMask.empty() || index.dirSigs[file.dirId].contains(pathMask)) {
                 if (matchesFilters(index, file, name.data(), name.size(), query, false,
-                                   dirBuffer, ancestorBuffer, dirCacheId))
+                                   dirBuffer, fullPathBuffer, ancestorBuffer, dirCacheId))
                     add(pos);
                 if (full())
                     return results;
@@ -1029,7 +1291,7 @@ std::vector<uint32_t> searchIndex(const Index &index, const ParsedQuery &query,
             const FileEntry &file = index.files[pos];
             if (pathMask.empty() || index.dirSigs[file.dirId].contains(pathMask)) {
                 if (matchesFilters(index, file, name.data(), name.size(), query, false,
-                                   dirBuffer, ancestorBuffer, dirCacheId))
+                                   dirBuffer, fullPathBuffer, ancestorBuffer, dirCacheId))
                     add(pos);
                 if (full())
                     return results;
@@ -1056,7 +1318,8 @@ std::vector<uint32_t> searchIndex(const Index &index, const ParsedQuery &query,
     const uint32_t allBits = trackedTokens >= 32
                                  ? 0xFFFFFFFFu
                                  : (trackedTokens == 0 ? 0u : ((1u << trackedTokens) - 1u));
-    const bool exactPathNeeded = !query.path.empty()
+    const bool exactPathNeeded = !query.path.empty() || !query.fullPath.empty()
+                                 || !query.regex.empty()
                                  || (allowPathTokens && !allTracked);
 
     // 目录级预匹配：先算出每个目录真正命中哪几个关键字，文件扫描只看 4 字节位掩码。
@@ -1104,6 +1367,18 @@ std::vector<uint32_t> searchIndex(const Index &index, const ParsedQuery &query,
         pathOnly.reserve(limit);
 
         for (uint32_t i = 0; i < count; ++i) {
+            if ((i & 0x3FFF) == 0 && isCancelled())
+                break;
+            // 正则里的固定字面量先在签名上过一遍，避免对全库文件逐个跑 std::regex
+            bool regexExcluded = false;
+            for (uint64_t regexMask : regexMasks) {
+                if ((index.sig[i] & regexMask) != regexMask) {
+                    regexExcluded = true;
+                    break;
+                }
+            }
+            if (regexExcluded)
+                continue;
             if (mask != 0 && (index.sig[i] & mask) != mask) {
                 // 文件名签名已经排除所有关键字时，只有当目录全部命中才可能入选。
                 if (!allowPathTokens || !allTracked)
@@ -1138,7 +1413,8 @@ std::vector<uint32_t> searchIndex(const Index &index, const ParsedQuery &query,
 
             if (exactPathNeeded) {
                 if (matchesFilters(index, file, nameBuffer.data(), nameBuffer.size(), query,
-                                   allowPathTokens, dirBuffer, ancestorBuffer, dirCacheId)) {
+                                   allowPathTokens, dirBuffer, fullPathBuffer, ancestorBuffer,
+                                   dirCacheId)) {
                     add(i);
                     if (full())
                         return results;

@@ -509,7 +509,7 @@ void LauncherWindow::showContextMenu(const QPoint &position)
         QAction *copyFile = nullptr;
         QAction *copyPath = nullptr;
         if (!result.pluginAction.isEmpty())
-            run = menu->addAction(tr("执行"));
+            run = menu->addAction(tr("打开"));
         if (!path.isEmpty()) {
             menu->addSeparator();
             reveal = menu->addAction(tr("打开所在目录"));
