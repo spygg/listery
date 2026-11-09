@@ -6,7 +6,7 @@
  *  - 支持 ext: 扩展名、path: 目录、full: 完整路径、re: 正则等过滤条件；
  *  - 索引二进制快照保存在 %LOCALAPPDATA%\Listery\FileSearch\index.bin；
  *  - 配置文件 filesearch.ini 与快照同目录，可用 !config 打开；
- *  - 面板里输入 !status / !reindex / !config 查看状态或重建索引。
+ *  - 面板里输入 !status / !reindex / !config / !sort 查看状态、重建索引或设置排序。
  *
  * 插件不依赖 Qt，也不依赖 Everything。
  */
@@ -58,6 +58,11 @@ constexpr int kDefaultRescanMinutes = 60;
 /** 闲置多少分钟后释放内存索引；0 = 常驻内存。 */
 constexpr int kDefaultIdleUnloadMinutes = 10;
 /**
+ * 排序模式：0=off 保持相关度排序，1=name，2=size，3=mtime（修改时间），4=ctime（创建时间）。
+ * 排序方向：-1=自动（名称升序，大小/时间降序），0=强制升序，1=强制降序。
+ */
+constexpr int kDefaultSortMode = 0;
+/**
  * 宿主可以一次要走全部命中：面板固定高度 + 滚动条浏览。
  * 上限只是防止“*.jpg”这类极宽查询把内存撑爆，正常搜索远达不到。
  */
@@ -86,6 +91,8 @@ std::atomic<bool> g_matchPath{true};
 std::atomic<int> g_rescanMinutes{kDefaultRescanMinutes};
 /** 闲置多少分钟后卸载内存索引（0 = 不卸载）。下次查询时从快照重新加载。 */
 std::atomic<int> g_idleUnloadMinutes{kDefaultIdleUnloadMinutes};
+std::atomic<int> g_sortMode{kDefaultSortMode};
+std::atomic<int> g_sortDesc{-1};
 std::atomic<uint64_t> g_lastQueryAt{0};
 
 struct AppConfig
@@ -94,6 +101,8 @@ struct AppConfig
     int rescanMinutes = kDefaultRescanMinutes;
     int idleUnloadMinutes = kDefaultIdleUnloadMinutes;
     bool matchPath = true;
+    int sortMode = kDefaultSortMode;
+    int sortDesc = -1;
 };
 
 std::mutex g_configMutex;
@@ -257,6 +266,73 @@ std::string formatCount(uint64_t value)
     return out;
 }
 
+/** 某模式的默认方向：0=升序，1=降序（名称默认升序，大小/时间默认降序）。 */
+int autoDirection(int mode)
+{
+    return mode == 1 ? 0 : 1;
+}
+
+/** 当前实际生效的方向（desc=1 / asc=0）；auto（-1）按模式默认展开。 */
+int effectiveDirection(int mode, int desc)
+{
+    if (mode == 0)
+        return -1;
+    return desc < 0 ? autoDirection(mode) : desc;
+}
+
+const char *sortModeName(int mode)
+{
+    switch (mode) {
+    case 1: return "name";
+    case 2: return "size";
+    case 3: return "mtime";
+    case 4: return "ctime";
+    default: return "off";
+    }
+}
+
+const char *sortModeLabel(int mode)
+{
+    switch (mode) {
+    case 1: return "名称";
+    case 2: return "大小";
+    case 3: return "修改时间";
+    case 4: return "创建时间";
+    default: return "相关度";
+    }
+}
+
+bool parseSortMode(const std::string &word, int &mode)
+{
+    if (word == "off") mode = 0;
+    else if (word == "name") mode = 1;
+    else if (word == "size") mode = 2;
+    else if (word == "mtime") mode = 3;
+    else if (word == "ctime") mode = 4;
+    else return false;
+    return true;
+}
+
+/** Unix 秒 → 本地时间 "YYYY-MM-DD HH:MM"；0 或转换失败返回空串。只在检索线程调用。 */
+std::string formatLocalTime(uint32_t unixSeconds)
+{
+    if (unixSeconds == 0)
+        return std::string();
+    std::time_t stamp = static_cast<std::time_t>(unixSeconds);
+    std::tm time{};
+#if defined(_MSC_VER)
+    if (localtime_s(&time, &stamp) != 0)
+        return std::string();
+#else
+    if (localtime_r(&stamp, &time) == nullptr)
+        return std::string();
+#endif
+    char buffer[32];
+    if (std::strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M", &time) == 0)
+        return std::string();
+    return std::string(buffer);
+}
+
 // ---------------------------------------------------------------------------
 // 配置
 // ---------------------------------------------------------------------------
@@ -346,6 +422,8 @@ void writeDefaultConfigIfMissing()
     text += "; match_path：文件名没命中时是否继续匹配目录路径，0 或 1\r\n";
     text += "; rescan_minutes：每隔多少分钟后台重建索引，0 = 只使用现有快照\r\n";
     text += "; idle_unload_minutes：闲置多少分钟后释放内存索引，下次搜索时自动从快照加载；默认 10，0 = 常驻内存\r\n";
+    text += "; sort_mode：搜索结果排序，off（相关度）/ name / size / mtime（修改时间）/ ctime（创建时间）；也可在搜索框输入 !sort 设置\r\n";
+    text += "; sort_desc：排序方向，auto（名称升序、大小和时间降序）/ asc / desc\r\n";
     text += "; config_version：配置格式版本（用于默认值升级），请勿修改\r\n";
     text += "\r\n";
     text += "config_version=2\r\n";
@@ -356,6 +434,8 @@ void writeDefaultConfigIfMissing()
     text += "match_path=1\r\n";
     text += "rescan_minutes=60\r\n";
     text += "idle_unload_minutes=10\r\n";
+    text += "sort_mode=off\r\n";
+    text += "sort_desc=auto\r\n";
 
     if (!writeFileBytes(g_configPath, text))
         hostLog(LISTERY_LOG_WARNING, "无法写入默认配置文件");
@@ -509,6 +589,18 @@ void persistConfigMigration(int idleUnloadMinutes)
         hostLog(LISTERY_LOG_WARNING, "配置迁移回写失败，下次启动会重复迁移");
 }
 
+/** !sort 的选择写回 ini（保留注释），让设置跨重启保留。 */
+void saveSortConfig(int mode, int desc)
+{
+    std::string raw;
+    if (!readFileBytes(g_configPath, raw))
+        raw = "\xEF\xBB\xBF";
+    replaceIniValue(raw, "sort_mode", sortModeName(mode));
+    replaceIniValue(raw, "sort_desc", desc < 0 ? "auto" : (desc == 1 ? "desc" : "asc"));
+    if (!writeFileBytes(g_configPath, raw))
+        hostLog(LISTERY_LOG_WARNING, "排序设置写入配置文件失败");
+}
+
 bool loadConfig()
 {
     AppConfig config;
@@ -589,6 +681,15 @@ bool loadConfig()
                 config.rescanMinutes = parseInt(value, kDefaultRescanMinutes);
             } else if (key == "idle_unload_minutes") {
                 config.idleUnloadMinutes = parseInt(value, kDefaultIdleUnloadMinutes);
+            } else if (key == "sort_mode") {
+                int mode = kDefaultSortMode;
+                if (parseSortMode(value, mode))
+                    config.sortMode = mode;
+            } else if (key == "sort_desc") {
+                if (value == "asc")
+                    config.sortDesc = 0;
+                else if (value == "desc")
+                    config.sortDesc = 1;
             } else if (key == "config_version") {
                 configVersion = parseInt(value, 1);
             }
@@ -632,6 +733,8 @@ bool loadConfig()
     g_rescanMinutes.store(config.rescanMinutes);
     g_matchPath.store(config.matchPath);
     g_idleUnloadMinutes.store(config.idleUnloadMinutes);
+    g_sortMode.store(config.sortMode);
+    g_sortDesc.store(config.sortDesc);
     return true;
 }
 
@@ -882,6 +985,9 @@ void handleCommand(const QueryRequest &request)
         addRow(request.id, "正则筛选：re:^IMG_.*\\.jpg$",
                "不区分大小写的文件名正则，可和其他条件组合；\\d、\\w 等转义保持原样", "搜",
                "copy:re:");
+        addRow(request.id, "!sort 排序搜索结果",
+               "!sort name/size/mtime/ctime，方向 asc/desc；立即生效并记住设置", "搜",
+               "copy:!sort");
         addRow(request.id, "!status 查看索引状态", "显示文件数、扫描时间和索引位置", "搜",
                "copy:!status");
         addRow(request.id, "!reindex 重新扫描", "修改配置或文件变化很大时使用", "搜",
@@ -892,8 +998,71 @@ void handleCommand(const QueryRequest &request)
         return;
     }
 
+    if (command == "!sort" || command.compare(0, 6, "!sort ") == 0) {
+        // 解析 “!sort size desc” 这类参数：第一个关键字是模式，asc/desc 是方向。
+        int mode = -1;
+        int desc = -1;
+        std::string badArg;
+        size_t pos = 5;
+        while (pos < command.size()) {
+            while (pos < command.size() && (command[pos] == ' ' || command[pos] == '\t'))
+                ++pos;
+            const size_t end = command.find(' ', pos);
+            const std::string word =
+                command.substr(pos, end == std::string::npos ? std::string::npos : end - pos);
+            pos = end == std::string::npos ? command.size() : end;
+            if (word.empty())
+                break;
+            int parsedMode = 0;
+            if (parseSortMode(word, parsedMode))
+                mode = parsedMode;
+            else if (word == "asc")
+                desc = 0;
+            else if (word == "desc")
+                desc = 1;
+            else
+                badArg = word;
+        }
+
+        const int currentMode = g_sortMode.load();
+        const int currentDesc = g_sortDesc.load();
+        if (!badArg.empty()) {
+            addRow(request.id, "未知的排序选项：" + badArg,
+                   "用法：!sort off/name/size/mtime/ctime [asc|desc]，单独输入 !sort 查看", "搜",
+                   "copy:!sort");
+            finishQuery(request.id, nullptr);
+            return;
+        }
+        int newMode = mode;
+        int newDesc = desc;
+        if (newMode < 0 && newDesc < 0) {
+            // 无参数：沿用当前模式并翻转方向；当前是 off 则切到名称升序。
+            newMode = currentMode == 0 ? 1 : currentMode;
+            newDesc = effectiveDirection(currentMode, currentDesc) == 1 ? 0 : 1;
+        } else if (newMode < 0) {
+            newMode = currentMode == 0 ? 1 : currentMode;
+        } else if (newDesc < 0) {
+            // 指定了模式没指定方向：同模式再次输入则翻转方向，换模式用该模式的默认方向。
+            newDesc = newMode == currentMode
+                          ? (effectiveDirection(currentMode, currentDesc) == 1 ? 0 : 1)
+                          : autoDirection(newMode);
+        }
+        if (newMode == 0)
+            newDesc = -1;
+        g_sortMode.store(newMode);
+        g_sortDesc.store(newDesc);
+        saveSortConfig(newMode, newDesc);
+        const std::string detail = newMode == 0
+            ? std::string("结果恢复按匹配程度排序")
+            : std::string(newDesc == 0 ? "升序" : newDesc == 1 ? "降序" : "默认方向");
+        addRow(request.id, std::string("已切换为按") + sortModeLabel(newMode) + "排序",
+               detail + "；设置已写入配置文件，立即生效", "搜", "copy:!sort");
+        finishQuery(request.id, nullptr);
+        return;
+    }
+
     addRow(request.id, "无法识别的命令：" + command,
-           "可用命令：!status、!reindex、!config、!help", "搜", "copy:!help");
+           "可用命令：!status、!reindex、!config、!sort、!help", "搜", "copy:!help");
     finishQuery(request.id, nullptr);
 }
 
@@ -956,14 +1125,59 @@ void processQuery(const QueryRequest &request)
     if (limit > static_cast<int>(kMaxResultsCap))
         limit = static_cast<int>(kMaxResultsCap);
 
-    const std::vector<uint32_t> hits =
-        filesearch::searchIndex(*index, parsed, limit, g_matchPath.load(),
+    // 排序模式下先拿回尽可能多的命中再重排：只排面板里那十几条没有意义。
+    const int sortMode = g_sortMode.load();
+    const bool sorted = sortMode != 0;
+    const std::vector<uint32_t> found =
+        filesearch::searchIndex(*index, parsed, sorted ? static_cast<int>(kMaxResultsCap) : limit,
+                                g_matchPath.load(),
                                 [&request]() { return takeCancelled(request.id); });
 
     if (takeCancelled(request.id)) {
         finishQuery(request.id, nullptr);
         return;
     }
+
+    std::vector<uint32_t> hits = sorted ? [&] {
+        std::vector<uint32_t> out(found.begin(), found.end());
+        const int desc = effectiveDirection(sortMode, g_sortDesc.load());
+        const bool descending = desc == 1;
+        std::sort(out.begin(), out.end(),
+                  [&index, sortMode, descending](uint32_t left, uint32_t right) {
+                      const FileEntry &a = index->files[left];
+                      const FileEntry &b = index->files[right];
+                      uint64_t keyA = 0;
+                      uint64_t keyB = 0;
+                      switch (sortMode) {
+                      case 1:
+                          // files 数组本身就是文件名排序，比较下标等于比较名字，无需解码
+                          return descending ? left > right : left < right;
+                      case 2:
+                          keyA = filesearch::fileSize(a);
+                          keyB = filesearch::fileSize(b);
+                          break;
+                      case 3:
+                          keyA = a.mtime;
+                          keyB = b.mtime;
+                          break;
+                      case 4:
+                          keyA = a.ctime;
+                          keyB = b.ctime;
+                          break;
+                      default:
+                          break;
+                      }
+                      if (keyA != keyB)
+                          return descending ? keyA > keyB : keyA < keyB;
+                      return left < right;
+                  });
+        if (out.size() > static_cast<size_t>(limit))
+            out.resize(static_cast<size_t>(limit));
+        return out;
+    }() : found;
+
+    const bool showMtime = sortMode == 3;
+    const bool showCtime = sortMode == 4;
 
     for (size_t i = 0; i < hits.size(); ++i) {
         if ((i & 0x0F) == 0 && takeCancelled(request.id)) {
@@ -978,6 +1192,13 @@ void processQuery(const QueryRequest &request)
         std::string subtitle = path;
         subtitle += "    ";
         subtitle += filesearch::formatSize(filesearch::fileSize(file));
+        if (showMtime || showCtime) {
+            const std::string time = formatLocalTime(showMtime ? file.mtime : file.ctime);
+            if (!time.empty()) {
+                subtitle += "    ";
+                subtitle += time;
+            }
+        }
         addRow(request.id, name, subtitle, badgeForName(name), "run:" + path);
     }
     finishQuery(request.id, nullptr);
@@ -1144,8 +1365,8 @@ const ListeryPluginV1 kPlugin = {
     LISTERY_PLUGIN_API_VERSION,
     "com.listery.filesearch",
     "文件搜索",
-    "1.0.0",
-    "用 Alt+S 快速搜索本机文件；自建索引，不依赖 Everything。",
+    "1.1.0",
+    "用 Alt+S 快速搜索本机文件；自建索引，不依赖 Everything。支持按名称/大小/时间排序。",
     "Alt+S",
     pluginInit,
     pluginShutdown,

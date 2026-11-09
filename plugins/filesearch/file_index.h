@@ -17,13 +17,14 @@ constexpr uint32_t kNameBlock = 16;
 constexpr uint32_t kSizeCap = 0xFFFFFFu;
 
 /**
- * 一个文件条目，12 字节。
+ * 一个文件条目，20 字节。
  *
  * files 数组本身按文件名排序（不区分大小写），所以检索时可以直接对 files 做二分。
  * nameOff 指向 names 里的一条前缀压缩记录：[prefixLen:1][suffix][\0]。
  * meta 在扫描/排序阶段是文件名长度（长于 255 字节时写 255），
  * finalize 之后改成扩展名的 8 位哈希：0 = 没有扩展名，1..255 = 哈希值。
  * size 是 24 位字节数，0xFFFFFF 表示 >=16MB。
+ * mtime / ctime 是修改 / 创建时间的 Unix 秒，0 表示取不到或早于 1970。
  */
 struct FileEntry
 {
@@ -31,8 +32,10 @@ struct FileEntry
     uint32_t dirId = 0;
     uint8_t size[3] = {0, 0, 0};
     uint8_t meta = 0;
+    uint32_t mtime = 0;
+    uint32_t ctime = 0;
 };
-static_assert(sizeof(FileEntry) == 12, "FileEntry must stay 12 bytes");
+static_assert(sizeof(FileEntry) == 20, "FileEntry must stay 20 bytes");
 
 inline uint32_t fileSize(const FileEntry &file)
 {

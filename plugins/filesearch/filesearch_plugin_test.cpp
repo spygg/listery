@@ -217,6 +217,51 @@ int main()
     writeFile(root + L"\\chrome-settings.json", "{}");
     writeFile(root + L"\\sample.cpp", "int main(){}");
     writeFile(root + L"\\子目录\\嵌套文件.md", "# nested");
+    // cases 表里有 appcontroller 用例；不建同名文件时它依赖本机真实目录，结果随机器漂移。
+    writeFile(root + L"\\appcontroller.cs", "x");
+
+    // 排序用例的固定数据：三个共享关键字 sortest 的 ASCII 文件名，
+    // 名字顺序 a1 < b2 < c3，大小顺序 c3(17MB) > b2(200B) > a1(1B)。
+    // 17MB 超过 24 位上限会截成 kSizeCap，正好也覆盖大文件排序。
+    writeFile(root + L"\\a1sortest.txt", std::string(1, 'x'));
+    writeFile(root + L"\\b2sortest.txt", std::string(200, 'x'));
+    writeFile(root + L"\\c3sortest.txt", std::string(17u * 1024u * 1024u, 'x'));
+    // 显式设定三个不同的过去 mtime（a1 最早、c3 最新），不受本机时钟影响；
+    // ctime 仍是创建时间（≈测试开始）。
+    struct Stamp
+    {
+        const wchar_t *name;
+        WORD year;
+        WORD month;
+        WORD day;
+    };
+    const Stamp stamps[] = {
+        {L"\\a1sortest.txt", 2023, 3, 10},
+        {L"\\b2sortest.txt", 2024, 7, 20},
+        {L"\\c3sortest.txt", 2025, 11, 30},
+    };
+    for (const Stamp &stamp : stamps) {
+        FILETIME asFileTime{};
+        SYSTEMTIME when = {};
+        when.wYear = stamp.year;
+        when.wMonth = stamp.month;
+        when.wDay = stamp.day;
+        when.wHour = 12;
+        when.wMinute = 34;
+        when.wSecond = 21;
+        if (SystemTimeToFileTime(&when, &asFileTime)) {
+            HANDLE target = CreateFileW((root + stamp.name).c_str(), FILE_WRITE_ATTRIBUTES,
+                                        FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING,
+                                        FILE_ATTRIBUTE_NORMAL, nullptr);
+            if (target != INVALID_HANDLE_VALUE) {
+                SetFileTime(target, nullptr, nullptr, &asFileTime);
+                CloseHandle(target);
+            }
+        }
+    }
+    // 三个同大小文件让 name/size 的 tiebreak 可判定（名字顺序 a2 < b2 < c2）。
+    for (wchar_t ch = L'a'; ch <= L'c'; ++ch)
+        writeFile(root + L"\\" + std::wstring(1, ch) + L"2same.txt", std::string(50, 'x'));
 
     std::wstring roots = root;
     if (!extraRoot.empty())
@@ -388,6 +433,85 @@ int main()
     } else {
         std::printf("非法正则提示：失败\n");
         ++failures;
+    }
+
+    // !sort：模式 + 方向 + 持久化 + 时间显示
+    {
+        struct SortCase
+        {
+            const char *command;
+            const char *queryText;
+            const char *expectFirst;
+            bool timeInSubtitle;
+        };
+        const SortCase sortCases[] = {
+            {"!sort size", "sortest", "c3sortest.txt", false},
+            {"!sort size asc", "sortest", "a1sortest.txt", false},
+            {"!sort name desc", "sortest", "c3sortest.txt", false},
+            {"!sort name", "sortest", "a1sortest.txt", false},
+            // 同大小时按名字升序（tiebreak），验证排序稳定可预期
+            {"!sort size", "same", "a2same.txt", false},
+            {"!sort mtime desc", "sortest", "c3sortest.txt", true},
+            // ctime 三个文件几乎相同，只验证时间列显示；首条不做断言（空串跳过检查）
+            {"!sort ctime desc", "sortest", "", true},
+            {"!sort off", "sortest", "a1sortest.txt", false},
+        };
+        for (const SortCase &item : sortCases) {
+            std::vector<Row> setRows;
+            std::string setError;
+            if (!query(plugin, item.command, setRows, setError) || setRows.empty()) {
+                std::printf("  [FAIL] %s 没有返回确认行\n", item.command);
+                ++failures;
+                continue;
+            }
+            if (setRows.front().title.find("已切换") == std::string::npos) {
+                std::printf("  [FAIL] %s 确认行异常：%s\n", item.command,
+                            setRows.front().title.c_str());
+                ++failures;
+            }
+            if (!query(plugin, item.queryText, rows, error)) {
+                ++failures;
+                continue;
+            }
+            printRows(item.command, rows, error);
+            if (rows.empty()
+                || (item.expectFirst[0] != '\0' && rows.front().title != item.expectFirst)) {
+                std::printf("  [FAIL] %s 后首条应为 %s，实际 %s\n", item.command,
+                            item.expectFirst,
+                            rows.empty() ? "(空)" : rows.front().title.c_str());
+                ++failures;
+            }
+            const bool hasTime = !rows.empty()
+                                 && rows.front().subtitle.find("20") != std::string::npos
+                                 && rows.front().subtitle.find('-') != std::string::npos;
+            if (item.timeInSubtitle && !hasTime) {
+                std::printf("  [FAIL] %s 副标题缺少时间：%s\n", item.command,
+                            rows.front().subtitle.c_str());
+                ++failures;
+            }
+        }
+
+        const std::string iniAfter = readFile(dataDir + L"\\filesearch.ini");
+        const bool persisted = iniAfter.find("sort_mode=off") != std::string::npos;
+        std::printf("排序设置持久化：%s\n", persisted ? "通过" : "失败");
+        if (!persisted)
+            ++failures;
+
+        // 未知选项要报出来，不能静默改状态
+        std::vector<Row> badRows;
+        std::string badError;
+        if (query(plugin, "!sort bogus", badRows, badError) && !badRows.empty()
+            && badRows.front().title.find("未知") != std::string::npos) {
+            std::printf("非法排序选项提示：通过\n");
+        } else {
+            std::printf("非法排序选项提示：失败\n");
+            ++failures;
+        }
+        if (!query(plugin, "sortest", rows, error) || rows.empty()
+            || rows.front().title != "a1sortest.txt") {
+            std::printf("  [FAIL] 非法选项不应改变排序状态\n");
+            ++failures;
+        }
     }
 
     plugin->shutdown();

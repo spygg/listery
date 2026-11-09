@@ -20,7 +20,7 @@
 namespace filesearch {
 namespace {
 
-constexpr uint32_t kSnapshotVersion = 7;
+constexpr uint32_t kSnapshotVersion = 8;
 constexpr uint32_t kMaxFiles = 50000000u;
 constexpr uint32_t kMaxDirs = 10000000u;
 constexpr uint32_t kMaxBlob = 0x7FFFFFFFu; // 2GB - 1，避免 size_t 溢出

@@ -64,6 +64,19 @@ std::wstring toDisplayPath(const std::wstring &path)
     return path;
 }
 
+/** FILETIME（1601 年起算的 100ns）→ Unix 秒；取不到或早于 1970 返回 0。 */
+uint32_t filetimeToUnix(const FILETIME &time)
+{
+    const ULONGLONG raw = (static_cast<ULONGLONG>(time.dwHighDateTime) << 32) | time.dwLowDateTime;
+    constexpr ULONGLONG kEpoch1601To1970 = 116444736000000000ULL;
+    if (time.dwHighDateTime == 0 && time.dwLowDateTime == 0)
+        return 0;
+    if (raw < kEpoch1601To1970)
+        return 0;
+    const ULONGLONG seconds = (raw - kEpoch1601To1970) / 10000000ULL;
+    return seconds > 0xFFFFFFFFULL ? 0xFFFFFFFFu : static_cast<uint32_t>(seconds);
+}
+
 bool isUnderOrEqual(const std::wstring &lowerPath, const std::wstring &lowerRoot)
 {
     if (lowerRoot.empty())
@@ -285,6 +298,9 @@ bool scanFileSystem(const ScanConfig &config, Index &out, std::atomic<bool> &sto
                                        (std::min)((static_cast<ULONGLONG>(data.nFileSizeHigh) << 32)
                                                       | data.nFileSizeLow,
                                                   static_cast<ULONGLONG>(kSizeCap))));
+                // mTime/cTime 是 SDK 宏，MinGW 头文件里只有全名成员
+                entry.mtime = filetimeToUnix(data.ftLastWriteTime);
+                entry.ctime = filetimeToUnix(data.ftCreationTime);
                 rawNames.insert(rawNames.end(), utf8.begin(), utf8.end());
                 if (utf8.size() >= 255)
                     rawNames.push_back('\0');
