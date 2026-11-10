@@ -57,8 +57,38 @@ typedef struct ListeryHostV1 {
     void (*log)(void *context, int level, const char *message);
     int  (*httpGet)(void *context, const char *url, const char *headers,
                     ListeryHttpCallback callback, void *userData, int timeoutMs);
+    /* 可选扩展：列视图，老宿主没有这两个字段，见下节 */
+    void (*setResultColumns)(void *context, unsigned long long requestId,
+                             const char *spec);
+    void (*addResultRow)(void *context, unsigned long long requestId,
+                         const char *title, const char *subtitle,
+                         const char *badge, const char *action, const char *cells);
 } ListeryHostV1;
 ```
+
+#### 可选扩展：列视图（Everything 风格）
+
+宿主自 1.7.x 起支持把插件结果画成带表头的多列表格。能力表末尾追加了两个函数指针，
+**老宿主编译时结构体较短，这两个字段不存在**，所以使用前必须先判空：
+
+```c
+if (g_host->setResultColumns && g_host->addResultRow) {
+    g_host->setResultColumns(g_host->context, requestId,
+        "名称:0:l\x1F路径:0:l\x1F大小:92:r\x1F修改日期:140:l");
+    g_host->addResultRow(g_host->context, requestId, title, subtitle, badge, action,
+        "报告.docx\x1FC:\\Docs\\报告.docx\x1F24.6 KB\x1F2026-11-09 14:22");
+} else {
+    g_host->addResult(...);   /* 老宿主：经典两行样式 */
+}
+```
+
+- `spec` / `cells` 都用 ASCII `\x1F`（US）分隔；列定义每列是 `标题:宽度:对齐`，
+  宽度 `0` 表示弹性列（平分剩余宽度），对齐 `l` / `r`；
+- `cells` 必须与列定义等长，顺序一致；不声明 `setResultColumns` 的查询走经典两行样式；
+- `addResultRow` 的 `title` / `subtitle` / `badge` / `action` 语义与 `addResult` 完全相同，
+  `subtitle` 在列视图下作为 tooltip 使用；
+- 插件可以同时保留两条路径：老宿主自动降级，不需要改配置。
+
 
 ### 一次查询的时序
 

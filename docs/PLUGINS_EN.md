@@ -58,8 +58,40 @@ typedef struct ListeryHostV1 {
     void (*log)(void *context, int level, const char *message);
     int  (*httpGet)(void *context, const char *url, const char *headers,
                     ListeryHttpCallback callback, void *userData, int timeoutMs);
+    /* optional extension: column view, absent in older hosts (see below) */
+    void (*setResultColumns)(void *context, unsigned long long requestId,
+                             const char *spec);
+    void (*addResultRow)(void *context, unsigned long long requestId,
+                         const char *title, const char *subtitle,
+                         const char *badge, const char *action, const char *cells);
 } ListeryHostV1;
 ```
+
+#### Optional extension: column view (Everything-style)
+
+Hosts from 1.7.x can render plugin results as a table with a header row. Two function
+pointers were appended to the capability table; **older hosts were built against a shorter
+struct**, so always null-check before use:
+
+```c
+if (g_host->setResultColumns && g_host->addResultRow) {
+    g_host->setResultColumns(g_host->context, requestId,
+        "Name:0:l\x1FPath:0:l\x1FSize:92:r\x1FModified:140:l");
+    g_host->addResultRow(g_host->context, requestId, title, subtitle, badge, action,
+        "report.docx\x1FC:\\Docs\\report.docx\x1F24.6 KB\x1F2026-11-09 14:22");
+} else {
+    g_host->addResult(...);   /* older host: classic two-line rows */
+}
+```
+
+- Both `spec` and `cells` are separated by ASCII `\x1F` (US). Each column is `label:width:align`,
+  where width `0` means a flexible column (shares leftover space) and align is `l` / `r`;
+- `cells` must have the same length and order as the column spec; queries that never call
+  `setResultColumns` keep the classic two-line layout;
+- `title` / `subtitle` / `badge` / `action` behave exactly as in `addResult`; `subtitle` becomes
+  the tooltip in column view;
+- Keeping both paths makes a plugin work on old and new hosts without configuration.
+
 
 ### Query lifecycle
 

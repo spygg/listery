@@ -33,7 +33,7 @@ A Listary-style quick launcher written in Qt / C++: index every executable → d
 | **Learns your habits** | Score = `0.72 × match quality + 0.28 × usage habit`, so apps you use most bubble up |
 | **Smart scanning** | Per-volume adaptive scheduling: volumes with no software back off automatically; on Linux it just reads the locate snapshot |
 | **EN↔ZH translator** | `Alt+E` opens the translator plugin: type English for Chinese, Chinese for English, press Enter to copy the result |
-| **File search** | `Alt+S` opens the file search plugin: a compact self-built index searches the whole disk, with `ext:` / `path:` / `full:` / `re:` filters and wildcard paths like `D:\*keyword*`; click or press Enter to open a result |
+| **File search** | `Alt+S` opens the file search plugin: a compact self-built index with Everything-style configurable columns (Name / Path / Size / Date Modified …), `ext:` / `path:` / `full:` / `re:` filters and wildcard paths like `D:\*keyword*`; click or press Enter to open a result |
 | **Plugins** | Pure-C plugin ABI: plugins need no Qt and no OpenSSL, so anyone can extend Listery — see the [plugin guide](docs/PLUGINS_EN.md) |
 | **Auto-update** | Checks the latest GitHub Release automatically (semantic version compare, so `1.10.0 > 1.2.0` works); shows a tray notification and opens the release page on click |
 | **Log rotation** | Keeps only the last 3 days of logs, trimmed on startup — never grows without bound |
@@ -70,11 +70,13 @@ They need **no Qt and no OpenSSL** — the host performs network requests on the
 | Bundled plugin | Hotkey | What it does |
 | --- | --- | --- |
 | EN↔ZH translator (`translator`) | `Alt+E` | Youdao dictionary suggest API, both directions, whole sentences too; Enter copies the result. Switch backends with `LISTERY_TRANSLATOR_ENDPOINT=google` |
-| File search (`filesearch`) | `Alt+S` | Compact self-built index for whole-disk file search, with `ext:pdf` / `path:project` filters plus `re:` regex, `full:` path search and `D:\*keyword*` wildcards; click or press Enter to open a result |
+| File search (`filesearch`) | `Alt+S` | Compact self-built index with Everything-style columns, `ext:pdf` / `path:project` filters plus `re:` regex, `full:` path search and `D:\*keyword*` wildcards; click or press Enter to open a result |
 
 - Settings → Plugin Manager… opens a standalone dialog to enable/disable each plugin, reassign its hotkey (`Alt+E`, `Ctrl+Shift+F1`, …), and open plugin-provided settings;
 - The translator plugins accept a custom lookup URL: open `translator.ini` / `french.ini` from Plugin Manager, set `url=https://example.com/lookup?q={query}` and optionally `format=youdao|google|text`; changes apply on the next query;
 - The file search index unloads after 10 idle minutes and warms up in the background when `Alt+S` opens the panel (usually 0.2–0.5 s), so it doesn't sit on hundreds of megabytes;
+- File search is **not all-files by default**: it scans the user profile, Public and non-system fixed drives, skips hidden/system entries and excludes 24 directory names such as `Windows`, `Program Files` and `AppData` (full list in `filesearch.ini`). For Everything-like coverage set `index_scope=all` in `!config` (or type `!scope all`) and run `!reindex`: every fixed volume including `C:\` is scanned, hidden and system files are included, and the built-in directory exclusions are dropped except for a few safety ones. The first build is noticeably slower and the snapshot bigger, which is why it is off by default. To include hidden/system files without scanning the system volume, set `include_hidden=1` alone;
+- Result columns are chosen with `columns=` in `filesearch.ini` (open it with `!config`), e.g. `columns=name,path,size,mtime`. Available: `name`, `path` (full path), `dir` (containing folder), `size`, `mtime` (modified), `ctime` (created), `ext` (extension); they appear in the order written, and `off` restores the classic two-line view. `!columns name,dir,size,mtime` applies the change immediately and persists it; `!status` shows the current scope and columns;
 - The tray's Plugins submenu opens a plugin directly (fallback when hotkeys are unavailable);
 - To write your own: [plugin guide](docs/PLUGINS_EN.md) ([中文](docs/PLUGINS.md)) with a minimal sample, the action protocol and a CMake template;
 - Load failures never pop a dialog — the reason is shown in Plugin Manager, and plugin logs go to `logs/YYYYMMDD.txt`.
