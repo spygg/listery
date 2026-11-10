@@ -5,6 +5,7 @@
 #include "Core/QtCompat.h"
 #include "Core/SearchService.h"
 #include "Platform/WindowUtils.h"
+#include "Ui/ResultColumns.h"
 #include "Ui/ResultDelegate.h"
 #include "Ui/ResultModel.h"
 
@@ -52,7 +53,8 @@ const int kScreenBottomGap = 8;
  * 插件（文件搜索尤甚）一次可能命中上千条，面板高度不再按“最大候选数”封顶，
  * 而是尽量铺满所在屏幕的剩余高度，超出部分交给列表滚动条。
  */
-int pluginRowsFittingScreen(const QRect &panelGeometry, int minRows)
+int pluginRowsFittingScreen(const QRect &panelGeometry, int minRows, int rowHeight,
+                             int headerHeight)
 {
     // 以面板自己所在的屏幕为准：多显示器时按鼠标所在屏幕算会算错（placeCenterTop 也按同一屏幕摆放）
     QScreen *screen = nullptr;
@@ -71,10 +73,10 @@ int pluginRowsFittingScreen(const QRect &panelGeometry, int minRows)
         return minRows;
 
     const int chromeHeight = kEditHeight + kCardBorder + kFooterHeight + 1
-                             + kShadowMarginTop + kShadowMarginBottom;
+                             + kShadowMarginTop + kShadowMarginBottom + headerHeight;
     const int room = screen->availableGeometry().bottom() - panelGeometry.top()
                      - kScreenBottomGap - chromeHeight;
-    return qMax(minRows, room / kRowHeight);
+    return qMax(minRows, room / qMax(1, rowHeight));
 }
 
 /** 插件行 action 里的文件路径：run:（打开）/ open:（定位）才有路径。 */
@@ -179,6 +181,10 @@ void LauncherWindow::buildUi()
     });
     connect(m_list, &QWidget::customContextMenuRequested,
             this, &LauncherWindow::showContextMenu);
+
+    m_columnHeader = new ResultColumnHeader(m_card);
+    m_columnHeader->hide();
+    cardLayout->addWidget(m_columnHeader);
     cardLayout->addWidget(m_list);
 
     m_footer = new QWidget(m_card);
@@ -311,6 +317,7 @@ void LauncherWindow::endPluginSession()
     m_pluginName.clear();
     m_pendingSequence = 0;
     m_appliedSequence = 0;
+    clearColumnView();
     m_edit->setPlaceholderText(tr("输入程序名，例如 chrome、excel、git"));
     m_hints->setText(tr("↑↓ 选择 · 单击/Enter 运行 · Ctrl+Enter 定位 · Shift+Enter 管理员 · Esc 隐藏"));
     if (m_pluginHost && !pluginId.isEmpty())
@@ -326,6 +333,7 @@ void LauncherWindow::dismiss()
     hide();
     if (m_mode == LauncherMode::Plugin)
         endPluginSession();
+    clearColumnView();
     m_model->clearResults();
     {
         QSignalBlocker blocker(m_edit);
@@ -396,6 +404,7 @@ void LauncherWindow::performSearch()
     if (query.isEmpty()) {
         m_pendingSequence = 0;
         m_appliedSequence = 0;
+        clearColumnView();
         m_model->clearResults();
         m_list->setCurrentIndex(QModelIndex());
         if (m_mode == LauncherMode::Plugin)
@@ -423,13 +432,19 @@ void LauncherWindow::performSearch()
 }
 
 void LauncherWindow::applyPluginResults(quint64 sequence, QString pluginId, QString query,
-                                        QVector<PluginRow> rows, QString errorMessage)
+                                        QVector<PluginRow> rows, QString errorMessage,
+                                        QString columnSpec)
 {
     if (m_mode != LauncherMode::Plugin || pluginId != m_pluginId)
         return;
     // 输入已经变了：只认最新一次请求的结果
     if (sequence != m_pendingSequence || query != m_edit->text().trimmed())
         return;
+
+    // 列定义只在本次查询有效：命令类结果 / 旧插件没有列定义时回到经典两行样式。
+    const QVector<ResultColumn> columns = parseColumnSpec(columnSpec);
+    m_model->setColumns(columns);
+    m_columnHeader->setColumns(columns);
 
     QVector<SearchResult> results;
     results.reserve(rows.size());
@@ -439,6 +454,7 @@ void LauncherWindow::applyPluginResults(quint64 sequence, QString pluginId, QStr
         result.pluginSubtitle = row.subtitle;
         result.pluginBadge = row.badge;
         result.pluginAction = row.action;
+        result.pluginCells = row.cells;
         result.score = 1.0;
         results.append(result);
     }
@@ -477,6 +493,7 @@ void LauncherWindow::applyResults(quint64 sequence, const QString &query,
     if (sequence != m_pendingSequence || query != m_edit->text().trimmed())
         return;
 
+    clearColumnView();
     const int previousRow = m_list->currentIndex().row();
     m_model->setResults(results);
 
@@ -647,14 +664,28 @@ void LauncherWindow::activateCurrent(bool reveal, bool asAdmin)
         emit launchRequested(result.record, asAdmin);
 }
 
+void LauncherWindow::clearColumnView()
+{
+    m_model->setColumns(QVector<ResultColumn>());
+    if (m_columnHeader) {
+        m_columnHeader->setColumns(QVector<ResultColumn>());
+        m_columnHeader->hide();
+    }
+}
+
 void LauncherWindow::updateGeometryForResults(int rowCount)
 {
     const bool noRows = rowCount <= 0;
+    // 列视图用紧凑行高，一屏能多放近一倍结果；表头是独立小部件，单独计入高度。
+    const bool columns = m_model->hasColumns();
+    const int rowHeight = columns ? ResultLayout::kColumnRowHeight : kRowHeight;
+    const int headerHeight = columns ? ResultLayout::kColumnHeaderHeight : 0;
 
     // 状态栏常驻：空输入和有输入无候选时面板高度一致，输入区不会随输入状态忽高忽低。
     // 只有出现候选时才向下展开列表。
     m_list->setVisible(!noRows);
     m_separator->setVisible(!noRows);
+    m_columnHeader->setVisible(!noRows && columns);
     m_footer->setVisible(true);
 
     int contentHeight = kEditHeight + kCardBorder + kFooterHeight;
@@ -662,11 +693,11 @@ void LauncherWindow::updateGeometryForResults(int rowCount)
         m_list->setFixedHeight(0);
     } else {
         const int rowLimit = m_mode == LauncherMode::Plugin
-            ? pluginRowsFittingScreen(geometry(), m_maxResults)
+            ? pluginRowsFittingScreen(geometry(), m_maxResults, rowHeight, headerHeight)
             : m_maxResults;
         const int visibleRows = qMin(rowCount, rowLimit);
-        m_list->setFixedHeight(visibleRows * kRowHeight);
-        contentHeight += 1 + m_list->height();
+        m_list->setFixedHeight(visibleRows * rowHeight);
+        contentHeight += 1 + headerHeight + m_list->height();
     }
 
     // 先清掉最小高度再 resize：布局一旦把 minimumHeight 抬起来，resize() 会被钳住

@@ -294,10 +294,8 @@ bool scanFileSystem(const ScanConfig &config, Index &out, std::atomic<bool> &sto
                 entry.meta = utf8.size() >= 255 ? 255
                                                 : static_cast<uint8_t>(utf8.size());
                 entry.dirId = current.dirId;
-                setFileSize(entry, static_cast<uint32_t>(
-                                       (std::min)((static_cast<ULONGLONG>(data.nFileSizeHigh) << 32)
-                                                      | data.nFileSizeLow,
-                                                  static_cast<ULONGLONG>(kSizeCap))));
+                setFileSize(entry, (static_cast<uint64_t>(data.nFileSizeHigh) << 32)
+                                       | static_cast<uint64_t>(data.nFileSizeLow));
                 // mTime/cTime 是 SDK 宏，MinGW 头文件里只有全名成员
                 entry.mtime = filetimeToUnix(data.ftLastWriteTime);
                 entry.ctime = filetimeToUnix(data.ftCreationTime);

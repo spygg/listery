@@ -56,6 +56,15 @@ void ResultModel::clearResults()
     endResetModel();
 }
 
+void ResultModel::setColumns(const QVector<ResultColumn> &columns)
+{
+    if (m_columns == columns)
+        return;
+    beginResetModel();
+    m_columns = columns;
+    endResetModel();
+}
+
 int ResultModel::count() const
 {
     return m_results.size();

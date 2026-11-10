@@ -1,5 +1,7 @@
 #include "Ui/ResultDelegate.h"
 
+#include "Core/QtCompat.h"
+#include "Ui/ResultColumns.h"
 #include "Ui/ResultModel.h"
 
 #include <QApplication>
@@ -8,6 +10,7 @@
 #include <QFontMetrics>
 #include <QHash>
 #include <QIcon>
+#include <QPaintEvent>
 #include <QPainter>
 #include <QPainterPath>
 #include <QStyle>
@@ -103,6 +106,130 @@ void drawHighlightedText(QPainter *painter,
 }
 } // namespace
 
+// ============================ 列视图共用几何 ============================
+
+QVector<ResultColumn> parseColumnSpec(const QString &spec)
+{
+    QVector<ResultColumn> columns;
+    if (spec.isEmpty())
+        return columns;
+
+    const QStringList parts =
+        spec.split(QChar(0x1F), LISTERY_SKIP_EMPTY_PARTS);
+    for (const QString &part : parts) {
+        const QStringList fields =
+            part.split(QLatin1Char(':'), LISTERY_KEEP_EMPTY_PARTS);
+        if (fields.size() < 3 || fields.at(0).isEmpty())
+            continue;
+        ResultColumn column;
+        column.label = fields.at(0);
+        column.width = qMax(0, fields.at(1).toInt());
+        column.rightAligned =
+            fields.at(2).trimmed().compare(QLatin1String("r"), Qt::CaseInsensitive) == 0;
+        columns.append(column);
+    }
+    return columns;
+}
+
+QVector<QRect> resultColumnRects(const QRect &rowRect,
+                                 const QVector<ResultColumn> &columns)
+{
+    QVector<QRect> rects;
+    const int count = columns.size();
+    if (count <= 0)
+        return rects;
+
+    // 左侧留一小块徽标，右侧留出边距；列间固定间隙
+    const int left = rowRect.left() + ResultLayout::kColumnLeftInset
+                     + ResultLayout::kColumnBadgeSize + ResultLayout::kColumnGap;
+    const int right = rowRect.right() - ResultLayout::kColumnRightInset;
+    const int budget = qMax(0, right - left
+                           - (count - 1) * ResultLayout::kColumnGap);
+
+    QVector<int> widths(count, 0);
+    int fixedTotal = 0;
+    int flexCount = 0;
+    for (int i = 0; i < count; ++i) {
+        widths[i] = qMax(0, columns.at(i).width);
+        if (widths[i] == 0)
+            ++flexCount;
+        else
+            fixedTotal += widths[i];
+    }
+
+    // 面板比固定列之和还窄（小屏/多列）：按比例压缩固定列，而不是让后面的列跑出面板
+    if (fixedTotal > budget && fixedTotal > 0) {
+        const double scale = static_cast<double>(budget) / static_cast<double>(fixedTotal);
+        fixedTotal = 0;
+        for (int i = 0; i < count; ++i) {
+            if (widths[i] > 0) {
+                widths[i] = qMax(24, static_cast<int>(widths[i] * scale));
+                fixedTotal += widths[i];
+            }
+        }
+    }
+    const int flexWidth = flexCount > 0
+        ? qMax(24, (budget - fixedTotal) / flexCount)
+        : 0;
+
+    int x = left;
+    for (int i = 0; i < count; ++i) {
+        const int width = widths[i] == 0 ? flexWidth : widths[i];
+        // 每列左右各留 4px 内边距：右对齐的数字列和下一列左对齐文字之间
+        // 才不会只隔一个列间距、看起来粘在一起。表头与数据行共用这里，保持一致。
+        rects.append(QRect(x, rowRect.top(), width, rowRect.height()).adjusted(4, 0, -4, 0));
+        x += width + ResultLayout::kColumnGap;
+    }
+    return rects;
+}
+
+ResultColumnHeader::ResultColumnHeader(QWidget *parent)
+    : QWidget(parent)
+{
+    setObjectName(QStringLiteral("resultColumnHeader"));
+    setFixedHeight(ResultLayout::kColumnHeaderHeight);
+    setFocusPolicy(Qt::NoFocus);
+    setAttribute(Qt::WA_TransparentForMouseEvents, true);
+}
+
+void ResultColumnHeader::setColumns(const QVector<ResultColumn> &columns)
+{
+    m_columns = columns;
+    update();
+}
+
+QSize ResultColumnHeader::sizeHint() const
+{
+    return QSize(0, ResultLayout::kColumnHeaderHeight);
+}
+
+void ResultColumnHeader::paintEvent(QPaintEvent *event)
+{
+    Q_UNUSED(event)
+    QPainter painter(this);
+    painter.fillRect(rect(), QColor(0xFA, 0xFB, 0xFD));
+    painter.setPen(QColor(0xE9, 0xED, 0xF3));
+    painter.drawLine(rect().left(), rect().bottom(), rect().right(), rect().bottom());
+
+    const QVector<QRect> cells = resultColumnRects(rect(), m_columns);
+    if (cells.isEmpty())
+        return;
+
+    QFont font = painter.font();
+    font.setPixelSize(11);
+    font.setWeight(QFont::DemiBold);
+    painter.setFont(font);
+    painter.setPen(QColor(0x8A, 0x91, 0x9B));
+    const QFontMetrics metrics(font);
+    for (int i = 0; i < cells.size() && i < m_columns.size(); ++i) {
+        const QString text =
+            metrics.elidedText(m_columns.at(i).label, Qt::ElideRight, cells.at(i).width());
+        const int flags = Qt::AlignVCenter
+                          | (m_columns.at(i).rightAligned ? Qt::AlignRight : Qt::AlignLeft);
+        painter.drawText(cells.at(i), flags, text);
+    }
+}
+
 ResultDelegate::ResultDelegate(QObject *parent)
     : QStyledItemDelegate(parent)
 {
@@ -137,6 +264,53 @@ void ResultDelegate::paint(QPainter *painter,
                          kIconSize, kIconSize);
 
     const bool pluginRow = result.isPluginResult();
+
+    // 列视图（Everything 风格）：整张表一旦启用列定义，所有插件行都用紧凑单行样式，
+    // 命令类结果没有单元格数据时退化成「标题 / 副标题」占前两列，避免行高与绘制不一致。
+    if (pluginRow && model->hasColumns()) {
+        QStringList cells = result.pluginCells;
+        if (cells.isEmpty()) {
+            cells << result.pluginTitle << result.pluginSubtitle;
+            while (cells.size() < model->columns().size())
+                cells << QString();
+        }
+
+        const int badgeTop = rowRect.top() + (rowRect.height() - ResultLayout::kColumnBadgeSize) / 2;
+        const QRect badgeRect(rowRect.left() + ResultLayout::kColumnLeftInset, badgeTop,
+                              ResultLayout::kColumnBadgeSize, ResultLayout::kColumnBadgeSize);
+        painter->setPen(Qt::NoPen);
+        painter->setBrush(QColor(0x1A, 0x6C, 0xF0));
+        painter->drawRoundedRect(badgeRect, 4, 4);
+        QFont badgeFont(option.font);
+        badgeFont.setPixelSize(8);
+        badgeFont.setWeight(QFont::Bold);
+        painter->setFont(badgeFont);
+        painter->setPen(Qt::white);
+        painter->drawText(badgeRect, Qt::AlignCenter,
+                         result.pluginBadge.isEmpty() ? QStringLiteral("·")
+                                                      : result.pluginBadge.left(2));
+
+        const QVector<QRect> rects = resultColumnRects(rowRect, model->columns());
+        QFont cellFont(option.font);
+        cellFont.setPixelSize(12);
+        for (int i = 0; i < rects.size() && i < cells.size(); ++i) {
+            QFont font = cellFont;
+            if (i == 0)
+                font.setWeight(QFont::DemiBold);
+            painter->setFont(font);
+            painter->setPen(i == 0 ? QColor(0x1F, 0x23, 0x29) : QColor(0x5A, 0x62, 0x6E));
+            const QFontMetrics metrics(font);
+            const QString text = metrics.elidedText(cells.at(i), Qt::ElideRight,
+                                                   rects.at(i).width());
+            const int flags = Qt::AlignVCenter
+                              | (model->columns().at(i).rightAligned ? Qt::AlignRight
+                                                                     : Qt::AlignLeft);
+            painter->drawText(rects.at(i), flags, text);
+        }
+        painter->restore();
+        return;
+    }
+
     if (pluginRow) {
         // 插件行没有文件图标：画一个带徽标文字的圆角色块（如“译”）
         painter->setPen(Qt::NoPen);
@@ -207,6 +381,7 @@ void ResultDelegate::paint(QPainter *painter,
 QSize ResultDelegate::sizeHint(const QStyleOptionViewItem &option, const QModelIndex &index) const
 {
     Q_UNUSED(option)
-    Q_UNUSED(index)
-    return QSize(0, kRowHeight);
+    const ResultModel *model = qobject_cast<const ResultModel *>(index.model());
+    const bool columnMode = model != nullptr && model->hasColumns();
+    return QSize(0, columnMode ? ResultLayout::kColumnRowHeight : kRowHeight);
 }

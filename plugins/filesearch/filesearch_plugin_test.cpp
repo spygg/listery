@@ -19,6 +19,7 @@
 #include <shellapi.h>
 #include <shlobj.h>
 
+#include <algorithm>
 #include <chrono>
 #include <condition_variable>
 #include <cstdio>
@@ -34,6 +35,7 @@ struct Row
     std::string subtitle;
     std::string badge;
     std::string action;
+    std::string cells; // 列视图下 '\x1f' 分隔的单元格
 };
 
 std::mutex g_mutex;
@@ -42,6 +44,8 @@ unsigned long long g_waitId = 0;
 bool g_finished = false;
 std::string g_error;
 std::vector<Row> g_rows;
+/** 本次查询声明的列定义；空表示插件走了经典两行样式。 */
+std::string g_columnsSpec;
 const ListeryHostV1 *g_host = nullptr;
 
 std::string fromWide(const std::wstring &text)
@@ -76,7 +80,28 @@ void LISTERY_PLUGIN_CALL hostAddResult(void *, unsigned long long requestId, con
     if (requestId != g_waitId || g_finished)
         return;
     g_rows.push_back(Row{title ? title : "", subtitle ? subtitle : "", badge ? badge : "",
-                         action ? action : ""});
+                         action ? action : "", ""});
+}
+
+void LISTERY_PLUGIN_CALL hostSetResultColumns(void *, unsigned long long requestId,
+                                               const char *spec)
+{
+    std::lock_guard<std::mutex> lock(g_mutex);
+    if (requestId != g_waitId || g_finished)
+        return;
+    g_columnsSpec = spec ? spec : "";
+}
+
+void LISTERY_PLUGIN_CALL hostAddResultRow(void *, unsigned long long requestId, const char *title,
+                                          const char *subtitle, const char *badge,
+                                          const char *action, const char *cells)
+{
+    std::lock_guard<std::mutex> lock(g_mutex);
+    if (requestId != g_waitId || g_finished)
+        return;
+    Row row{title ? title : "", subtitle ? subtitle : "", badge ? badge : "",
+           action ? action : "", cells ? cells : ""};
+    g_rows.push_back(row);
 }
 
 void LISTERY_PLUGIN_CALL hostFinish(void *, unsigned long long requestId, const char *error)
@@ -106,6 +131,7 @@ bool query(const ListeryPluginV1 *plugin, const std::string &text, std::vector<R
         g_finished = false;
         g_error.clear();
         g_rows.clear();
+        g_columnsSpec.clear();
     }
 
     if (plugin->beginQuery(id, text.c_str(), maxResults) != 0) {
@@ -151,6 +177,47 @@ std::string readFile(const std::wstring &path)
     while (ReadFile(file, buffer, sizeof(buffer), &read, nullptr) && read > 0)
         out.append(buffer, read);
     CloseHandle(file);
+    return out;
+}
+
+/** 统计 ini 里某个键出现的行数（忽略注释行与 BOM）。 */
+int countIniKey(const std::string &text, const std::string &key)
+{
+    int count = 0;
+    size_t pos = 0;
+    while (pos < text.size()) {
+        const size_t end = text.find('\n', pos);
+        std::string line = text.substr(pos, end == std::string::npos
+                                                 ? std::string::npos
+                                                 : end - pos);
+        pos = end == std::string::npos ? text.size() : end + 1;
+        if (!line.empty() && line.back() == '\r')
+            line.pop_back();
+        if (line.compare(0, 3, "\xEF\xBB\xBF") == 0)
+            line.erase(0, 3);
+        const size_t first = line.find_first_not_of(" \t");
+        if (first == std::string::npos)
+            continue;
+        const std::string trimmed = line.substr(first);
+        if (trimmed.compare(0, key.size() + 1, key + "=") == 0)
+            ++count;
+    }
+    return count;
+}
+
+std::vector<std::string> splitCells(const std::string &text)
+{
+    std::vector<std::string> out;
+    size_t begin = 0;
+    while (begin <= text.size()) {
+        const size_t end = text.find('\x1F', begin);
+        out.push_back(text.substr(begin, end == std::string::npos
+                                                ? std::string::npos
+                                                : end - begin));
+        if (end == std::string::npos)
+            break;
+        begin = end + 1;
+    }
     return out;
 }
 
@@ -219,10 +286,14 @@ int main()
     writeFile(root + L"\\子目录\\嵌套文件.md", "# nested");
     // cases 表里有 appcontroller 用例；不建同名文件时它依赖本机真实目录，结果随机器漂移。
     writeFile(root + L"\\appcontroller.cs", "x");
+    // 隐藏 + 系统属性文件：默认配置不该被索引，include_hidden=1 / index_scope=all 才收进来。
+    const std::wstring hiddenFile = root + L"\\hidden_sys_probe.dat";
+    writeFile(hiddenFile, "hidden");
+    SetFileAttributesW(hiddenFile.c_str(), FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM);
 
     // 排序用例的固定数据：三个共享关键字 sortest 的 ASCII 文件名，
     // 名字顺序 a1 < b2 < c3，大小顺序 c3(17MB) > b2(200B) > a1(1B)。
-    // 17MB 超过 24 位上限会截成 kSizeCap，正好也覆盖大文件排序。
+    // 17MB 用来验证大文件排序与「大小」列的精确显示（旧版 24 位上限会显示 ≥16 MB）。
     writeFile(root + L"\\a1sortest.txt", std::string(1, 'x'));
     writeFile(root + L"\\b2sortest.txt", std::string(200, 'x'));
     writeFile(root + L"\\c3sortest.txt", std::string(17u * 1024u * 1024u, 'x'));
@@ -270,8 +341,10 @@ int main()
     std::string config = "roots=" + fromWide(roots) + "\r\n";
     config += "exclude_names=\r\n";
     config += "include_hidden=0\r\n";
+    config += "index_scope=documents\r\n";
     config += "match_path=1\r\n";
     config += "rescan_minutes=0\r\n";
+    config += "columns=name,path,size,mtime\r\n";
     writeFile(dataDir + L"\\filesearch.ini", config);
 
     std::printf("数据目录：%s\n", fromWide(dataDir).c_str());
@@ -497,6 +570,16 @@ int main()
         if (!persisted)
             ++failures;
 
+        // 旧版 replaceIniValue 首行带 BOM 时键名匹配永远失败，每改一次排序就
+        // 往文件头插一行，sort_desc 会越堆越多。修复后每个键只能出现一次。
+        const int sortDescs = countIniKey(iniAfter, "sort_desc");
+        const int sortModes = countIniKey(iniAfter, "sort_mode");
+        const bool deduped = sortDescs == 1 && sortModes == 1;
+        std::printf("配置键去重：%s（sort_desc=%d，sort_mode=%d）\n",
+                    deduped ? "通过" : "失败", sortDescs, sortModes);
+        if (!deduped)
+            ++failures;
+
         // 未知选项要报出来，不能静默改状态
         std::vector<Row> badRows;
         std::string badError;
@@ -512,6 +595,129 @@ int main()
             std::printf("  [FAIL] 非法选项不应改变排序状态\n");
             ++failures;
         }
+    }
+
+    // ---- 隐藏/系统文件：默认配置（include_hidden=0）不该被索引 ----
+    {
+        std::vector<Row> hiddenRows;
+        std::string hiddenError;
+        if (query(plugin, "hidden_sys_probe", hiddenRows, hiddenError) && hiddenRows.empty()) {
+            std::printf("默认跳过隐藏/系统文件：通过\n");
+        } else {
+            std::printf("默认跳过隐藏/系统文件：失败（%zu 条）\n", hiddenRows.size());
+            ++failures;
+        }
+    }
+
+    // ---- 列视图：把宿主的两个可选扩展挂上，模拟新版本主程序 ----
+    host.setResultColumns = hostSetResultColumns;
+    host.addResultRow = hostAddResultRow;
+
+    // 默认四列 + 精确大小（17MB 不该再显示 ≥16 MB）
+    {
+        std::vector<Row> colRows;
+        std::string colError;
+        if (!query(plugin, "c3sortest", colRows, colError) || colRows.empty()) {
+            std::printf("列视图返回结果：失败\n");
+            ++failures;
+        } else {
+            const std::string spec = g_columnsSpec;
+            const size_t columnCount = spec.empty()
+                ? 0
+                : static_cast<size_t>(std::count(spec.begin(), spec.end(), '\x1F')) + 1;
+            const std::vector<std::string> cells = splitCells(colRows.front().cells);
+            const bool specOk = columnCount == 4
+                && spec.find("名称:0:l") != std::string::npos
+                && spec.find("路径:0:l") != std::string::npos
+                && spec.find("大小:92:r") != std::string::npos
+                && spec.find("修改日期:140:l") != std::string::npos;
+            const bool cellsOk = cells.size() == 4 && cells[0] == "c3sortest.txt"
+                && cells[2] == "17.0 MB" && cells[3].find("20") != std::string::npos;
+            std::printf("默认列定义：%s（%zu 列）\n", specOk ? "通过" : "失败", columnCount);
+            std::printf("单元格与精确大小：%s（大小=%s）\n", cellsOk ? "通过" : "失败",
+                        cells.size() > 2 ? cells[2].c_str() : "(空)");
+            if (!specOk || !cellsOk)
+                ++failures;
+        }
+    }
+
+    // 配置里换列：!columns name,size 应该立刻生效并写入 ini
+    {
+        std::vector<Row> setRows;
+        std::string setError;
+        query(plugin, "!columns name,size", setRows, setError);
+        std::vector<Row> colRows;
+        std::string colError;
+        const bool ok = query(plugin, "c3sortest", colRows, colError) && !colRows.empty()
+            && g_columnsSpec.find("路径") == std::string::npos
+            && splitCells(colRows.front().cells).size() == 2;
+        std::printf("!columns 自定义列：%s\n", ok ? "通过" : "失败");
+        if (!ok)
+            ++failures;
+    }
+
+    // off 要能退回经典两行样式（老宿主路径）
+    {
+        std::vector<Row> setRows;
+        std::string setError;
+        query(plugin, "!columns off", setRows, setError);
+        std::vector<Row> colRows;
+        std::string colError;
+        const bool ok = query(plugin, "c3sortest", colRows, colError) && !colRows.empty()
+            && g_columnsSpec.empty() && colRows.front().cells.empty()
+            && colRows.front().subtitle.find("17.0 MB") != std::string::npos;
+        std::printf("!columns off 回退：%s\n", ok ? "通过" : "失败");
+        if (!ok)
+            ++failures;
+    }
+
+    // 非法列名要提示，不能静默吞掉
+    {
+        std::vector<Row> badRows;
+        std::string badError;
+        const bool ok = query(plugin, "!columns bogus", badRows, badError) && !badRows.empty()
+            && badRows.front().title.find("未知") != std::string::npos;
+        std::printf("非法列名提示：%s\n", ok ? "通过" : "失败");
+        if (!ok)
+            ++failures;
+    }
+
+    // !scope 只查询不改配置，不会触发全盘扫描
+    {
+        std::vector<Row> scopeRows;
+        std::string scopeError;
+        const bool ok = query(plugin, "!scope", scopeRows, scopeError) && !scopeRows.empty()
+            && scopeRows.front().title.find("documents") != std::string::npos;
+        std::printf("!scope 当前范围：%s\n", ok ? "通过" : "失败");
+        if (!ok)
+            ++failures;
+    }
+
+    // index_scope=all：显式 roots 保住测试目录，同时隐藏/系统文件应被收录
+    {
+        std::string config2 = "roots=" + fromWide(roots) + "\r\n";
+        config2 += "exclude_names=\r\n";
+        config2 += "exclude_prefixes=\r\n";
+        config2 += "index_scope=all\r\n";
+        config2 += "match_path=1\r\n";
+        config2 += "rescan_minutes=0\r\n";
+        config2 += "columns=name,path,size,mtime\r\n";
+        writeFile(dataDir + L"\\filesearch.ini", config2);
+
+        std::vector<Row> rows;
+        std::string error;
+        query(plugin, "!reindex", rows, error);
+        bool found = false;
+        for (int attempt = 0; attempt < 40; ++attempt) {
+            if (query(plugin, "hidden_sys_probe", rows, error, 12, 1000) && !rows.empty()) {
+                found = true;
+                break;
+            }
+            Sleep(100);
+        }
+        std::printf("index_scope=all 收录隐藏/系统文件：%s\n", found ? "通过" : "失败");
+        if (!found)
+            ++failures;
     }
 
     plugin->shutdown();

@@ -13,43 +13,51 @@ constexpr uint32_t kInvalidIndex = 0xFFFFFFFFu;
 /** 文件名前缀压缩的块大小：每个块的第一条存完整名字。 */
 constexpr uint32_t kNameBlock = 16;
 
-/** 24 位大小的上限，超过这个值统一显示为 >=16MB。 */
-constexpr uint32_t kSizeCap = 0xFFFFFFu;
+/**
+ * size 的编码：最高位为 0 时就是精确字节数（< 2GB）；最高位为 1 时低 31 位
+ * 存「4KB 单位数」，可表示到 8TB，精度 4KB。这样 32 位就够了，不必给每条记录
+ * 再加 8 字节——索引有六百多万条，每多 1 字节就是 6MB。
+ */
+constexpr uint32_t kSizeScaledFlag = 0x80000000u;
+constexpr uint64_t kSizeScale = 4096u;
 
 /**
- * 一个文件条目，20 字节。
+ * 一个文件条目，24 字节（size 由 3 字节扩成 4 字节后自然对齐）。
  *
  * files 数组本身按文件名排序（不区分大小写），所以检索时可以直接对 files 做二分。
  * nameOff 指向 names 里的一条前缀压缩记录：[prefixLen:1][suffix][\0]。
  * meta 在扫描/排序阶段是文件名长度（长于 255 字节时写 255），
  * finalize 之后改成扩展名的 8 位哈希：0 = 没有扩展名，1..255 = 哈希值。
- * size 是 24 位字节数，0xFFFFFF 表示 >=16MB。
  * mtime / ctime 是修改 / 创建时间的 Unix 秒，0 表示取不到或早于 1970。
  */
 struct FileEntry
 {
     uint32_t nameOff = 0;
     uint32_t dirId = 0;
-    uint8_t size[3] = {0, 0, 0};
+    uint32_t size = 0;
     uint8_t meta = 0;
     uint32_t mtime = 0;
     uint32_t ctime = 0;
 };
-static_assert(sizeof(FileEntry) == 20, "FileEntry must stay 20 bytes");
+static_assert(sizeof(FileEntry) == 24, "FileEntry must stay 24 bytes");
 
-inline uint32_t fileSize(const FileEntry &file)
+inline uint64_t fileSize(const FileEntry &file)
 {
-    return static_cast<uint32_t>(file.size[0])
-           | (static_cast<uint32_t>(file.size[1]) << 8)
-           | (static_cast<uint32_t>(file.size[2]) << 16);
+    if ((file.size & kSizeScaledFlag) != 0)
+        return static_cast<uint64_t>(file.size & 0x7FFFFFFFu) * kSizeScale;
+    return static_cast<uint64_t>(file.size);
 }
 
-inline void setFileSize(FileEntry &file, uint32_t bytes)
+inline void setFileSize(FileEntry &file, uint64_t bytes)
 {
-    const uint32_t clamped = bytes < kSizeCap ? bytes : kSizeCap;
-    file.size[0] = static_cast<uint8_t>(clamped & 0xFF);
-    file.size[1] = static_cast<uint8_t>((clamped >> 8) & 0xFF);
-    file.size[2] = static_cast<uint8_t>((clamped >> 16) & 0xFF);
+    if (bytes < kSizeScaledFlag) {
+        file.size = static_cast<uint32_t>(bytes);
+        return;
+    }
+    uint64_t units = (bytes + kSizeScale - 1) / kSizeScale;
+    if (units > 0x7FFFFFFFull)
+        units = 0x7FFFFFFFull;
+    file.size = kSizeScaledFlag | static_cast<uint32_t>(units);
 }
 
 /**
@@ -179,6 +187,6 @@ Signature256 textSignature256(const char *text, size_t len);
 
 std::string wideToUtf8(const std::wstring &text);
 std::wstring utf8ToWide(const std::string &text);
-std::string formatSize(uint32_t bytes);
+std::string formatSize(uint64_t bytes);
 
 } // namespace filesearch

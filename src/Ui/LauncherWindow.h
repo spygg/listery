@@ -15,6 +15,7 @@ class QAction;
 class QTimer;
 class PluginHost;
 class ResultModel;
+class ResultColumnHeader;
 class SearchService;
 
 /** 面板当前在做什么：找程序，还是把输入交给某个插件。 */
@@ -89,7 +90,7 @@ private slots:
     void applyResults(quint64 sequence, const QString &query,
                       const QVector<SearchResult> &results, qint64 elapsedMs);
     void applyPluginResults(quint64 sequence, QString pluginId, QString query,
-                            QVector<PluginRow> rows, QString errorMessage);
+                            QVector<PluginRow> rows, QString errorMessage, QString columnSpec);
 
 private:
     void buildUi();
@@ -98,6 +99,8 @@ private:
     void moveSelection(int delta);
     void activateCurrent(bool reveal, bool asAdmin);
     void updateGeometryForResults(int rowCount);
+    /** 退出插件/清空结果时撤掉列视图，否则程序检索会沿用插件的紧凑行高。 */
+    void clearColumnView();
     void showContextMenu(const QPoint &position);
     void enterPluginMode(const QString &pluginId, const QString &displayName,
                          const QString &placeholder);
@@ -120,6 +123,7 @@ private:
     QLineEdit *m_edit = nullptr;
     QFrame *m_separator = nullptr;
     QListView *m_list = nullptr;
+    ResultColumnHeader *m_columnHeader = nullptr;
     ResultModel *m_model = nullptr;
     QWidget *m_footer = nullptr;
     QLabel *m_status = nullptr;

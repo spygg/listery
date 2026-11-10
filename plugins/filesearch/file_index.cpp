@@ -20,7 +20,8 @@
 namespace filesearch {
 namespace {
 
-constexpr uint32_t kSnapshotVersion = 8;
+/** v9：FileEntry.size 由 24 位改成 32 位精确编码（旧快照无法直接读，会自动重建）。 */
+constexpr uint32_t kSnapshotVersion = 9;
 constexpr uint32_t kMaxFiles = 50000000u;
 constexpr uint32_t kMaxDirs = 10000000u;
 constexpr uint32_t kMaxBlob = 0x7FFFFFFFu; // 2GB - 1，避免 size_t 溢出
@@ -939,21 +940,24 @@ std::wstring utf8ToWide(const std::string &text)
     return out;
 }
 
-std::string formatSize(uint32_t bytes)
+std::string formatSize(uint64_t bytes)
 {
-    if (bytes == kSizeCap)
-        return "≥16 MB";
     char buffer[64];
-    if (bytes < 1024) {
-        std::snprintf(buffer, sizeof(buffer), "%u B", bytes);
-    } else if (bytes < 1024u * 1024u) {
+    if (bytes < 1024u) {
+        std::snprintf(buffer, sizeof(buffer), "%llu B",
+                      static_cast<unsigned long long>(bytes));
+    } else if (bytes < 1024ull * 1024ull) {
         std::snprintf(buffer, sizeof(buffer), "%.1f KB", static_cast<double>(bytes) / 1024.0);
-    } else if (bytes < 1024u * 1024u * 1024u) {
+    } else if (bytes < 1024ull * 1024ull * 1024ull) {
         std::snprintf(buffer, sizeof(buffer), "%.1f MB",
                       static_cast<double>(bytes) / (1024.0 * 1024.0));
-    } else {
+    } else if (bytes < 1024ull * 1024ull * 1024ull * 1024ull) {
         std::snprintf(buffer, sizeof(buffer), "%.2f GB",
                       static_cast<double>(bytes) / (1024.0 * 1024.0 * 1024.0));
+    } else {
+        std::snprintf(buffer, sizeof(buffer), "%.2f TB",
+                      static_cast<double>(bytes)
+                          / (1024.0 * 1024.0 * 1024.0 * 1024.0));
     }
     return std::string(buffer);
 }

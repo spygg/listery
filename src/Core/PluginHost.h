@@ -32,6 +32,8 @@ struct PluginRow
     QString subtitle;
     QString badge;
     QString action;
+    /** 列视图下与表头等长的单元格文本；为空表示这行用经典两行样式。 */
+    QStringList cells;
 };
 
 struct PluginInfo
@@ -90,7 +92,10 @@ public:
 
     // ---- 以下四个是 C ABI 回调的落点，普通调用方不要直接用 ----
     void appendRow(quint64 requestId, const QString &title, const QString &subtitle,
-                   const QString &badge, const QString &action);
+                   const QString &badge, const QString &action,
+                   const QStringList &cells = QStringList());
+    /** 插件声明本次查询的列定义（原始 spec 字符串，由界面解析）。 */
+    void setColumns(quint64 requestId, const QString &spec);
     void finishRequest(quint64 requestId, const QString &errorMessage);
     void writeLog(int level, const QString &message);
     int startHttpGet(const QString &url, const QString &headers,
@@ -98,11 +103,11 @@ public:
 
 signals:
     void queryFinished(quint64 sequence, QString pluginId, QString query,
-                       QVector<PluginRow> rows, QString errorMessage);
+                       QVector<PluginRow> rows, QString errorMessage, QString columnSpec);
 
 private slots:
     void deliver(quint64 sequence, QString pluginId, QString query,
-                 QVector<PluginRow> rows, QString errorMessage);
+                 QVector<PluginRow> rows, QString errorMessage, QString columnSpec);
     /** 非主线程发起的 httpGet 会排队到这里，由主线程真正发请求。 */
     void dispatchHttp(const QVariant &request);
 
@@ -125,6 +130,8 @@ private:
     QHash<quint64, PendingHttp> m_httpPending;
     QHash<quint64, QVector<PluginRow>> m_pending;
     QHash<quint64, QString> m_pendingQuery;
+    /** requestId -> 插件声明的列定义（空表示经典两行样式）。 */
+    QHash<quint64, QString> m_pendingColumns;
     quint64 m_nextSequence = 1;
     QMutex m_mutex;
 };

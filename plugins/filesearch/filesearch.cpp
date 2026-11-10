@@ -5,8 +5,9 @@
  *  - 内存索引按文件名排序，检索走“全名 → 前缀 → 子串 → 路径”；
  *  - 支持 ext: 扩展名、path: 目录、full: 完整路径、re: 正则等过滤条件；
  *  - 索引二进制快照保存在 %LOCALAPPDATA%\Listery\FileSearch\index.bin；
+ *  - 结果区按 Everything 风格分列（名称/路径/大小/修改日期…），列由 columns= 选择；
  *  - 配置文件 filesearch.ini 与快照同目录，可用 !config 打开；
- *  - 面板里输入 !status / !reindex / !config / !sort 查看状态、重建索引或设置排序。
+ *  - 面板里输入 !status / !reindex / !config / !sort / !columns / !scope 查看状态、重建索引或改设置。
  *
  * 插件不依赖 Qt，也不依赖 Everything。
  */
@@ -69,6 +70,163 @@ constexpr int kDefaultSortMode = 0;
 constexpr uint32_t kMaxResultsCap = 20000;
 
 // ---------------------------------------------------------------------------
+// 列视图（Everything 风格）：列定义、配置解析与提交给宿主的 spec
+// ---------------------------------------------------------------------------
+
+enum ColumnId
+{
+    ColName = 0,
+    ColPath,
+    ColDir,
+    ColSize,
+    ColMtime,
+    ColCtime,
+    ColExt
+};
+
+struct ColumnDef
+{
+    ColumnId id;
+    const char *key;   // 配置里写的名字
+    const char *label;  // 表头文字（UTF-8）
+    int width;          // 0 = 弹性列，>0 = 固定像素
+    char align;         // 'l' 左对齐 / 'r' 右对齐
+};
+
+const ColumnDef kColumnDefs[] = {
+    {ColName, "name", "名称", 0, 'l'},
+    {ColPath, "path", "路径", 0, 'l'},
+    {ColDir, "dir", "所在目录", 0, 'l'},
+    {ColSize, "size", "大小", 92, 'r'},
+    {ColMtime, "mtime", "修改日期", 140, 'l'},
+    {ColCtime, "ctime", "创建日期", 140, 'l'},
+    {ColExt, "ext", "扩展名", 76, 'l'},
+};
+
+std::vector<ColumnId> defaultColumns()
+{
+    return {ColName, ColPath, ColSize, ColMtime};
+}
+
+const ColumnDef *columnDefById(ColumnId id)
+{
+    for (const ColumnDef &def : kColumnDefs) {
+        if (def.id == id)
+            return &def;
+    }
+    return nullptr;
+}
+
+std::string trimAscii(const std::string &text)
+{
+    size_t begin = 0;
+    size_t end = text.size();
+    while (begin < end && (text[begin] == ' ' || text[begin] == '\t' || text[begin] == '\r'
+                           || text[begin] == '\n'))
+        ++begin;
+    while (end > begin && (text[end - 1] == ' ' || text[end - 1] == '\t'
+                          || text[end - 1] == '\r' || text[end - 1] == '\n'))
+        --end;
+    return text.substr(begin, end - begin);
+}
+
+std::string lowerAscii(const std::string &text)
+{
+    std::string out = text;
+    for (char &ch : out) {
+        if (ch >= 'A' && ch <= 'Z')
+            ch = static_cast<char>(ch + 32);
+    }
+    return out;
+}
+
+/** 解析 columns= 配置；off / 空 = 经典两行视图。未知列写入 badKey 并忽略。 */
+std::vector<ColumnId> parseColumns(const std::string &text, std::string *badKey)
+{
+    std::vector<ColumnId> out;
+    const std::string lowered = lowerAscii(trimAscii(text));
+    if (lowered.empty() || lowered == "off" || lowered == "none")
+        return out;
+
+    size_t begin = 0;
+    while (begin < lowered.size()) {
+        size_t end = begin;
+        while (end < lowered.size() && lowered[end] != ',' && lowered[end] != ';'
+               && lowered[end] != '|' && lowered[end] != ' ' && lowered[end] != '\t')
+            ++end;
+        const std::string word = lowered.substr(begin, end - begin);
+        if (!word.empty()) {
+            const ColumnDef *found = nullptr;
+            for (const ColumnDef &def : kColumnDefs) {
+                if (word == def.key) {
+                    found = &def;
+                    break;
+                }
+            }
+            if (found != nullptr) {
+                if (std::find(out.begin(), out.end(), found->id) == out.end())
+                    out.push_back(found->id);
+            } else if (badKey != nullptr) {
+                *badKey = word;
+            }
+        }
+        if (end >= lowered.size())
+            break;
+        begin = end + 1;
+    }
+    return out;
+}
+
+std::string columnsToConfig(const std::vector<ColumnId> &columns)
+{
+    if (columns.empty())
+        return "off";
+    std::string out;
+    for (ColumnId id : columns) {
+        const ColumnDef *def = columnDefById(id);
+        if (def == nullptr)
+            continue;
+        if (!out.empty())
+            out.push_back(',');
+        out += def->key;
+    }
+    return out;
+}
+
+/** SDK 约定的列定义：标题:宽度:对齐，用 ASCII US(0x1F) 分隔。 */
+std::string columnSpec(const std::vector<ColumnId> &columns)
+{
+    std::string out;
+    for (ColumnId id : columns) {
+        const ColumnDef *def = columnDefById(id);
+        if (def == nullptr)
+            continue;
+        if (!out.empty())
+            out.push_back('\x1F');
+        out += def->label;
+        out.push_back(':');
+        out += std::to_string(def->width);
+        out.push_back(':');
+        out.push_back(def->align);
+    }
+    return out;
+}
+
+std::string columnLabels(const std::vector<ColumnId> &columns)
+{
+    std::string out;
+    for (ColumnId id : columns) {
+        const ColumnDef *def = columnDefById(id);
+        if (def == nullptr)
+            continue;
+        if (!out.empty())
+            out += "、";
+        out += def->label;
+    }
+    return out.empty() ? "经典两行视图" : out;
+}
+
+// ---------------------------------------------------------------------------
 // 插件全局状态
 // ---------------------------------------------------------------------------
 
@@ -95,6 +253,13 @@ std::atomic<int> g_sortMode{kDefaultSortMode};
 std::atomic<int> g_sortDesc{-1};
 std::atomic<uint64_t> g_lastQueryAt{0};
 
+/** 索引范围：documents = 用户目录/非系统盘（默认）；all = 所有固定磁盘 + 隐藏与系统文件。 */
+enum class IndexScope
+{
+    Documents,
+    All
+};
+
 struct AppConfig
 {
     ScanConfig scan;
@@ -103,10 +268,18 @@ struct AppConfig
     bool matchPath = true;
     int sortMode = kDefaultSortMode;
     int sortDesc = -1;
+    std::vector<ColumnId> columns = defaultColumns();
+    IndexScope scope = IndexScope::Documents;
 };
 
 std::mutex g_configMutex;
 AppConfig g_config;
+
+/**
+ * 当前查询实际使用的列。只有检索线程读写（每次查询开头重置），不需要加锁；
+ * 命令类结果（!status / !sort 等）保持为空，用经典两行样式。
+ */
+std::vector<ColumnId> g_activeColumns;
 
 std::thread g_scanThread;
 std::thread g_searchThread;
@@ -418,12 +591,19 @@ void writeDefaultConfigIfMissing()
     text += ";   例如：roots=C:\\Users;D:\\Projects;E:\\\r\n";
     text += "; exclude_names：额外排除的目录名（只写目录名，不区分大小写）\r\n";
     text += "; exclude_prefixes：额外排除的完整路径前缀，例如 D:\\临时\r\n";
-    text += "; include_hidden：是否索引隐藏/系统文件，0 或 1\r\n";
+    text += "; include_hidden：是否索引隐藏/系统文件，0 或 1（index_scope=all 时自动为 1）\r\n";
+    text += "; index_scope：documents = 用户目录 + Public + 非系统固定磁盘（默认）；\r\n";
+    text += ";   all = 所有固定磁盘（含系统盘 C:\\）+ 隐藏/系统文件 + 不排除 Windows/Program Files/AppData\r\n";
+    text += ";   注意 all 会扫到几十万系统文件，首次建库明显变慢，改完必须 !reindex\r\n";
     text += "; match_path：文件名没命中时是否继续匹配目录路径，0 或 1\r\n";
     text += "; rescan_minutes：每隔多少分钟后台重建索引，0 = 只使用现有快照\r\n";
     text += "; idle_unload_minutes：闲置多少分钟后释放内存索引，下次搜索时自动从快照加载；默认 10，0 = 常驻内存\r\n";
     text += "; sort_mode：搜索结果排序，off（相关度）/ name / size / mtime（修改时间）/ ctime（创建时间）；也可在搜索框输入 !sort 设置\r\n";
     text += "; sort_desc：排序方向，auto（名称升序、大小和时间降序）/ asc / desc\r\n";
+    text += "; columns：结果区显示的列，逗号分隔；off = 回到经典两行视图\r\n";
+    text += ";   可选：name（名称）path（路径）dir（所在目录）size（大小）\r\n";
+    text += ";         mtime（修改日期）ctime（创建日期）ext（扩展名）\r\n";
+    text += ";   也可用 !columns name,path,size,mtime 在搜索框里直接改\r\n";
     text += "; config_version：配置格式版本（用于默认值升级），请勿修改\r\n";
     text += "\r\n";
     text += "config_version=2\r\n";
@@ -431,23 +611,23 @@ void writeDefaultConfigIfMissing()
     text += "exclude_names=\r\n";
     text += "exclude_prefixes=\r\n";
     text += "include_hidden=0\r\n";
+    text += "index_scope=documents\r\n";
     text += "match_path=1\r\n";
     text += "rescan_minutes=60\r\n";
     text += "idle_unload_minutes=10\r\n";
     text += "sort_mode=off\r\n";
     text += "sort_desc=auto\r\n";
+    text += "columns=name,path,size,mtime\r\n";
 
     if (!writeFileBytes(g_configPath, text))
         hostLog(LISTERY_LOG_WARNING, "无法写入默认配置文件");
 }
 
-std::vector<std::wstring> defaultRoots()
+/** 所有本地固定磁盘；includeSystemDrive=false 时跳过系统盘（默认文档范围）。 */
+std::vector<std::wstring> fixedDriveRoots(bool includeSystemDrive)
 {
     std::vector<std::wstring> roots;
     std::vector<std::wstring> keys;
-
-    addUniquePath(roots, keys, getEnv(L"USERPROFILE"));
-    addUniquePath(roots, keys, getEnv(L"PUBLIC"));
 
     wchar_t windowsDir[MAX_PATH] = {};
     wchar_t systemDrive = L'C';
@@ -459,7 +639,7 @@ std::vector<std::wstring> defaultRoots()
         if ((drives & (1u << i)) == 0)
             continue;
         const wchar_t letter = static_cast<wchar_t>(L'A' + i);
-        if (letter == systemDrive)
+        if (!includeSystemDrive && letter == systemDrive)
             continue;
         wchar_t root[4] = {letter, L':', L'\\', L'\0'};
         if (GetDriveTypeW(root) != DRIVE_FIXED)
@@ -467,6 +647,33 @@ std::vector<std::wstring> defaultRoots()
         addUniquePath(roots, keys, root);
     }
     return roots;
+}
+
+std::vector<std::wstring> defaultRoots()
+{
+    std::vector<std::wstring> roots;
+    std::vector<std::wstring> keys;
+    addUniquePath(roots, keys, getEnv(L"USERPROFILE"));
+    addUniquePath(roots, keys, getEnv(L"PUBLIC"));
+    for (const std::wstring &root : fixedDriveRoots(false))
+        addUniquePath(roots, keys, root);
+    return roots;
+}
+
+/** 全盘范围下仍然排除的目录：系统保留区，遍历只会得到访问拒绝和垃圾数据。 */
+std::vector<std::wstring> safetyExcludeNames()
+{
+    static const wchar_t *kNames[] = {L"$recycle.bin", L"system volume information",
+                                     L"$windows.~bt", L"$windows.~ws"};
+    std::vector<std::wstring> out;
+    for (const wchar_t *name : kNames)
+        out.push_back(lowerWide(name));
+    return out;
+}
+
+const char *scopeName(IndexScope scope)
+{
+    return scope == IndexScope::All ? "all" : "documents";
 }
 
 std::vector<std::wstring> defaultExcludeNames()
@@ -534,16 +741,37 @@ bool parseBool(const std::string &text, bool fallback)
     return lowered != "0" && lowered != "false" && lowered != "no" && lowered != "off";
 }
 
-/** 替换 ini 中某个键的值（保留其余内容和注释）；键不存在时插到 BOM 之后。 */
+/**
+ * 替换 ini 中某个键的值（保留注释与其它键）；键不存在时插到文件开头。
+ *
+ * 旧实现有两个坑，这里一并修掉：
+ *  1) 首行若带 UTF-8 BOM，键名比对时 BOM 被算进 key，导致之后每次写入都
+ *     匹配不到、只能在 BOM 后再插一行 —— 用户的 ini 里会出现多条 sort_desc。
+ *  2) 已经产生的重复键，写值时只改第一条、其余原样留着，读配置时最后一条
+ *     反而生效。现在保留第一条、删掉其余重复行。
+ */
 void replaceIniValue(std::string &text, const std::string &key, const std::string &value)
 {
+    const bool hadBom = text.size() >= 3
+                        && static_cast<unsigned char>(text[0]) == 0xEF
+                        && static_cast<unsigned char>(text[1]) == 0xBB
+                        && static_cast<unsigned char>(text[2]) == 0xBF;
+    if (hadBom)
+        text.erase(0, 3); // 先摘掉 BOM，末尾统一加回，键名比对才干净
+
+    std::string out;
+    out.reserve(text.size() + key.size() + value.size() + 4);
+    bool replaced = false;
     size_t lineStart = 0;
     while (lineStart < text.size()) {
         const size_t lineEnd = text.find('\n', lineStart);
+        const size_t fullEnd = lineEnd == std::string::npos ? text.size() : lineEnd + 1;
         const size_t contentEnd = lineEnd == std::string::npos ? text.size() : lineEnd;
+
         size_t pos = lineStart;
         while (pos < contentEnd && (text[pos] == ' ' || text[pos] == '\t'))
             ++pos;
+        bool isKey = false;
         if (pos < contentEnd && text[pos] != ';' && text[pos] != '#') {
             size_t eq = pos;
             while (eq < contentEnd && text[eq] != '=')
@@ -552,28 +780,34 @@ void replaceIniValue(std::string &text, const std::string &key, const std::strin
                 size_t keyEnd = eq;
                 while (keyEnd > pos && (text[keyEnd - 1] == ' ' || text[keyEnd - 1] == '\t'))
                     --keyEnd;
-                if (text.compare(pos, keyEnd - pos, key) == 0) {
-                    size_t valueEnd = contentEnd;
-                    while (valueEnd > eq + 1
-                           && (text[valueEnd - 1] == '\r' || text[valueEnd - 1] == ' '
-                               || text[valueEnd - 1] == '\t'))
-                        --valueEnd;
-                    size_t valueBegin = eq + 1;
-                    while (valueBegin < valueEnd
-                           && (text[valueBegin] == ' ' || text[valueBegin] == '\t'))
-                        ++valueBegin;
-                    text.replace(valueBegin, valueEnd - valueBegin, value);
-                    return;
-                }
+                isKey = text.compare(pos, keyEnd - pos, key) == 0;
             }
         }
-        if (lineEnd == std::string::npos)
-            break;
-        lineStart = lineEnd + 1;
+
+        if (isKey) {
+            if (!replaced) {
+                const char *eol = "\r\n";
+                if (lineEnd != std::string::npos) {
+                    eol = (lineEnd > lineStart && text[lineEnd - 1] == '\r') ? "\r\n" : "\n";
+                }
+                out += key;
+                out += "=";
+                out += value;
+                out += eol;
+                replaced = true;
+            }
+            // 后续重复行直接丢弃
+        } else {
+            out.append(text, lineStart, fullEnd - lineStart);
+        }
+        lineStart = fullEnd;
     }
 
-    const size_t bom = text.compare(0, 3, "\xEF\xBB\xBF") == 0 ? 3 : 0;
-    text.insert(bom, key + "=" + value + "\r\n");
+    if (!replaced)
+        out.insert(0, key + "=" + value + "\r\n");
+    if (hadBom)
+        out.insert(0, "\xEF\xBB\xBF");
+    text = std::move(out);
 }
 
 /** 旧配置迁移完成后回写，否则用户之后显式写的 0 会再次被迁移逻辑覆盖。 */
@@ -601,6 +835,17 @@ void saveSortConfig(int mode, int desc)
         hostLog(LISTERY_LOG_WARNING, "排序设置写入配置文件失败");
 }
 
+/** !columns / !scope 的选择写回 ini。两者都只改自己那一个键。 */
+void saveConfigValue(const std::string &key, const std::string &value)
+{
+    std::string raw;
+    if (!readFileBytes(g_configPath, raw))
+        raw = "\xEF\xBB\xBF";
+    replaceIniValue(raw, key, value);
+    if (!writeFileBytes(g_configPath, raw))
+        hostLog(LISTERY_LOG_WARNING, "配置写入失败：" + key);
+}
+
 bool loadConfig()
 {
     AppConfig config;
@@ -613,6 +858,10 @@ bool loadConfig()
     config.matchPath = true;
     int configVersion = 1;
     bool migrateConfig = false;
+    bool rootsExplicit = false;
+    bool includeHiddenExplicit = false;
+    std::vector<std::wstring> userExcludeNames;
+    std::vector<std::wstring> userExcludePrefixes;
 
     std::string raw;
     if (readFileBytes(g_configPath, raw)) {
@@ -666,15 +915,26 @@ bool loadConfig()
                     std::vector<std::wstring> keys;
                     for (const std::wstring &root : roots)
                         addUniquePath(config.scan.roots, keys, root);
+                    rootsExplicit = true;
                 }
             } else if (key == "exclude_names") {
-                appendExcludeNames(config.scan.excludeNames,
-                                   splitList(filesearch::utf8ToWide(value)));
+                userExcludeNames = splitList(filesearch::utf8ToWide(value));
             } else if (key == "exclude_prefixes") {
-                for (const std::wstring &prefix : splitList(filesearch::utf8ToWide(value)))
-                    config.scan.excludePrefixes.push_back(lowerWide(prefix));
+                userExcludePrefixes = splitList(filesearch::utf8ToWide(value));
             } else if (key == "include_hidden") {
                 config.scan.includeHidden = parseBool(value, false);
+                includeHiddenExplicit = true;
+            } else if (key == "index_scope") {
+                const std::string lowered = lowerAscii(value);
+                if (lowered == "all")
+                    config.scope = IndexScope::All;
+                else if (lowered == "documents")
+                    config.scope = IndexScope::Documents;
+            } else if (key == "columns") {
+                std::string badKey;
+                config.columns = parseColumns(value, &badKey);
+                if (!badKey.empty())
+                    hostLog(LISTERY_LOG_WARNING, "columns 里未知的列已忽略：" + badKey);
             } else if (key == "match_path") {
                 config.matchPath = parseBool(value, true);
             } else if (key == "rescan_minutes") {
@@ -709,6 +969,23 @@ bool loadConfig()
     // 迁移必须落盘，否则用户升级后显式改回 0 仍会被当成旧默认值。
     if (migrateConfig)
         persistConfigMigration(config.idleUnloadMinutes);
+
+    // 全盘范围：根目录覆盖所有固定磁盘（含系统盘），去掉内置的 Windows/Program Files/
+    // AppData 等排除项，并默认把隐藏/系统文件一起收进来。用户显式写的 roots 与
+    // include_hidden 仍然优先，方便精确控制。
+    if (config.scope == IndexScope::All) {
+        if (!rootsExplicit)
+            config.scan.roots = fixedDriveRoots(true);
+        config.scan.excludeNames = safetyExcludeNames();
+        config.scan.excludePrefixes.clear();
+        if (!g_dataDir.empty())
+            config.scan.excludePrefixes.push_back(lowerWide(normalizePath(g_dataDir)));
+        if (!includeHiddenExplicit)
+            config.scan.includeHidden = true;
+    }
+    appendExcludeNames(config.scan.excludeNames, userExcludeNames);
+    for (const std::wstring &prefix : userExcludePrefixes)
+        config.scan.excludePrefixes.push_back(lowerWide(prefix));
 
     std::sort(config.scan.excludeNames.begin(), config.scan.excludeNames.end());
     config.scan.excludeNames.erase(
@@ -906,14 +1183,86 @@ void finishQuery(unsigned long long id, const char *error)
 }
 
 void addRow(unsigned long long id, const std::string &title, const std::string &subtitle,
-            const std::string &badge, const std::string &action)
+            const std::string &badge, const std::string &action,
+            const std::string &cells = std::string())
 {
-    if (g_host == nullptr || g_host->addResult == nullptr)
+    if (g_host == nullptr)
+        return;
+    // 老宿主没有列视图扩展：安静地退回经典两行样式，不需要用户改配置。
+    if (!g_activeColumns.empty() && g_host->addResultRow != nullptr) {
+        g_host->addResultRow(g_host->context, id, title.c_str(),
+                             subtitle.empty() ? nullptr : subtitle.c_str(),
+                             badge.empty() ? nullptr : badge.c_str(),
+                             action.empty() ? nullptr : action.c_str(),
+                             cells.empty() ? nullptr : cells.c_str());
+        return;
+    }
+    if (g_host->addResult == nullptr)
         return;
     g_host->addResult(g_host->context, id, title.c_str(),
                       subtitle.empty() ? nullptr : subtitle.c_str(),
                       badge.empty() ? nullptr : badge.c_str(),
                       action.empty() ? nullptr : action.c_str());
+}
+
+std::string directoryOf(const std::string &path)
+{
+    const size_t slash = path.find_last_of("\\/");
+    return slash == std::string::npos ? std::string() : path.substr(0, slash);
+}
+
+std::string extensionOf(const std::string &name)
+{
+    const size_t dot = name.rfind('.');
+    if (dot == std::string::npos || dot == 0 || dot + 1 >= name.size())
+        return "-";
+    std::string ext = name.substr(dot + 1);
+    for (char &ch : ext) {
+        if (ch >= 'a' && ch <= 'z')
+            ch = static_cast<char>(ch - 32);
+    }
+    return ext;
+}
+
+/** 按配置顺序把一条命中拼成 '\x1F' 分隔的单元格文本。 */
+std::string buildCells(const std::vector<ColumnId> &columns, const std::string &name,
+                        const std::string &path, const FileEntry &file)
+{
+    std::string out;
+    for (ColumnId id : columns) {
+        if (!out.empty())
+            out.push_back('\x1F');
+        switch (id) {
+        case ColName:
+            out += name;
+            break;
+        case ColPath:
+            out += path;
+            break;
+        case ColDir:
+            out += directoryOf(path); // 按需算，没选这列就不切字符串
+            break;
+        case ColSize:
+            out += filesearch::formatSize(filesearch::fileSize(file));
+            break;
+        case ColMtime: {
+            const std::string time = formatLocalTime(file.mtime);
+            out += time.empty() ? "-" : time;
+            break;
+        }
+        case ColCtime: {
+            const std::string time = formatLocalTime(file.ctime);
+            out += time.empty() ? "-" : time;
+            break;
+        }
+        case ColExt:
+            out += extensionOf(name);
+            break;
+        default:
+            break;
+        }
+    }
+    return out;
 }
 
 std::string fullFilePath(const Index &index, const FileEntry &file, const std::string &name)
@@ -941,14 +1290,28 @@ std::string badgeForName(const std::string &name)
     return ext;
 }
 
+/** 检索线程读配置：统一在锁内拷一份，避免跨线程直接访问 g_config。 */
+AppConfig configSnapshot()
+{
+    std::lock_guard<std::mutex> lock(g_configMutex);
+    return g_config;
+}
+
 void handleCommand(const QueryRequest &request)
 {
     const std::string command = request.text;
     if (command == "!status") {
         const std::string status = statusText();
-        std::string subtitle = "索引文件：";
+        const AppConfig config = configSnapshot();
+        std::string subtitle = "范围：";
+        subtitle += config.scope == IndexScope::All ? "all（全部固定磁盘）"
+                                                    : "documents（用户目录 + 非系统盘）";
+        subtitle += " · 隐藏/系统文件：";
+        subtitle += config.scan.includeHidden ? "是" : "否";
+        subtitle += " · 列：";
+        subtitle += columnLabels(config.columns);
+        subtitle += " · 索引：";
         subtitle += filesearch::wideToUtf8(g_indexPath);
-        subtitle += "（Enter 复制状态）";
         addRow(request.id, status, subtitle, "搜", "copy:" + status);
         finishQuery(request.id, nullptr);
         return;
@@ -988,12 +1351,81 @@ void handleCommand(const QueryRequest &request)
         addRow(request.id, "!sort 排序搜索结果",
                "!sort name/size/mtime/ctime，方向 asc/desc；立即生效并记住设置", "搜",
                "copy:!sort");
-        addRow(request.id, "!status 查看索引状态", "显示文件数、扫描时间和索引位置", "搜",
+        addRow(request.id, "!columns 选择结果列",
+               "!columns name,path,size,mtime；可选 dir/ctime/ext，off 回到经典两行视图", "搜",
+               "copy:!columns");
+        addRow(request.id, "!scope 切换索引范围",
+               "!scope all 索引全部固定磁盘含隐藏/系统文件；!scope documents 回到默认", "搜",
+               "copy:!scope");
+        addRow(request.id, "!status 查看索引状态", "显示文件数、索引范围与当前列", "搜",
                "copy:!status");
         addRow(request.id, "!reindex 重新扫描", "修改配置或文件变化很大时使用", "搜",
                "copy:!reindex");
         addRow(request.id, "!config 打开配置文件", "可设置扫描根目录、排除目录和刷新间隔",
                "搜", "copy:!config");
+        finishQuery(request.id, nullptr);
+        return;
+    }
+
+    if (command == "!columns" || command.compare(0, 9, "!columns ") == 0) {
+        const std::string arg =
+            command.size() > 8 ? trimAscii(command.substr(8)) : std::string();
+        const std::string choices =
+            "可选：name path dir size mtime ctime ext；off = 经典两行视图";
+        if (arg.empty()) {
+            addRow(request.id, "当前列：" + columnLabels(configSnapshot().columns),
+                   choices + "；例：!columns name,dir,size,mtime", "搜", "copy:!columns");
+            finishQuery(request.id, nullptr);
+            return;
+        }
+        std::string badKey;
+        const std::vector<ColumnId> columns = parseColumns(arg, &badKey);
+        if (!badKey.empty()) {
+            addRow(request.id, "未知的列名：" + badKey, choices, "搜", "copy:!columns");
+            finishQuery(request.id, nullptr);
+            return;
+        }
+        saveConfigValue("columns", columnsToConfig(columns));
+        {
+            std::lock_guard<std::mutex> lock(g_configMutex);
+            g_config.columns = columns;
+        }
+        addRow(request.id,
+               columns.empty() ? std::string("已切回经典两行视图")
+                               : "已切换列：" + columnLabels(columns),
+               "设置已写入配置文件，立即生效", "搜", "copy:!columns");
+        finishQuery(request.id, nullptr);
+        return;
+    }
+
+    if (command == "!scope" || command.compare(0, 7, "!scope ") == 0) {
+        const std::string arg = command.size() > 6 ? trimAscii(command.substr(6)) : std::string();
+        const AppConfig current = configSnapshot();
+        if (arg.empty()) {
+            addRow(request.id, std::string("当前索引范围：") + scopeName(current.scope),
+                   "documents = 用户目录/非系统盘且跳过隐藏文件；all = 全部固定磁盘含隐藏/系统文件",
+                   "搜", "copy:!scope");
+            finishQuery(request.id, nullptr);
+            return;
+        }
+        const std::string lowered = lowerAscii(arg);
+        if (lowered != "all" && lowered != "documents") {
+            addRow(request.id, "未知的索引范围：" + arg,
+                   "用法：!scope all 或 !scope documents", "搜", "copy:!scope");
+            finishQuery(request.id, nullptr);
+            return;
+        }
+        const IndexScope scope = lowered == "all" ? IndexScope::All : IndexScope::Documents;
+        saveConfigValue("index_scope", scopeName(scope));
+        {
+            std::lock_guard<std::mutex> lock(g_configMutex);
+            g_config.scope = scope;
+        }
+        // 扫描范围变了，旧索引里的条目集合不再成立，必须重建。
+        g_forceScan.store(true);
+        addRow(request.id, std::string("索引范围已切换为 ") + scopeName(scope),
+               "后台正在重新读取配置并重建索引，可用 !status 查看进度", "搜",
+               "copy:!scope");
         finishQuery(request.id, nullptr);
         return;
     }
@@ -1062,12 +1494,15 @@ void handleCommand(const QueryRequest &request)
     }
 
     addRow(request.id, "无法识别的命令：" + command,
-           "可用命令：!status、!reindex、!config、!sort、!help", "搜", "copy:!help");
+           "可用命令：!status、!reindex、!config、!sort、!columns、!scope、!help", "搜",
+           "copy:!help");
     finishQuery(request.id, nullptr);
 }
 
 void processQuery(const QueryRequest &request)
 {
+    // 每次查询先复位：命令类结果与老宿主都走经典两行样式。
+    g_activeColumns.clear();
     if (takeCancelled(request.id)) {
         finishQuery(request.id, nullptr);
         return;
@@ -1119,6 +1554,19 @@ void processQuery(const QueryRequest &request)
     if (parsed.empty()) {
         finishQuery(request.id, nullptr);
         return;
+    }
+
+    // 声明列视图：必须在提交任何一行之前。老宿主没有这两个扩展指针时静默降级。
+    {
+        std::lock_guard<std::mutex> lock(g_configMutex);
+        g_activeColumns = g_config.columns;
+    }
+    if (!g_activeColumns.empty() && g_host != nullptr
+        && g_host->setResultColumns != nullptr && g_host->addResultRow != nullptr) {
+        const std::string spec = columnSpec(g_activeColumns);
+        g_host->setResultColumns(g_host->context, request.id, spec.c_str());
+    } else {
+        g_activeColumns.clear();
     }
 
     int limit = request.maxResults > 0 ? request.maxResults : kDefaultMaxResults;
@@ -1190,16 +1638,22 @@ void processQuery(const QueryRequest &request)
             continue;
         const std::string path = fullFilePath(*index, file, name);
         std::string subtitle = path;
-        subtitle += "    ";
-        subtitle += filesearch::formatSize(filesearch::fileSize(file));
-        if (showMtime || showCtime) {
-            const std::string time = formatLocalTime(showMtime ? file.mtime : file.ctime);
-            if (!time.empty()) {
-                subtitle += "    ";
-                subtitle += time;
+        std::string cells;
+        if (!g_activeColumns.empty()) {
+            // 列视图下副标题只作 tooltip，细节都在单元格里，不必再拼一遍大小/时间。
+            cells = buildCells(g_activeColumns, name, path, file);
+        } else {
+            subtitle += "    ";
+            subtitle += filesearch::formatSize(filesearch::fileSize(file));
+            if (showMtime || showCtime) {
+                const std::string time = formatLocalTime(showMtime ? file.mtime : file.ctime);
+                if (!time.empty()) {
+                    subtitle += "    ";
+                    subtitle += time;
+                }
             }
         }
-        addRow(request.id, name, subtitle, badgeForName(name), "run:" + path);
+        addRow(request.id, name, subtitle, badgeForName(name), "run:" + path, cells);
     }
     finishQuery(request.id, nullptr);
 }
@@ -1365,8 +1819,8 @@ const ListeryPluginV1 kPlugin = {
     LISTERY_PLUGIN_API_VERSION,
     "com.listery.filesearch",
     "文件搜索",
-    "1.1.0",
-    "用 Alt+S 快速搜索本机文件；自建索引，不依赖 Everything。支持按名称/大小/时间排序。",
+    "1.2.0",
+    "用 Alt+S 快速搜索本机文件；Everything 风格的多列结果（列可配置），自建索引，不依赖 Everything。",
     "Alt+S",
     pluginInit,
     pluginShutdown,

@@ -96,6 +96,8 @@ inline void listerySetWindowFlag(WidgetT *widget, Qt::WindowType flag, bool on =
 // 用宏统一，避免每个调用点写版本守卫。
 #if QT_VERSION >= QT_VERSION_CHECK(5, 14, 0)
     #define LISTERY_SKIP_EMPTY_PARTS Qt::SkipEmptyParts
+    #define LISTERY_KEEP_EMPTY_PARTS Qt::KeepEmptyParts
 #else
     #define LISTERY_SKIP_EMPTY_PARTS QString::SkipEmptyParts
+    #define LISTERY_KEEP_EMPTY_PARTS QString::KeepEmptyParts
 #endif

@@ -9,6 +9,9 @@
 #include "Platform/WindowUtils.h"
 #include "SelfTest.h"
 #include "Ui/LauncherWindow.h"
+#include "Ui/ResultColumns.h"
+#include "Ui/ResultDelegate.h"
+#include "Ui/ResultModel.h"
 
 #ifdef LISTERY_WITH_BREAKPAD
 #  include "crashhandler.h"
@@ -20,13 +23,18 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QFont>
+#include <QFrame>
 #include <QImage>
+#include <QListView>
 #include <QLocalSocket>
 #include <QMessageBox>
 #include <QMutex>
 #include <QPainter>
+#include <QPixmap>
 #include <QTemporaryDir>
 #include <QTimer>
+#include <QVBoxLayout>
+#include <QWidget>
 
 #include <cstdio>
 #include <cstdlib>
@@ -192,6 +200,90 @@ int renderPreview(const QString &outputPath, const QString &query)
     return 0;
 }
 
+/**
+ * 列视图离屏预览：用构造的插件结果渲染表头 + 紧凑行，检查列宽与对齐。
+ * 不启动插件、不弹窗，供 --render-columns <png> 使用。
+ */
+int renderColumnPreview(const QString &outputPath)
+{
+    const QVector<ResultColumn> columns = parseColumnSpec(
+        QString::fromUtf8("名称:0:l\x1F路径:0:l\x1F大小:92:r\x1F修改日期:140:l"));
+
+    struct PreviewRow
+    {
+        const char *name;
+        const char *path;
+        const char *size;
+        const char *mtime;
+    };
+    static const PreviewRow rows[] = {
+        {"季度报告 2026.docx", "C:\\Users\\spygg\\Documents\\季度报告 2026.docx", "24.6 KB",
+         "2026-11-09 14:22"},
+        {"setup_release.exe", "E:\\programes\\Listery\\setup_release.exe", "8.4 MB",
+         "2026-11-08 09:15"},
+        {"index.bin", "C:\\Users\\spygg\\AppData\\Local\\Listery\\FileSearch\\index.bin",
+         "269 MB", "2026-11-10 10:59"},
+        {"测试截图.png", "D:\\Projects\\Listery\\docs\\测试截图.png", "1.2 MB",
+         "2026-10-29 21:00"},
+        {"notes.txt", "D:\\Projects\\Listery\\notes.txt", "3.1 KB", "2026-10-28 17:42"},
+    };
+    const int rowCount = static_cast<int>(sizeof(rows) / sizeof(rows[0]));
+
+    ResultModel model;
+    model.setColumns(columns);
+    QVector<SearchResult> results;
+    results.reserve(rowCount);
+    for (const PreviewRow &row : rows) {
+        SearchResult result;
+        result.pluginTitle = QString::fromUtf8(row.name);
+        result.pluginSubtitle = QString::fromUtf8(row.path);
+        result.pluginBadge = QStringLiteral("文");
+        result.pluginAction = QStringLiteral("run:") + QString::fromUtf8(row.path);
+        result.pluginCells = QStringList() << QString::fromUtf8(row.name)
+                                          << QString::fromUtf8(row.path)
+                                          << QString::fromUtf8(row.size)
+                                          << QString::fromUtf8(row.mtime);
+        results.append(result);
+    }
+    model.setResults(results);
+
+    QWidget card;
+    card.setObjectName(QStringLiteral("launcherCard"));
+    card.setFixedWidth(760);
+    card.setStyleSheet(QStringLiteral("#launcherCard { background: #FFFFFF; }"));
+    auto *layout = new QVBoxLayout(&card);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(0);
+    auto *header = new ResultColumnHeader(&card);
+    header->setColumns(columns);
+    auto *list = new QListView(&card);
+    list->setFrameShape(QFrame::NoFrame);
+    list->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    list->setModel(&model);
+    list->setItemDelegate(new ResultDelegate(list));
+    list->setFixedHeight(rowCount * ResultLayout::kColumnRowHeight);
+    layout->addWidget(header);
+    layout->addWidget(list);
+
+    card.setAttribute(Qt::WA_DontShowOnScreen, true);
+    card.show();
+    QApplication::processEvents();
+
+    const QPixmap shot = card.grab();
+    if (shot.isNull())
+        return 4;
+    QImage canvas(shot.width() + 64, shot.height() + 64, QImage::Format_ARGB32_Premultiplied);
+    canvas.fill(QColor(0xED, 0xF0, 0xF4));
+    QPainter painter(&canvas);
+    painter.drawPixmap(32, 32, shot);
+    painter.end();
+    if (!canvas.save(outputPath))
+        return 5;
+    qInfo("preview: 已保存列视图 %s (%dx%d)", qPrintable(outputPath), canvas.width(),
+          canvas.height());
+    return 0;
+}
+
 #ifdef Q_OS_WIN
 /** 模拟“双击 Ctrl”：按下-抬起-按下-抬起，两步间隔远小于 300ms。 */
 void sendDoubleCtrl()
@@ -262,6 +354,14 @@ int main(int argc, char *argv[])
         if (query == QLatin1String("--empty"))
             query.clear();
         const int result = renderPreview(arguments.at(previewIndex + 1), query);
+        if (g_logFile)
+            g_logFile->flush();
+        return result;
+    }
+
+    const int columnPreview = arguments.indexOf(QStringLiteral("--render-columns"));
+    if (columnPreview >= 0 && columnPreview + 1 < arguments.size()) {
+        const int result = renderColumnPreview(arguments.at(columnPreview + 1));
         if (g_logFile)
             g_logFile->flush();
         return result;

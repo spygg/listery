@@ -72,6 +72,7 @@ set(PROJECT_SOURCES
     src/Ui/LauncherWindow.cpp
     src/Ui/ResultModel.h
     src/Ui/ResultModel.cpp
+    src/Ui/ResultColumns.h
     src/Ui/ResultDelegate.h
     src/Ui/ResultDelegate.cpp
     src/Ui/SettingsDialog.h

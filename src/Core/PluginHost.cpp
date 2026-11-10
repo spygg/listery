@@ -1,6 +1,7 @@
 #include "Core/PluginHost.h"
 
 #include "Core/HttpClient.h"
+#include "Core/QtCompat.h"
 #include "listery_plugin_api.h"
 
 #include <QApplication>
@@ -26,6 +27,8 @@ void fillHostTable(ListeryHostV1 *table, void *context)
     table->finish = nullptr;
     table->log = nullptr;
     table->httpGet = nullptr;
+    table->setResultColumns = nullptr;
+    table->addResultRow = nullptr;
 }
 
 QString stringOrEmpty(const char *text)
@@ -56,6 +59,30 @@ void LISTERY_PLUGIN_CALL hostAddResult(void *context,
     if (PluginHost *host = static_cast<PluginHost *>(context))
         host->appendRow(requestId, stringOrEmpty(title), stringOrEmpty(subtitle),
                         stringOrEmpty(badge), stringOrEmpty(action));
+}
+
+/** 列定义与带单元格的结果行：旧的 addResult 回调保持不动，老插件零改动可用。 */
+void LISTERY_PLUGIN_CALL hostSetResultColumns(void *context,
+                                               unsigned long long requestId,
+                                               const char *spec)
+{
+    if (PluginHost *host = static_cast<PluginHost *>(context))
+        host->setColumns(requestId, stringOrEmpty(spec));
+}
+
+void LISTERY_PLUGIN_CALL hostAddResultRow(void *context,
+                                          unsigned long long requestId,
+                                          const char *title,
+                                          const char *subtitle,
+                                          const char *badge,
+                                          const char *action,
+                                          const char *cells)
+{
+    if (PluginHost *host = static_cast<PluginHost *>(context))
+        host->appendRow(requestId, stringOrEmpty(title), stringOrEmpty(subtitle),
+                        stringOrEmpty(badge), stringOrEmpty(action),
+                        QString::fromUtf8(cells ? cells : "")
+                            .split(QLatin1Char('\x1f'), LISTERY_KEEP_EMPTY_PARTS));
 }
 
 void LISTERY_PLUGIN_CALL hostFinish(void *context,
@@ -127,6 +154,8 @@ PluginHost::PluginHost(QObject *parent)
     m_hostTable.finish = hostFinish;
     m_hostTable.log = hostLog;
     m_hostTable.httpGet = hostHttpGet;
+    m_hostTable.setResultColumns = hostSetResultColumns;
+    m_hostTable.addResultRow = hostAddResultRow;
 }
 
 PluginHost::~PluginHost()
@@ -367,6 +396,7 @@ quint64 PluginHost::beginQuery(const QString &id, const QString &query, int maxR
         QMutexLocker locker(&m_mutex);
         m_pending.remove(requestId);
         m_pendingQuery.remove(requestId);
+        m_pendingColumns.remove(requestId);
         m_activeOwner.remove(requestId);
     }
 
@@ -418,12 +448,22 @@ bool PluginHost::configure(const QString &id, void *nativeParentWindow)
 }
 
 void PluginHost::appendRow(quint64 requestId, const QString &title, const QString &subtitle,
-                           const QString &badge, const QString &action)
+                           const QString &badge, const QString &action,
+                           const QStringList &cells)
 {
     if (title.isEmpty())
         return;
     QMutexLocker locker(&m_mutex);
-    m_pending[requestId].append(PluginRow{title, subtitle, badge, action});
+    m_pending[requestId].append(PluginRow{title, subtitle, badge, action, cells});
+}
+
+void PluginHost::setColumns(quint64 requestId, const QString &spec)
+{
+    QMutexLocker locker(&m_mutex);
+    if (spec.isEmpty())
+        m_pendingColumns.remove(requestId);
+    else
+        m_pendingColumns.insert(requestId, spec);
 }
 
 void PluginHost::finishRequest(quint64 requestId, const QString &errorMessage)
@@ -431,11 +471,13 @@ void PluginHost::finishRequest(quint64 requestId, const QString &errorMessage)
     QVector<PluginRow> rows;
     QString query;
     QString pluginId;
+    QString columnSpec;
     {
         QMutexLocker locker(&m_mutex);
         rows = m_pending.take(requestId);
         query = m_pendingQuery.take(requestId);
         pluginId = m_activeOwner.take(requestId);
+        columnSpec = m_pendingColumns.take(requestId);
     }
 
     QMetaObject::invokeMethod(this, "deliver", Qt::QueuedConnection,
@@ -443,13 +485,14 @@ void PluginHost::finishRequest(quint64 requestId, const QString &errorMessage)
                               Q_ARG(QString, pluginId),
                               Q_ARG(QString, query),
                               Q_ARG(QVector<PluginRow>, rows),
-                              Q_ARG(QString, errorMessage));
+                              Q_ARG(QString, errorMessage),
+                              Q_ARG(QString, columnSpec));
 }
 
 void PluginHost::deliver(quint64 sequence, QString pluginId, QString query,
-                         QVector<PluginRow> rows, QString errorMessage)
+                         QVector<PluginRow> rows, QString errorMessage, QString columnSpec)
 {
-    emit queryFinished(sequence, pluginId, query, rows, errorMessage);
+    emit queryFinished(sequence, pluginId, query, rows, errorMessage, columnSpec);
 }
 
 void PluginHost::writeLog(int level, const QString &message)

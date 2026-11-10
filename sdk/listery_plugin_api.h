@@ -110,6 +110,34 @@ typedef struct ListeryHostV1 {
                                       ListeryHttpCallback callback,
                                       void *userData,
                                       int timeoutMs);
+
+    /*
+     * ---- 可选扩展：列视图（Everything 风格），追加在结构体末尾以保持 ABI 兼容 ----
+     *
+     * 老宿主没有这两个字段，所以插件必须先判断函数指针非 NULL 再用；为 NULL 时
+     * 退回 addResult。宿主保证能力表指针在整个生命周期有效。
+     *
+     * setResultColumns：在提交任何结果行之前调用一次。
+     *   spec 是 '\x1f'（ASCII US）分隔的列定义，每列格式 "标题:宽度:对齐"：
+     *     宽度 0 = 弹性列（与其他弹性列平分剩余宽度），>0 = 固定像素宽度；
+     *     对齐 l = 左对齐，r = 右对齐。标题中不要出现 ':'。
+     *   例："名称:0:l\x1f路径:0:l\x1f大小:92:r\x1f修改日期:140:l"
+     *   传 NULL / 空串表示本次查询不使用列视图。
+     *
+     * addResultRow：与 addResult 语义完全相同，额外附带与列定义等长、同样以
+     *   '\x1f' 分隔的单元格文本。title/subtitle/badge/action 仍需填写
+     *   （subtitle 会作为列视图下的 tooltip 兜底）。
+     */
+    void(LISTERY_PLUGIN_CALL *setResultColumns)(void *context,
+                                                unsigned long long requestId,
+                                                const char *spec);
+    void(LISTERY_PLUGIN_CALL *addResultRow)(void *context,
+                                            unsigned long long requestId,
+                                            const char *title,
+                                            const char *subtitle,
+                                            const char *badge,
+                                            const char *action,
+                                            const char *cells);
 } ListeryHostV1;
 
 /**

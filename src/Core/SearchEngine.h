@@ -21,6 +21,8 @@ struct SearchResult
     QString pluginBadge;
     /** Enter 执行的动作，见 sdk/listery_plugin_api.h 的 action 协议。 */
     QString pluginAction;
+    /** 列视图下与表头等长的单元格文本；非空即使用紧凑列行样式。 */
+    QStringList pluginCells;
 
     bool isPluginResult() const { return !pluginTitle.isEmpty() || !pluginAction.isEmpty(); }
 };
