@@ -68,6 +68,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # 生成发布说明要比对上一个 tag，默认的浅克隆拿不到历史 tag
+          fetch-depth: 0
 
       - name: Install Qt
         if: matrix.config.name != 'Windows XP'
@@ -406,13 +409,44 @@ jobs:
           git commit -m "ci logs: ${{ matrix.config.name }} run ${{ github.run_id }} $(date -u +%Y%m%d%H%M%S)" || true
           git push --force origin "$BR"
 
+      - name: Generate Release Notes
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          # GitHub 自带的 generate_release_notes 基于 PR 生成，本仓库全是直接
+          # push 的提交，结果只有一行 Full Changelog；而且 4 个 matrix job 会
+          # 各追加一次。这里按提交记录自己生成，写到工作区外（前面的 ci-logs
+          # 步骤会切换分支，工作区里的文件可能被 checkout 影响）。
+          tag="${GITHUB_REF_NAME}"
+          prev="$(git tag --sort=-version:refname | grep -v "^${tag}$" | head -1 || true)"
+          notes="${RUNNER_TEMP}/release_notes.md"
+          {
+            echo "## ${tag} 更新内容"
+            echo
+            if [ -n "$prev" ]; then
+              echo "对比 \`${prev}\` → \`${tag}\`："
+              echo
+              git log --no-merges --pretty=format:'- %s (%h)' "${prev}..${tag}"
+              echo
+              echo
+              echo "**完整变更**：https://github.com/${GITHUB_REPOSITORY}/compare/${prev}...${tag}"
+            else
+              echo "首个发布版本，最近提交："
+              echo
+              git log --no-merges --pretty=format:'- %s (%h)' -30 "${tag}"
+            fi
+          } > "$notes"
+          echo "--- generated notes ---"
+          cat "$notes"
+
       - name: Upload Release Assets
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          # 用上一个 tag 到本 tag 的提交记录自动生成发布说明，
-          # 否则 release 页面会是空的，用户不知道这一版修了什么
-          generate_release_notes: true
+          # 4 个 matrix job 都会跑到这一步；body_path 是「覆盖」而不是追加，
+          # 内容一致所以并发写同一个 release 也不会重复堆积
+          body_path: ${{ runner.temp }}/release_notes.md
+          generate_release_notes: false
           files: |
             listery-windows.zip
             installer/windows/listery-windows-setup.exe
