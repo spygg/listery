@@ -16,6 +16,7 @@
 #include "Platform/WindowUtils.h"
 #include "Core/QtCompat.h"
 #include "Ui/LauncherWindow.h"
+#include "Ui/ResultColumns.h"
 
 #ifdef LISTERY_WITH_BREAKPAD
 #  include "crashhandler.h"
@@ -35,6 +36,7 @@
 #include <QTemporaryDir>
 #include <QThread>
 #include <QTimer>
+#include <QToolButton>
 #include <QWidget>
 #include <QtGlobal>
 
@@ -684,6 +686,83 @@ int SelfTest::run()
           QStringLiteral("显示后的窗口展开到 %1（期望 203）").arg(shownExpanded));
     check(shownCompact == 148,
           QStringLiteral("展开后再唤起缩回输入框高度 %1（期望 148）").arg(shownCompact));
+
+    // ---- 固定面板：dismiss() 保持、hideNow()/Esc 强制关闭 ----
+    {
+        LauncherWindow pinnedWindow(&service, 10);
+        pinnedWindow.setAttribute(Qt::WA_DontShowOnScreen, true);
+        pinnedWindow.setPinned(true);
+        pinnedWindow.show();
+        pinnedWindow.dismiss();
+        check(pinnedWindow.isVisible(),
+              QStringLiteral("固定模式下 dismiss() 不隐藏面板"));
+        pinnedWindow.hideNow();
+        check(!pinnedWindow.isVisible(),
+              QStringLiteral("固定模式下 hideNow()（Esc 路径）仍能关闭面板"));
+        pinnedWindow.setPinned(false);
+        pinnedWindow.show();
+        pinnedWindow.dismiss();
+        check(!pinnedWindow.isVisible(),
+              QStringLiteral("取消固定后 dismiss() 恢复“选择后隐藏”"));
+        QToolButton *pinButton = pinnedWindow.findChild<QToolButton *>(QStringLiteral("pinButton"));
+        check(pinButton != nullptr && pinButton->isCheckable(),
+              QStringLiteral("输入框右侧存在可勾选的固定按钮"));
+    }
+
+    // ---- 表头点击排序：spec 排序键解析 + 点击发信号 ----
+    {
+        const QString spec = QStringLiteral("名称:0:l:name:asc") + QChar(0x1F)
+                             + QStringLiteral("大小:92:r:size") + QChar(0x1F)
+                             + QStringLiteral("修改日期:140:l:mtime");
+        const QVector<ResultColumn> columns = parseColumnSpec(spec);
+        check(columns.size() == 3
+                  && columns.at(0).sortKey == QStringLiteral("name")
+                  && columns.at(0).sortOrder == 1
+                  && columns.at(1).sortKey == QStringLiteral("size")
+                  && columns.at(1).sortOrder == 0,
+              QStringLiteral("列 spec 解析排序键与当前方向（名称升序、大小未排序）"));
+
+        ResultColumnHeader header;
+        header.resize(600, ResultLayout::kColumnHeaderHeight);
+        header.setColumns(columns);
+        header.setSortIndicator(QStringLiteral("name"), true);
+        check(header.sortKey() == QStringLiteral("name") && header.ascending(),
+              QStringLiteral("表头能记录当前排序列与方向（供画箭头）"));
+
+        int clicked = -1;
+        QObject::connect(&header, &ResultColumnHeader::columnClicked,
+                         [&clicked](int column) { clicked = column; });
+        const QVector<QRect> cells = resultColumnRects(header.rect(), columns);
+        check(cells.size() == 3, QStringLiteral("表头三列几何可计算"));
+        if (cells.size() == 3) {
+            const QPoint center = cells.at(1).center();
+            QMouseEvent press(QEvent::MouseButtonPress, center, Qt::LeftButton,
+                              Qt::LeftButton, Qt::NoModifier);
+            QMouseEvent release(QEvent::MouseButtonRelease, center, Qt::LeftButton,
+                                Qt::NoButton, Qt::NoModifier);
+            QApplication::sendEvent(&header, &press);
+            QApplication::sendEvent(&header, &release);
+        }
+        check(clicked == 1, QStringLiteral("点击“大小”表头发出 columnClicked(1)"));
+
+        clicked = -1;
+        ResultColumnHeader legacyHeader;
+        legacyHeader.resize(600, ResultLayout::kColumnHeaderHeight);
+        ResultColumn plain;
+        plain.label = QStringLiteral("标题");
+        legacyHeader.setColumns(QVector<ResultColumn>() << plain);
+        QVector<QRect> plainCells = resultColumnRects(legacyHeader.rect(), legacyHeader.columns());
+        if (!plainCells.isEmpty()) {
+            const QPoint center = plainCells.first().center();
+            QMouseEvent press(QEvent::MouseButtonPress, center, Qt::LeftButton,
+                              Qt::LeftButton, Qt::NoModifier);
+            QMouseEvent release(QEvent::MouseButtonRelease, center, Qt::LeftButton,
+                                Qt::NoButton, Qt::NoModifier);
+            QApplication::sendEvent(&legacyHeader, &press);
+            QApplication::sendEvent(&legacyHeader, &release);
+        }
+        check(clicked == -1, QStringLiteral("无排序键的旧列点击后不触发排序"));
+    }
 
     // 连续输入两次：只允许最新一次请求的结果落进列表
     window.setQueryForPreview(QStringLiteral("alpha"));

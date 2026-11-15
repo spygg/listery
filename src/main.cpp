@@ -207,7 +207,7 @@ int renderPreview(const QString &outputPath, const QString &query)
 int renderColumnPreview(const QString &outputPath)
 {
     const QVector<ResultColumn> columns = parseColumnSpec(
-        QString::fromUtf8("名称:0:l\x1F路径:0:l\x1F大小:92:r\x1F修改日期:140:l"));
+        QString::fromUtf8("名称:0:l:name\x1F路径:0:l:path\x1F大小:92:r:size\x1F修改日期:140:l:mtime:desc"));
 
     struct PreviewRow
     {

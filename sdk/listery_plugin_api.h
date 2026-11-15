@@ -23,7 +23,11 @@
 
 #include <stddef.h>
 
-#define LISTERY_PLUGIN_API_VERSION 1
+/*
+ * 1 → 2：列定义增加可选的排序键后缀，插件描述符末尾增加 setResultSort。
+ * 宿主仍接受 apiVersion 1 的老插件（老插件没有排序键，表头保持只读）。
+ */
+#define LISTERY_PLUGIN_API_VERSION 2
 
 /* -------------------------------------------------------------------------- */
 /* 导出宏 / Export macros                                                      */
@@ -118,10 +122,13 @@ typedef struct ListeryHostV1 {
      * 退回 addResult。宿主保证能力表指针在整个生命周期有效。
      *
      * setResultColumns：在提交任何结果行之前调用一次。
-     *   spec 是 '\x1f'（ASCII US）分隔的列定义，每列格式 "标题:宽度:对齐"：
+     *   spec 是 '\x1f'（ASCII US）分隔的列定义，每列格式 "标题:宽度:对齐[:排序键[:方向]]"：
      *     宽度 0 = 弹性列（与其他弹性列平分剩余宽度），>0 = 固定像素宽度；
      *     对齐 l = 左对齐，r = 右对齐。标题中不要出现 ':'。
-     *   例："名称:0:l\x1f路径:0:l\x1f大小:92:r\x1f修改日期:140:l"
+     *     排序键（可选）由插件定义，点击表头时宿主原样交给 setResultSort；
+     *       没有排序键的列不可点击（老插件/纯展示列）。
+     *     方向（可选）asc / desc 只在“当前正按该列排序”时填写，用来画排序箭头。
+     *   例："名称:0:l:name:asc\x1f大小:92:r:size\x1f修改日期:140:l:mtime"
      *   传 NULL / 空串表示本次查询不使用列视图。
      *
      * addResultRow：与 addResult 语义完全相同，额外附带与列定义等长、同样以
@@ -181,6 +188,17 @@ typedef struct ListeryPluginV1 {
      * 不需要就填 NULL。插件应避免依赖 Qt：可以用原生 API 或写自己的配置文件。
      */
     int(LISTERY_PLUGIN_CALL *configure)(void *nativeParentWindow);
+
+    /*
+     * 可选扩展：表头点击排序（追加在结构体末尾，apiVersion >= 2）。
+     *
+     * columnKey 是 setResultColumns spec 里该列的排序键；ascending 非 0 表示升序，
+     * 0 表示降序。插件应把排序偏好持久化，并在下一次 beginQuery 时按新顺序返回
+     * “整个结果集”的前 N 条（不能只重排当前面板里的十几行）。
+     * 返回 0 表示接受并已生效，非 0 时宿主不改表头箭头。
+     * 老插件该字段为 NULL，宿主不会调用。
+     */
+    int(LISTERY_PLUGIN_CALL *setResultSort)(const char *columnKey, int ascending);
 } ListeryPluginV1;
 
 /**

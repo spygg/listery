@@ -22,7 +22,7 @@ Qt 5.15 and Qt 6 builds of Listery.
 | Folder | `plugins/` next to the executable (the extracted folder for the portable build, the install folder for the setup build) |
 | Extensions | Windows `*.dll`, Linux `*.so`, macOS `*.dylib` (`*.so` accepted too) |
 | Entry symbol | `listery_plugin_v1` (C linkage, returns `const ListeryPluginV1 *`) |
-| Version check | `apiVersion` must equal `LISTERY_PLUGIN_API_VERSION`, otherwise the plugin is rejected and the reason is shown in Settings |
+| Version check | The host accepts `apiVersion` 1 or 2: 1.x plugins keep loading, 2 adds the header-sort callback; anything else is rejected with the reason shown in Settings |
 | Duplicate id | A second plugin with the same id is skipped |
 | Unloading | Plugins stay loaded for the process lifetime; "disabled" only means they are no longer called |
 
@@ -42,6 +42,7 @@ typedef struct ListeryPluginV1 {
     int  (*beginQuery)(unsigned long long requestId, const char *query, int maxResults);
     void (*cancelQuery)(unsigned long long requestId);
     int  (*configure)(void *nativeParentWindow);        // optional, may be NULL
+    int  (*setResultSort)(const char *columnKey, int ascending);  // API 2, optional, may be NULL
 } ListeryPluginV1;
 ```
 
@@ -84,8 +85,16 @@ if (g_host->setResultColumns && g_host->addResultRow) {
 }
 ```
 
-- Both `spec` and `cells` are separated by ASCII `\x1F` (US). Each column is `label:width:align`,
-  where width `0` means a flexible column (shares leftover space) and align is `l` / `r`;
+- Both `spec` and `cells` are separated by ASCII `\x1F` (US). Each column is
+  `label:width:align[:sortKey[:asc|desc]]`, where width `0` means a flexible column
+  (shares leftover space) and align is `l` / `r`;
+- The optional 4th field `sortKey` makes that header clickable; the 5th field `asc` / `desc`
+  tells the host which arrow to draw (up = ascending, down = descending). Three-field
+  specs from older plugins stay read-only;
+- On a header click the host calls `setResultSort(columnKey, ascending)` (`1` = ascending,
+  `0` = descending). Return `0` to accept; persist the choice so it survives queries and
+  restarts (the bundled filesearch plugin writes `sort_mode` / `sort_desc` to
+  `filesearch.ini`). A non-zero return or a NULL pointer leaves the list unchanged;
 - `cells` must have the same length and order as the column spec; queries that never call
   `setResultColumns` keep the classic two-line layout;
 - `title` / `subtitle` / `badge` / `action` behave exactly as in `addResult`; `subtitle` becomes
@@ -188,7 +197,8 @@ static const ListeryPluginV1 kPlugin = {
     LISTERY_PLUGIN_API_VERSION,
     "com.example.echo", "Echo", "1.0.0", "Echoes whatever you type",
     "Alt+E",
-    pluginInit, pluginShutdown, pluginBeginQuery, pluginCancelQuery, nullptr
+    pluginInit, pluginShutdown, pluginBeginQuery, pluginCancelQuery, nullptr,
+    nullptr                        // setResultSort: header sorting not supported
 };
 
 extern "C" LISTERY_PLUGIN_EXPORT const ListeryPluginV1 *LISTERY_PLUGIN_CALL

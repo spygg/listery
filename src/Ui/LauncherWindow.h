@@ -13,6 +13,7 @@ class QListView;
 class QMenu;
 class QAction;
 class QTimer;
+class QToolButton;
 class PluginHost;
 class ResultModel;
 class ResultColumnHeader;
@@ -38,11 +39,16 @@ public:
     ~LauncherWindow() override;
 
     void popup();
+    /** 按用户设置隐藏：固定模式下保持不变（选择结果后面板留在屏幕上）。 */
     void dismiss();
+    /** 强制隐藏（Esc、打开设置/插件管理这类必须让出屏幕的场合）。 */
+    void hideNow();
     void refreshResults();
 
     void setMaxResults(int maxResults);
     void setHideOnFocusLost(bool on);
+    void setPinned(bool on);
+    bool isPinned() const { return m_pinned; }
     void setStatusText(const QString &text);
     /** 界面语言切换后刷新占位提示与底栏快捷键说明（状态栏由宿主重新设置）。 */
     void retranslateUi();
@@ -81,6 +87,8 @@ signals:
     void pluginActionRequested(const QString &action);
     /** 插件模式已结束，宿主可以把状态栏恢复成索引状态。 */
     void pluginSessionClosed();
+    /** 用户点击输入框右侧“固定”按钮：宿主应持久化该偏好。 */
+    void pinChanged(bool pinned);
 
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
@@ -104,6 +112,8 @@ private:
     void showContextMenu(const QPoint &position);
     void enterPluginMode(const QString &pluginId, const QString &displayName,
                          const QString &placeholder);
+    /** 表头点击：把列排序键交给插件，成功后重新发起当前查询拿全局排序结果。 */
+    void requestColumnSort(int column);
 
     SearchService *m_service = nullptr;
     PluginHost *m_pluginHost = nullptr;
@@ -113,6 +123,11 @@ private:
     QString m_statusBeforePlugin;
     int m_maxResults = 12;
     bool m_hideOnFocusLost = true;
+    /** 固定面板：选择结果 / 失焦后都不隐藏；Esc 仍强制关闭。 */
+    bool m_pinned = false;
+    /** 当前排序列与方向（表头箭头用；插件在列 spec 里也会回报一次）。 */
+    QString m_sortKey;
+    bool m_sortAscending = true;
     /** 右键菜单打开期间禁止失焦自动隐藏，避免嵌套事件循环里模型被清空。 */
     bool m_contextMenuOpen = false;
     /** 最近一次发出的检索序号；只有它的结果才允许写入列表。 */
@@ -120,7 +135,9 @@ private:
     quint64 m_appliedSequence = 0;
 
     QFrame *m_card = nullptr;
+    QWidget *m_inputRow = nullptr;
     QLineEdit *m_edit = nullptr;
+    QToolButton *m_pinButton = nullptr;
     QFrame *m_separator = nullptr;
     QListView *m_list = nullptr;
     ResultColumnHeader *m_columnHeader = nullptr;

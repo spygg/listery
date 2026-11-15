@@ -140,6 +140,7 @@ bool AppController::initialize()
 
     m_window = new LauncherWindow(m_searchService, m_settings.maxResults());
     m_window->setHideOnFocusLost(m_settings.hideWhenFocusLost());
+    m_window->setPinned(m_settings.pinResults());
     m_window->setStatusText(tr("索引尚未建立"));
 
     setupPlugins();
@@ -202,6 +203,10 @@ void AppController::setupConnections()
     connect(m_window, &LauncherWindow::settingsRequested, this, &AppController::openSettings);
     connect(m_window, &LauncherWindow::pluginActionRequested, this, &AppController::onPluginAction);
     connect(m_window, &LauncherWindow::pluginSessionClosed, this, &AppController::onPluginSessionClosed);
+    // 面板上的“固定”按钮立刻写回配置，下次唤起保持用户的选择。
+    connect(m_window, &LauncherWindow::pinChanged, this, [this](bool pinned) {
+        m_settings.setPinResults(pinned);
+    });
 }
 
 void AppController::setupPlugins()
@@ -886,8 +891,9 @@ void AppController::onRevealRequested(const ExecutableRecord &record)
 
 void AppController::openSettings()
 {
+    // 设置对话框是模态的，固定面板也必须让出屏幕；固定状态本身不改变。
     if (m_window)
-        m_window->dismiss();
+        m_window->hideNow();
 
     const QStringList previousExtensions = m_settings.executableExtensions();
 
@@ -914,7 +920,7 @@ void AppController::openPluginManager()
     if (!m_plugins)
         return;
     if (m_window)
-        m_window->dismiss();
+        m_window->hideNow();
 
     PluginManagerDialog dialog(&m_settings, m_plugins);
     listerySetWindowFlag(&dialog, Qt::WindowStaysOnTopHint, true);
@@ -934,6 +940,7 @@ void AppController::applySettings()
     if (m_window) {
         m_window->setMaxResults(m_settings.maxResults());
         m_window->setHideOnFocusLost(m_settings.hideWhenFocusLost());
+        m_window->setPinned(m_settings.pinResults());
     }
 
     if (m_hook)

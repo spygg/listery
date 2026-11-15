@@ -90,6 +90,12 @@ public:
     /** 打开插件自带的设置界面（无界面则返回 false）。 */
     bool configure(const QString &id, void *nativeParentWindow);
 
+    /**
+     * 把表头点击转换给插件（列视图排序）。
+     * 插件未声明 setResultSort（老插件）时返回 false，宿主保持表头箭头不变。
+     */
+    bool setSort(const QString &id, const QString &columnKey, bool ascending);
+
     // ---- 以下四个是 C ABI 回调的落点，普通调用方不要直接用 ----
     void appendRow(quint64 requestId, const QString &title, const QString &subtitle,
                    const QString &badge, const QString &action,

@@ -59,6 +59,10 @@ public:
     bool hideWhenFocusLost() const;
     void setHideWhenFocusLost(bool on);
 
+    /** 固定结果面板：选择结果后不隐藏（Esc 仍可关闭）。 */
+    bool pinResults() const;
+    void setPinResults(bool on);
+
     /** 智能调度：可执行程序很少或没有的分区自动降低扫描频率。 */
     bool smartSchedule() const;
     void setSmartSchedule(bool on);

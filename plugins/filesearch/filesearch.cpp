@@ -59,7 +59,8 @@ constexpr int kDefaultRescanMinutes = 60;
 /** 闲置多少分钟后释放内存索引；0 = 常驻内存。 */
 constexpr int kDefaultIdleUnloadMinutes = 10;
 /**
- * 排序模式：0=off 保持相关度排序，1=name，2=size，3=mtime（修改时间），4=ctime（创建时间）。
+ * 排序模式：0=off 保持相关度排序，1=name，2=size，3=mtime（修改时间），4=ctime（创建时间），
+ * 5=path（完整路径），6=dir（所在目录），7=ext（扩展名）。
  * 排序方向：-1=自动（名称升序，大小/时间降序），0=强制升序，1=强制降序。
  */
 constexpr int kDefaultSortMode = 0;
@@ -193,9 +194,19 @@ std::string columnsToConfig(const std::vector<ColumnId> &columns)
     return out;
 }
 
-/** SDK 约定的列定义：标题:宽度:对齐，用 ASCII US(0x1F) 分隔。 */
-std::string columnSpec(const std::vector<ColumnId> &columns)
+/**
+ * SDK 约定的列定义：标题:宽度:对齐:排序键[:方向]，用 ASCII US(0x1F) 分隔。
+ * 排序键让宿主知道哪一列可以点击；方向只写在当前排序列上，用来画箭头。
+ */
+int effectiveDirection(int mode, int desc);
+const char *sortModeName(int mode);
+
+std::string columnSpec(const std::vector<ColumnId> &columns, int sortMode, int sortDesc)
 {
+    const int activeMode = sortMode > 0 ? sortMode : 0;
+    const std::string activeKey =
+        activeMode > 0 ? std::string(sortModeName(activeMode)) : std::string();
+    const int direction = effectiveDirection(activeMode, sortDesc);
     std::string out;
     for (ColumnId id : columns) {
         const ColumnDef *def = columnDefById(id);
@@ -208,6 +219,12 @@ std::string columnSpec(const std::vector<ColumnId> &columns)
         out += std::to_string(def->width);
         out.push_back(':');
         out.push_back(def->align);
+        out.push_back(':');
+        out += def->key;
+        if (!activeKey.empty() && activeKey == def->key) {
+            out.push_back(':');
+            out += direction == 1 ? "desc" : "asc";
+        }
     }
     return out;
 }
@@ -439,10 +456,10 @@ std::string formatCount(uint64_t value)
     return out;
 }
 
-/** 某模式的默认方向：0=升序，1=降序（名称默认升序，大小/时间默认降序）。 */
+/** 某模式的默认方向：0=升序，1=降序（名称/路径/目录/扩展名默认升序，大小/时间默认降序）。 */
 int autoDirection(int mode)
 {
-    return mode == 1 ? 0 : 1;
+    return (mode == 1 || mode == 5 || mode == 6 || mode == 7) ? 0 : 1;
 }
 
 /** 当前实际生效的方向（desc=1 / asc=0）；auto（-1）按模式默认展开。 */
@@ -460,6 +477,9 @@ const char *sortModeName(int mode)
     case 2: return "size";
     case 3: return "mtime";
     case 4: return "ctime";
+    case 5: return "path";
+    case 6: return "dir";
+    case 7: return "ext";
     default: return "off";
     }
 }
@@ -471,6 +491,9 @@ const char *sortModeLabel(int mode)
     case 2: return "大小";
     case 3: return "修改时间";
     case 4: return "创建时间";
+    case 5: return "路径";
+    case 6: return "所在目录";
+    case 7: return "扩展名";
     default: return "相关度";
     }
 }
@@ -482,8 +505,17 @@ bool parseSortMode(const std::string &word, int &mode)
     else if (word == "size") mode = 2;
     else if (word == "mtime") mode = 3;
     else if (word == "ctime") mode = 4;
+    else if (word == "path") mode = 5;
+    else if (word == "dir") mode = 6;
+    else if (word == "ext") mode = 7;
     else return false;
     return true;
+}
+
+/** 列排序键 → 排序模式；与 kColumnDefs 的 key 一一对应。 */
+bool sortModeForKey(const std::string &key, int &mode)
+{
+    return parseSortMode(key, mode);
 }
 
 /** Unix 秒 → 本地时间 "YYYY-MM-DD HH:MM"；0 或转换失败返回空串。只在检索线程调用。 */
@@ -598,8 +630,9 @@ void writeDefaultConfigIfMissing()
     text += "; match_path：文件名没命中时是否继续匹配目录路径，0 或 1\r\n";
     text += "; rescan_minutes：每隔多少分钟后台重建索引，0 = 只使用现有快照\r\n";
     text += "; idle_unload_minutes：闲置多少分钟后释放内存索引，下次搜索时自动从快照加载；默认 10，0 = 常驻内存\r\n";
-    text += "; sort_mode：搜索结果排序，off（相关度）/ name / size / mtime（修改时间）/ ctime（创建时间）；也可在搜索框输入 !sort 设置\r\n";
-    text += "; sort_desc：排序方向，auto（名称升序、大小和时间降序）/ asc / desc\r\n";
+    text += "; sort_mode：搜索结果排序，off（相关度）/ name / size / mtime（修改时间）/ ctime（创建时间）/ path / dir / ext；也可在搜索框输入 !sort 设置\r\n";
+    text += "; sort_desc：排序方向，auto（名称/路径/目录/扩展名升序，大小和时间降序）/ asc / desc\r\n";
+    text += "; 列视图下也可以直接点击结果区表头排序（与 !sort 写的是同一份配置）\r\n";
     text += "; columns：结果区显示的列，逗号分隔；off = 回到经典两行视图\r\n";
     text += ";   可选：name（名称）path（路径）dir（所在目录）size（大小）\r\n";
     text += ";         mtime（修改日期）ctime（创建日期）ext（扩展名）\r\n";
@@ -824,8 +857,13 @@ void persistConfigMigration(int idleUnloadMinutes)
 }
 
 /** !sort 的选择写回 ini（保留注释），让设置跨重启保留。 */
+std::mutex g_iniWriteMutex;
+
 void saveSortConfig(int mode, int desc)
 {
+    // 表头点击在 GUI 线程、!sort 在检索线程：两个写者必须串行，
+    // 否则读改写交错会把刚写进去的方向覆盖掉。
+    std::lock_guard<std::mutex> lock(g_iniWriteMutex);
     std::string raw;
     if (!readFileBytes(g_configPath, raw))
         raw = "\xEF\xBB\xBF";
@@ -1460,7 +1498,7 @@ void handleCommand(const QueryRequest &request)
         const int currentDesc = g_sortDesc.load();
         if (!badArg.empty()) {
             addRow(request.id, "未知的排序选项：" + badArg,
-                   "用法：!sort off/name/size/mtime/ctime [asc|desc]，单独输入 !sort 查看", "搜",
+                   "用法：!sort off/name/size/mtime/ctime/path/dir/ext [asc|desc]，单独输入 !sort 查看", "搜",
                    "copy:!sort");
             finishQuery(request.id, nullptr);
             return;
@@ -1556,6 +1594,10 @@ void processQuery(const QueryRequest &request)
         return;
     }
 
+    // 排序模式和列定义一起决定表头箭头：先读一次，随后整段查询都用这个值。
+    const int sortMode = g_sortMode.load();
+    const int sortDesc = g_sortDesc.load();
+
     // 声明列视图：必须在提交任何一行之前。老宿主没有这两个扩展指针时静默降级。
     {
         std::lock_guard<std::mutex> lock(g_configMutex);
@@ -1563,7 +1605,7 @@ void processQuery(const QueryRequest &request)
     }
     if (!g_activeColumns.empty() && g_host != nullptr
         && g_host->setResultColumns != nullptr && g_host->addResultRow != nullptr) {
-        const std::string spec = columnSpec(g_activeColumns);
+        const std::string spec = columnSpec(g_activeColumns, sortMode, sortDesc);
         g_host->setResultColumns(g_host->context, request.id, spec.c_str());
     } else {
         g_activeColumns.clear();
@@ -1574,7 +1616,6 @@ void processQuery(const QueryRequest &request)
         limit = static_cast<int>(kMaxResultsCap);
 
     // 排序模式下先拿回尽可能多的命中再重排：只排面板里那十几条没有意义。
-    const int sortMode = g_sortMode.load();
     const bool sorted = sortMode != 0;
     const std::vector<uint32_t> found =
         filesearch::searchIndex(*index, parsed, sorted ? static_cast<int>(kMaxResultsCap) : limit,
@@ -1590,35 +1631,69 @@ void processQuery(const QueryRequest &request)
         std::vector<uint32_t> out(found.begin(), found.end());
         const int desc = effectiveDirection(sortMode, g_sortDesc.load());
         const bool descending = desc == 1;
-        std::sort(out.begin(), out.end(),
-                  [&index, sortMode, descending](uint32_t left, uint32_t right) {
-                      const FileEntry &a = index->files[left];
-                      const FileEntry &b = index->files[right];
-                      uint64_t keyA = 0;
-                      uint64_t keyB = 0;
-                      switch (sortMode) {
-                      case 1:
-                          // files 数组本身就是文件名排序，比较下标等于比较名字，无需解码
-                          return descending ? left > right : left < right;
-                      case 2:
-                          keyA = filesearch::fileSize(a);
-                          keyB = filesearch::fileSize(b);
-                          break;
-                      case 3:
-                          keyA = a.mtime;
-                          keyB = b.mtime;
-                          break;
-                      case 4:
-                          keyA = a.ctime;
-                          keyB = b.ctime;
-                          break;
-                      default:
-                          break;
-                      }
-                      if (keyA != keyB)
-                          return descending ? keyA > keyB : keyA < keyB;
-                      return left < right;
-                  });
+
+        // 路径 / 所在目录 / 扩展名：先把比较键解码成字符串再排，
+        // 避免比较函数里反复拼路径（2 万条命中时这是数量级的差别）。
+        if (sortMode == 5 || sortMode == 6 || sortMode == 7) {
+            std::vector<std::pair<uint32_t, std::string>> decorated;
+            decorated.reserve(out.size());
+            for (uint32_t fileIndex : out) {
+                const FileEntry &file = index->files[fileIndex];
+                std::string name;
+                if (!filesearch::fileNameAt(*index, fileIndex, name))
+                    continue;
+                std::string key;
+                if (sortMode == 5) {
+                    key = fullFilePath(*index, file, name);
+                } else if (sortMode == 6) {
+                    filesearch::buildDirPath(*index, file.dirId, key);
+                } else {
+                    key = extensionOf(name);
+                }
+                decorated.emplace_back(fileIndex, lowerAscii(key));
+            }
+            std::sort(decorated.begin(), decorated.end(),
+                      [descending](const std::pair<uint32_t, std::string> &a,
+                                   const std::pair<uint32_t, std::string> &b) {
+                          if (a.second != b.second)
+                              return descending ? a.second > b.second : a.second < b.second;
+                          return a.first < b.first;
+                      });
+            out.clear();
+            out.reserve(decorated.size());
+            for (const auto &item : decorated)
+                out.push_back(item.first);
+        } else {
+            std::sort(out.begin(), out.end(),
+                      [&index, sortMode, descending](uint32_t left, uint32_t right) {
+                          const FileEntry &a = index->files[left];
+                          const FileEntry &b = index->files[right];
+                          uint64_t keyA = 0;
+                          uint64_t keyB = 0;
+                          switch (sortMode) {
+                          case 1:
+                              // files 数组本身就是文件名排序，比较下标等于比较名字，无需解码
+                              return descending ? left > right : left < right;
+                          case 2:
+                              keyA = filesearch::fileSize(a);
+                              keyB = filesearch::fileSize(b);
+                              break;
+                          case 3:
+                              keyA = a.mtime;
+                              keyB = b.mtime;
+                              break;
+                          case 4:
+                              keyA = a.ctime;
+                              keyB = b.ctime;
+                              break;
+                          default:
+                              break;
+                          }
+                          if (keyA != keyB)
+                              return descending ? keyA > keyB : keyA < keyB;
+                          return left < right;
+                      });
+        }
         if (out.size() > static_cast<size_t>(limit))
             out.resize(static_cast<size_t>(limit));
         return out;
@@ -1795,6 +1870,28 @@ void LISTERY_PLUGIN_CALL pluginCancelQuery(unsigned long long requestId)
     }
 }
 
+int LISTERY_PLUGIN_CALL pluginSetResultSort(const char *columnKey, int ascending)
+{
+    if (columnKey == nullptr || *columnKey == '\0')
+        return 1;
+    int mode = 0;
+    if (!sortModeForKey(std::string(columnKey), mode) || mode == 0)
+        return 1;
+
+    const int desc = ascending != 0 ? 0 : 1;
+    g_sortMode.store(mode);
+    g_sortDesc.store(desc);
+    {
+        std::lock_guard<std::mutex> lock(g_configMutex);
+        g_config.sortMode = mode;
+        g_config.sortDesc = desc;
+    }
+    saveSortConfig(mode, desc);
+    hostLog(LISTERY_LOG_INFO,
+            std::string("表头排序：") + sortModeName(mode) + (desc == 1 ? " 降序" : " 升序"));
+    return 0;
+}
+
 int LISTERY_PLUGIN_CALL pluginConfigure(void *nativeParentWindow)
 {
     (void)nativeParentWindow;
@@ -1819,14 +1916,15 @@ const ListeryPluginV1 kPlugin = {
     LISTERY_PLUGIN_API_VERSION,
     "com.listery.filesearch",
     "文件搜索",
-    "1.2.0",
-    "用 Alt+S 快速搜索本机文件；Everything 风格的多列结果（列可配置），自建索引，不依赖 Everything。",
+    "1.2.1",
+    "用 Alt+S 快速搜索本机文件；Everything 风格的多列结果（列可配置、表头点击排序），自建索引，不依赖 Everything。",
     "Alt+S",
     pluginInit,
     pluginShutdown,
     pluginBeginQuery,
     pluginCancelQuery,
-    pluginConfigure};
+    pluginConfigure,
+    pluginSetResultSort};
 
 } // namespace
 

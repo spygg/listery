@@ -44,6 +44,7 @@ private:
     QCheckBox *m_smartSchedule = nullptr;
     QCheckBox *m_autoStart = nullptr;
     QCheckBox *m_hideOnFocusLost = nullptr;
+    QCheckBox *m_pinResults = nullptr;
     QLineEdit *m_extensions = nullptr;
     QLineEdit *m_skipDirectories = nullptr;
     QComboBox *m_language = nullptr;

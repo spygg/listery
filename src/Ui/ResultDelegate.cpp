@@ -10,9 +10,11 @@
 #include <QFontMetrics>
 #include <QHash>
 #include <QIcon>
+#include <QMouseEvent>
 #include <QPaintEvent>
 #include <QPainter>
 #include <QPainterPath>
+#include <QPolygon>
 #include <QStyle>
 #include <QStyleOptionViewItem>
 
@@ -126,6 +128,17 @@ QVector<ResultColumn> parseColumnSpec(const QString &spec)
         column.width = qMax(0, fields.at(1).toInt());
         column.rightAligned =
             fields.at(2).trimmed().compare(QLatin1String("r"), Qt::CaseInsensitive) == 0;
+        // 第 4 段是排序键（可选），第 5 段是当前排序方向（可选）：
+        // 老插件只写 3 段，解析后 sortKey 为空，表头保持只读。
+        if (fields.size() >= 4)
+            column.sortKey = fields.at(3).trimmed();
+        if (fields.size() >= 5) {
+            const QString order = fields.at(4).trimmed().toLower();
+            if (order == QLatin1String("asc"))
+                column.sortOrder = 1;
+            else if (order == QLatin1String("desc"))
+                column.sortOrder = 2;
+        }
         columns.append(column);
     }
     return columns;
@@ -189,12 +202,43 @@ ResultColumnHeader::ResultColumnHeader(QWidget *parent)
     setObjectName(QStringLiteral("resultColumnHeader"));
     setFixedHeight(ResultLayout::kColumnHeaderHeight);
     setFocusPolicy(Qt::NoFocus);
-    setAttribute(Qt::WA_TransparentForMouseEvents, true);
+    setMouseTracking(true);
 }
 
 void ResultColumnHeader::setColumns(const QVector<ResultColumn> &columns)
 {
     m_columns = columns;
+    // 列定义每次查询都会重建：插件用第 4/5 段回传当前排序列与方向，
+    // 表头据此直接画箭头（不依赖调用方再补一次 setSortIndicator）。
+    QString indicatedKey;
+    bool indicatedAscending = true;
+    for (const ResultColumn &column : m_columns) {
+        if (column.sortOrder == 1 || column.sortOrder == 2) {
+            indicatedKey = column.sortKey;
+            indicatedAscending = column.sortOrder == 1;
+            break;
+        }
+    }
+    bool keyStillPresent = false;
+    for (const ResultColumn &column : m_columns) {
+        if (!m_sortKey.isEmpty() && column.sortKey == m_sortKey)
+            keyStillPresent = true;
+    }
+    if (!indicatedKey.isEmpty()) {
+        m_sortKey = indicatedKey;
+        m_ascending = indicatedAscending;
+    } else if (!keyStillPresent) {
+        m_sortKey.clear();
+    }
+    m_hoverColumn = -1;
+    unsetCursor();
+    update();
+}
+
+void ResultColumnHeader::setSortIndicator(const QString &sortKey, bool ascending)
+{
+    m_sortKey = sortKey;
+    m_ascending = ascending;
     update();
 }
 
@@ -203,10 +247,27 @@ QSize ResultColumnHeader::sizeHint() const
     return QSize(0, ResultLayout::kColumnHeaderHeight);
 }
 
+int ResultColumnHeader::columnAt(const QPoint &position) const
+{
+    const QVector<QRect> cells = resultColumnRects(rect(), m_columns);
+    for (int i = 0; i < cells.size(); ++i) {
+        if (cells.at(i).contains(position))
+            return i;
+    }
+    return -1;
+}
+
+bool ResultColumnHeader::sortableAt(int column) const
+{
+    return column >= 0 && column < m_columns.size()
+           && !m_columns.at(column).sortKey.isEmpty();
+}
+
 void ResultColumnHeader::paintEvent(QPaintEvent *event)
 {
     Q_UNUSED(event)
     QPainter painter(this);
+    painter.setRenderHint(QPainter::Antialiasing, true);
     painter.fillRect(rect(), QColor(0xFA, 0xFB, 0xFD));
     painter.setPen(QColor(0xE9, 0xED, 0xF3));
     painter.drawLine(rect().left(), rect().bottom(), rect().right(), rect().bottom());
@@ -219,15 +280,91 @@ void ResultColumnHeader::paintEvent(QPaintEvent *event)
     font.setPixelSize(11);
     font.setWeight(QFont::DemiBold);
     painter.setFont(font);
-    painter.setPen(QColor(0x8A, 0x91, 0x9B));
     const QFontMetrics metrics(font);
+
     for (int i = 0; i < cells.size() && i < m_columns.size(); ++i) {
+        const ResultColumn &column = m_columns.at(i);
+        const bool sortable = sortableAt(i);
+        const bool active = sortable && column.sortKey == m_sortKey;
+        const bool hovered = sortable && i == m_hoverColumn;
+
+        if (hovered || (active && m_pressedColumn == i)) {
+            painter.setPen(Qt::NoPen);
+            painter.setBrush(QColor(0xEE, 0xF3, 0xFB));
+            painter.drawRoundedRect(cells.at(i).adjusted(0, 3, 0, -3), 6, 6);
+        }
+
+        QRect textRect = cells.at(i);
+        if (sortable)
+            textRect.setRight(textRect.right() - 14);
+
+        painter.setPen(active ? QColor(0x1A, 0x6C, 0xF0)
+                             : (hovered ? QColor(0x1F, 0x23, 0x29)
+                                        : QColor(0x8A, 0x91, 0x9B)));
         const QString text =
-            metrics.elidedText(m_columns.at(i).label, Qt::ElideRight, cells.at(i).width());
+            metrics.elidedText(column.label, Qt::ElideRight, textRect.width());
         const int flags = Qt::AlignVCenter
-                          | (m_columns.at(i).rightAligned ? Qt::AlignRight : Qt::AlignLeft);
-        painter.drawText(cells.at(i), flags, text);
+                          | (column.rightAligned ? Qt::AlignRight : Qt::AlignLeft);
+        painter.drawText(textRect, flags, text);
+
+        if (active) {
+            // Everything 风格的排序箭头：升序 ▲、降序 ▼，画在列内右端。
+            const int cx = cells.at(i).right() - 7;
+            const int cy = cells.at(i).center().y();
+            QPolygon arrow;
+            if (m_ascending)
+                arrow << QPoint(cx, cy - 4) << QPoint(cx - 4, cy + 2) << QPoint(cx + 4, cy + 2);
+            else
+                arrow << QPoint(cx, cy + 3) << QPoint(cx - 4, cy - 3) << QPoint(cx + 4, cy - 3);
+            painter.setPen(Qt::NoPen);
+            painter.setBrush(QColor(0x1A, 0x6C, 0xF0));
+            painter.drawPolygon(arrow);
+        }
     }
+}
+
+void ResultColumnHeader::mouseMoveEvent(QMouseEvent *event)
+{
+    const int column = columnAt(event->pos());
+    if (column != m_hoverColumn) {
+        m_hoverColumn = column;
+        update();
+    }
+    if (sortableAt(column))
+        setCursor(Qt::PointingHandCursor);
+    else
+        unsetCursor();
+    QWidget::mouseMoveEvent(event);
+}
+
+void ResultColumnHeader::mousePressEvent(QMouseEvent *event)
+{
+    if (event->button() == Qt::LeftButton) {
+        m_pressedColumn = columnAt(event->pos());
+        update();
+    }
+    QWidget::mousePressEvent(event);
+}
+
+void ResultColumnHeader::mouseReleaseEvent(QMouseEvent *event)
+{
+    if (event->button() == Qt::LeftButton) {
+        const int column = columnAt(event->pos());
+        const int pressed = m_pressedColumn;
+        m_pressedColumn = -1;
+        update();
+        if (column >= 0 && column == pressed && sortableAt(column))
+            emit columnClicked(column);
+    }
+    QWidget::mouseReleaseEvent(event);
+}
+
+void ResultColumnHeader::leaveEvent(QEvent *event)
+{
+    m_hoverColumn = -1;
+    unsetCursor();
+    update();
+    QWidget::leaveEvent(event);
 }
 
 ResultDelegate::ResultDelegate(QObject *parent)

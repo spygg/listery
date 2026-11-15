@@ -21,7 +21,7 @@ Listery 的插件是**普通动态库**，接口是**纯 C 的 ABI**：不传 C+
 | 插件目录 | 可执行文件同目录下的 `plugins/`（便携版就是解压目录；安装版是安装目录） |
 | 识别后缀 | Windows `*.dll`、Linux `*.so`、macOS `*.dylib`（也接受 `*.so`） |
 | 入口符号 | `listery_plugin_v1`（C 链接，返回 `const ListeryPluginV1 *`） |
-| 版本校验 | `apiVersion` 必须等于 `LISTERY_PLUGIN_API_VERSION`，否则拒绝加载并在设置页显示原因 |
+| 版本校验 | 宿主接受 `apiVersion` 1 或 2：1.x 老插件照常加载，2 版新增表头排序回调；超出范围拒绝加载并在设置页显示原因 |
 | 重复 id | 后加载的同 id 插件会被跳过 |
 | 卸载 | 插件在进程生命周期内常驻，不支持热卸载；「禁用」只是不再调用它 |
 
@@ -41,6 +41,7 @@ typedef struct ListeryPluginV1 {
     int  (*beginQuery)(unsigned long long requestId, const char *query, int maxResults);
     void (*cancelQuery)(unsigned long long requestId);
     int  (*configure)(void *nativeParentWindow);        // 可选，可填 NULL
+    int  (*setResultSort)(const char *columnKey, int ascending);  // API 2 可选，可填 NULL
 } ListeryPluginV1;
 ```
 
@@ -82,8 +83,13 @@ if (g_host->setResultColumns && g_host->addResultRow) {
 }
 ```
 
-- `spec` / `cells` 都用 ASCII `\x1F`（US）分隔；列定义每列是 `标题:宽度:对齐`，
+- `spec` / `cells` 都用 ASCII `\x1F`（US）分隔；列定义每列是 `标题:宽度:对齐[:排序键[:asc|desc]]`，
   宽度 `0` 表示弹性列（平分剩余宽度），对齐 `l` / `r`；
+- 第 4 段 `排序键` 让该列表头可点击，第 5 段 `asc` / `desc` 表示当前排序方向（宿主据此画三角）；
+  只写 3 段的老插件列保持只读；
+- 宿主点击表头后调用插件 `setResultSort(columnKey, ascending)`：`ascending` 为 1 升序、0 降序，
+  返回 0 表示接受。插件应记住这次选择（文件搜索插件写进 `filesearch.ini` 的
+  `sort_mode` / `sort_desc`，跨查询、跨重启保留）；返回非 0 或未实现时宿主不改箭头、不重查；
 - `cells` 必须与列定义等长，顺序一致；不声明 `setResultColumns` 的查询走经典两行样式；
 - `addResultRow` 的 `title` / `subtitle` / `badge` / `action` 语义与 `addResult` 完全相同，
   `subtitle` 在列视图下作为 tooltip 使用；
@@ -185,7 +191,8 @@ static const ListeryPluginV1 kPlugin = {
     LISTERY_PLUGIN_API_VERSION,
     "com.example.echo", "回音", "1.0.0", "把输入原样返回一遍",
     "Alt+E",                       // 默认热键
-    pluginInit, pluginShutdown, pluginBeginQuery, pluginCancelQuery, nullptr
+    pluginInit, pluginShutdown, pluginBeginQuery, pluginCancelQuery, nullptr,
+    nullptr                        // setResultSort：不支持表头排序
 };
 
 extern "C" LISTERY_PLUGIN_EXPORT const ListeryPluginV1 *LISTERY_PLUGIN_CALL

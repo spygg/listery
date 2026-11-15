@@ -996,10 +996,11 @@ static const ListeryPluginV1 kPlugin = {
     pluginBeginQuery,
     pluginCancelQuery,
 #ifdef _WIN32
-    pluginConfigure
+    pluginConfigure,
 #else
-    nullptr // 非 Windows 平台没有内置编辑器，配置文件在首次加载时生成
+    nullptr, // 非 Windows 平台没有内置编辑器，配置文件在首次加载时生成
 #endif
+    nullptr // setResultSort：翻译结果不支持表头排序
 };
 
 extern "C" LISTERY_PLUGIN_EXPORT const ListeryPluginV1 *LISTERY_PLUGIN_CALL listery_plugin_v1(void)

@@ -27,6 +27,7 @@
 #include <QScreen>
 #include <QSignalBlocker>
 #include <QTimer>
+#include <QToolButton>
 #include <QVBoxLayout>
 
 namespace {
@@ -146,14 +147,42 @@ void LauncherWindow::buildUi()
     cardLayout->setContentsMargins(0, 0, 0, 0);
     cardLayout->setSpacing(0);
 
-    m_edit = new QLineEdit(m_card);
+    m_inputRow = new QWidget(m_card);
+    m_inputRow->setObjectName(QStringLiteral("inputRow"));
+    m_inputRow->setFixedHeight(kEditHeight);
+    auto *inputLayout = new QHBoxLayout(m_inputRow);
+    inputLayout->setContentsMargins(0, 0, 12, 0);
+    inputLayout->setSpacing(0);
+
+    m_edit = new QLineEdit(m_inputRow);
     m_edit->setObjectName(QStringLiteral("searchEdit"));
     m_edit->setPlaceholderText(tr("输入程序名，例如 chrome、excel、git"));
     m_edit->setClearButtonEnabled(false);
     m_edit->setFixedHeight(kEditHeight);
     m_edit->installEventFilter(this);
     connect(m_edit, &QLineEdit::textChanged, this, &LauncherWindow::scheduleSearch);
-    cardLayout->addWidget(m_edit);
+    inputLayout->addWidget(m_edit, 1);
+
+    // 固定按钮：和输入框同高，不抢焦点；勾选后单击结果不再隐藏面板。
+    m_pinButton = new QToolButton(m_inputRow);
+    m_pinButton->setObjectName(QStringLiteral("pinButton"));
+    m_pinButton->setText(tr("固定"));
+    m_pinButton->setCheckable(true);
+    m_pinButton->setFocusPolicy(Qt::NoFocus);
+    m_pinButton->setCursor(Qt::PointingHandCursor);
+    m_pinButton->setToolTip(tr("固定结果面板：选择结果后不隐藏；Esc 仍可关闭"));
+    m_pinButton->setFixedSize(54, 28);
+    connect(m_pinButton, &QToolButton::toggled, this, [this](bool on) {
+        m_pinned = on;
+        m_pinButton->setText(on ? tr("已固定") : tr("固定"));
+        m_pinButton->setToolTip(on
+            ? tr("结果面板已固定：选择后不隐藏，再点一次取消；Esc 仍可关闭")
+            : tr("固定结果面板：选择结果后不隐藏；Esc 仍可关闭"));
+        m_pinButton->setFixedWidth(on ? 62 : 54);
+        emit pinChanged(on);
+    });
+    inputLayout->addWidget(m_pinButton, 0, Qt::AlignVCenter);
+    cardLayout->addWidget(m_inputRow);
 
     m_separator = new QFrame(m_card);
     m_separator->setObjectName(QStringLiteral("separator"));
@@ -184,6 +213,8 @@ void LauncherWindow::buildUi()
 
     m_columnHeader = new ResultColumnHeader(m_card);
     m_columnHeader->hide();
+    connect(m_columnHeader, &ResultColumnHeader::columnClicked,
+            this, &LauncherWindow::requestColumnSort);
     cardLayout->addWidget(m_columnHeader);
     cardLayout->addWidget(m_list);
 
@@ -222,6 +253,25 @@ void LauncherWindow::buildUi()
             color: #1F2329;
             selection-background-color: #CFE1FF;
             selection-color: #1F2329;
+        }
+        #pinButton {
+            background: transparent;
+            border: 1px solid #E4E8EF;
+            border-radius: 10px;
+            color: #8A919B;
+            font-size: 11px;
+            padding: 0 8px;
+        }
+        #pinButton:hover {
+            background: #F4F6F9;
+            border-color: #D6DBE3;
+            color: #1F2329;
+        }
+        #pinButton:checked {
+            background: #E7F0FE;
+            border-color: #BFD7FF;
+            color: #1A6CF0;
+            font-weight: 600;
         }
         #separator {
             background: #EDEFF3;
@@ -328,6 +378,14 @@ void LauncherWindow::endPluginSession()
 
 void LauncherWindow::dismiss()
 {
+    // 固定模式：启动程序 / 定位 / 执行插件动作后不收起面板，用户可以继续挑下一条。
+    if (m_pinned)
+        return;
+    hideNow();
+}
+
+void LauncherWindow::hideNow()
+{
     if (!isVisible())
         return;
     hide();
@@ -361,6 +419,22 @@ void LauncherWindow::setHideOnFocusLost(bool on)
     m_hideOnFocusLost = on;
 }
 
+void LauncherWindow::setPinned(bool on)
+{
+    if (m_pinned == on)
+        return;
+    m_pinned = on;
+    if (m_pinButton) {
+        QSignalBlocker blocker(m_pinButton);
+        m_pinButton->setChecked(on);
+        m_pinButton->setText(on ? tr("已固定") : tr("固定"));
+        m_pinButton->setFixedWidth(on ? 62 : 54);
+        m_pinButton->setToolTip(on
+            ? tr("结果面板已固定：选择后不隐藏，再点一次取消；Esc 仍可关闭")
+            : tr("固定结果面板：选择结果后不隐藏；Esc 仍可关闭"));
+    }
+}
+
 void LauncherWindow::setStatusText(const QString &text)
 {
     m_status->setText(text);
@@ -369,6 +443,12 @@ void LauncherWindow::setStatusText(const QString &text)
 
 void LauncherWindow::retranslateUi()
 {
+    if (m_pinButton) {
+        m_pinButton->setText(m_pinned ? tr("已固定") : tr("固定"));
+        m_pinButton->setToolTip(m_pinned
+            ? tr("结果面板已固定：选择后不隐藏，再点一次取消；Esc 仍可关闭")
+            : tr("固定结果面板：选择结果后不隐藏；Esc 仍可关闭"));
+    }
     if (m_mode == LauncherMode::Plugin) {
         // 插件模式的占位文字由宿主给出（含插件名），切换语言时不动它
         m_hints->setText(tr("单击/Enter 执行 · Esc 隐藏"));
@@ -445,6 +525,20 @@ void LauncherWindow::applyPluginResults(quint64 sequence, QString pluginId, QStr
     const QVector<ResultColumn> columns = parseColumnSpec(columnSpec);
     m_model->setColumns(columns);
     m_columnHeader->setColumns(columns);
+
+    // 插件回报当前生效的排序（spec 第 5 段）：启动后恢复箭头，命令 !sort 改过方向时同步过来；
+    // 没有活动排序列（如 !sort off）时清掉旧箭头，不能让上一次的方向残留。
+    QString activeSortKey;
+    bool activeAscending = true;
+    for (const ResultColumn &column : columns) {
+        if (column.sortOrder != 0) {
+            activeSortKey = column.sortKey;
+            activeAscending = column.sortOrder == 1;
+        }
+    }
+    m_sortKey = activeSortKey;
+    m_sortAscending = activeAscending;
+    m_columnHeader->setSortIndicator(activeSortKey, activeAscending);
 
     QVector<SearchResult> results;
     results.reserve(rows.size());
@@ -664,11 +758,37 @@ void LauncherWindow::activateCurrent(bool reveal, bool asAdmin)
         emit launchRequested(result.record, asAdmin);
 }
 
+void LauncherWindow::requestColumnSort(int column)
+{
+    if (m_mode != LauncherMode::Plugin || !m_pluginHost || column < 0)
+        return;
+    const QVector<ResultColumn> columns = m_model->columns();
+    if (column >= columns.size())
+        return;
+    const ResultColumn &target = columns.at(column);
+    if (target.sortKey.isEmpty())
+        return;
+
+    // 同一列再点一次翻转方向；换列时从升序开始（Everything 的习惯）。
+    const bool ascending = (m_sortKey == target.sortKey) ? !m_sortAscending : true;
+    if (!m_pluginHost->setSort(m_pluginId, target.sortKey, ascending))
+        return;
+
+    m_sortKey = target.sortKey;
+    m_sortAscending = ascending;
+    m_columnHeader->setSortIndicator(m_sortKey, m_sortAscending);
+    // 只在当前 10 几行里重排没有意义：让插件按新顺序重新跑一次完整查询。
+    performSearch();
+}
+
 void LauncherWindow::clearColumnView()
 {
+    m_sortKey.clear();
+    m_sortAscending = true;
     m_model->setColumns(QVector<ResultColumn>());
     if (m_columnHeader) {
         m_columnHeader->setColumns(QVector<ResultColumn>());
+        m_columnHeader->setSortIndicator(QString(), true);
         m_columnHeader->hide();
     }
 }
@@ -711,7 +831,7 @@ bool LauncherWindow::eventFilter(QObject *watched, QEvent *event)
         QKeyEvent *keyEvent = static_cast<QKeyEvent *>(event);
         switch (keyEvent->key()) {
         case Qt::Key_Escape:
-            dismiss();
+            hideNow();
             return true;
         case Qt::Key_Down:
             moveSelection(1);
@@ -756,7 +876,7 @@ bool LauncherWindow::eventFilter(QObject *watched, QEvent *event)
 void LauncherWindow::keyPressEvent(QKeyEvent *event)
 {
     if (event->key() == Qt::Key_Escape) {
-        dismiss();
+        hideNow();
         return;
     }
     QWidget::keyPressEvent(event);

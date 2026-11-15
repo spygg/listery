@@ -356,7 +356,7 @@ int main()
         return 1;
     }
     auto entry = reinterpret_cast<ListeryPluginEntry>(
-        GetProcAddress(library, "listery_plugin_v1"));
+        reinterpret_cast<void *>(GetProcAddress(library, "listery_plugin_v1")));
     if (entry == nullptr) {
         std::printf("找不到 listery_plugin_v1\n");
         return 1;
@@ -508,6 +508,10 @@ int main()
         ++failures;
     }
 
+    // 列视图扩展在排序测试之前挂上：表头箭头依赖 setResultColumns 收到的列定义。
+    host.setResultColumns = hostSetResultColumns;
+    host.addResultRow = hostAddResultRow;
+
     // !sort：模式 + 方向 + 持久化 + 时间显示
     {
         struct SortCase
@@ -554,9 +558,14 @@ int main()
                             rows.empty() ? "(空)" : rows.front().title.c_str());
                 ++failures;
             }
+            const std::vector<std::string> sortCells =
+                rows.empty() ? std::vector<std::string>() : splitCells(rows.front().cells);
             const bool hasTime = !rows.empty()
-                                 && rows.front().subtitle.find("20") != std::string::npos
-                                 && rows.front().subtitle.find('-') != std::string::npos;
+                                 && ((rows.front().subtitle.find("20") != std::string::npos
+                                      && rows.front().subtitle.find('-') != std::string::npos)
+                                     || (sortCells.size() >= 4
+                                         && sortCells[3].find("20") != std::string::npos
+                                         && sortCells[3].find('-') != std::string::npos));
             if (item.timeInSubtitle && !hasTime) {
                 std::printf("  [FAIL] %s 副标题缺少时间：%s\n", item.command,
                             rows.front().subtitle.c_str());
@@ -609,9 +618,63 @@ int main()
         }
     }
 
-    // ---- 列视图：把宿主的两个可选扩展挂上，模拟新版本主程序 ----
-    host.setResultColumns = hostSetResultColumns;
-    host.addResultRow = hostAddResultRow;
+    // ---- 表头点击排序：宿主通过 setResultSort 直接改排序并持久化 ----
+    {
+        bool ok = plugin->setResultSort != nullptr;
+        std::printf("插件暴露 setResultSort：%s\n", ok ? "通过" : "失败");
+        if (!ok)
+            ++failures;
+
+        if (ok) {
+            std::vector<Row> sortRows;
+            std::string sortError;
+            const bool ascOk = plugin->setResultSort("size", 1) == 0
+                && query(plugin, "sortest", sortRows, sortError) && !sortRows.empty()
+                && sortRows.front().title == "a1sortest.txt"
+                && g_columnsSpec.find("size:asc") != std::string::npos;
+            std::printf("表头按大小升序：%s（首条=%s，列=%s）\n", ascOk ? "通过" : "失败",
+                        sortRows.empty() ? "(空)" : sortRows.front().title.c_str(),
+                        g_columnsSpec.c_str());
+            if (!ascOk)
+                ++failures;
+
+            const std::string iniAsc = readFile(dataDir + L"\\filesearch.ini");
+            const bool ascPersisted = iniAsc.find("sort_mode=size") != std::string::npos
+                && iniAsc.find("sort_desc=asc") != std::string::npos;
+            std::printf("表头排序持久化（升序）：%s\n", ascPersisted ? "通过" : "失败");
+            if (!ascPersisted)
+                ++failures;
+
+            const bool descOk = plugin->setResultSort("size", 0) == 0
+                && query(plugin, "sortest", sortRows, sortError) && !sortRows.empty()
+                && sortRows.front().title == "c3sortest.txt"
+                && g_columnsSpec.find("size:desc") != std::string::npos;
+            std::printf("表头按大小降序（再点一次）：%s（首条=%s，列=%s）\n",
+                        descOk ? "通过" : "失败",
+                        sortRows.empty() ? "(空)" : sortRows.front().title.c_str(),
+                        g_columnsSpec.c_str());
+            if (!descOk)
+                ++failures;
+
+            const bool unknownRejected = plugin->setResultSort("bogus", 1) != 0;
+            std::printf("未知列键拒绝排序：%s\n", unknownRejected ? "通过" : "失败");
+            if (!unknownRejected)
+                ++failures;
+
+            for (const char *key : {"name", "size", "mtime", "ctime", "path", "dir", "ext"}) {
+                if (plugin->setResultSort(key, 1) != 0) {
+                    std::printf("  [FAIL] 合法列键被拒绝：%s\n", key);
+                    ++failures;
+                }
+            }
+
+            std::vector<Row> resetRows;
+            std::string resetError;
+            query(plugin, "!sort off", resetRows, resetError);
+        }
+    }
+
+    // ---- 列视图：宿主两个扩展指针已在上方挂上 ----
 
     // 默认四列 + 精确大小（17MB 不该再显示 ≥16 MB）
     {

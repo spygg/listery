@@ -120,6 +120,10 @@ void SettingsDialog::buildUi()
     m_hideOnFocusLost = new QCheckBox(tr("窗口失去焦点时自动隐藏"), uiGroup);
     uiForm->addRow(QString(), m_hideOnFocusLost);
 
+    m_pinResults = new QCheckBox(tr("固定结果面板（选择结果后不隐藏）"), uiGroup);
+    m_pinResults->setToolTip(tr("与面板输入框右侧的“固定”按钮同步；Esc 仍可关闭面板"));
+    uiForm->addRow(QString(), m_pinResults);
+
     m_autoStart = new QCheckBox(tr("开机自启动（登录后静默运行，默认开启）"), uiGroup);
     uiForm->addRow(QString(), m_autoStart);
 
@@ -216,6 +220,7 @@ void SettingsDialog::loadValues()
 #endif
     m_autoStart->setChecked(m_settings->autoStart());
     m_hideOnFocusLost->setChecked(m_settings->hideWhenFocusLost());
+    m_pinResults->setChecked(m_settings->pinResults());
 }
 
 void SettingsDialog::saveValues()
@@ -230,6 +235,7 @@ void SettingsDialog::saveValues()
     m_settings->setAutoStart(m_autoStart->isChecked());
     m_settings->setAutoScanOnStart(m_autoScan->isChecked());
     m_settings->setHideWhenFocusLost(m_hideOnFocusLost->isChecked());
+    m_settings->setPinResults(m_pinResults->isChecked());
     m_settings->setRescanIntervalMinutes(m_rescanMinutes->value());
     m_settings->setSmartSchedule(m_smartSchedule->isChecked());
 #ifdef Q_OS_LINUX

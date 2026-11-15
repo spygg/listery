@@ -23,6 +23,8 @@ A Listary-style quick launcher written in Qt / C++: index every executable → d
 
 ![With an empty query only the input box shows — it stays out of your way](docs/preview-empty.png)
 
+![Everything-style column view: click a header to sort; the triangle marks the active column and direction](docs/preview-columns.png)
+
 ## Why Listery
 
 | Feature | What it does |
@@ -33,7 +35,7 @@ A Listary-style quick launcher written in Qt / C++: index every executable → d
 | **Learns your habits** | Score = `0.72 × match quality + 0.28 × usage habit`, so apps you use most bubble up |
 | **Smart scanning** | Per-volume adaptive scheduling: volumes with no software back off automatically; on Linux it just reads the locate snapshot |
 | **EN↔ZH translator** | `Alt+E` opens the translator plugin: type English for Chinese, Chinese for English, press Enter to copy the result |
-| **File search** | `Alt+S` opens the file search plugin: a compact self-built index with Everything-style configurable columns (Name / Path / Size / Date Modified …), `ext:` / `path:` / `full:` / `re:` filters and wildcard paths like `D:\*keyword*`; click or press Enter to open a result |
+| **File search** | `Alt+S` opens the file search plugin: a compact self-built index with Everything-style configurable columns (Name / Path / Size / Date Modified …), `ext:` / `path:` / `full:` / `re:` filters and wildcard paths like `D:\*keyword*`; click or press Enter to open a result. The panel can be pinned, and clicking a column header sorts the list (Everything-style) |
 | **Plugins** | Pure-C plugin ABI: plugins need no Qt and no OpenSSL, so anyone can extend Listery — see the [plugin guide](docs/PLUGINS_EN.md) |
 | **Auto-update** | Checks the latest GitHub Release automatically (semantic version compare, so `1.10.0 > 1.2.0` works); shows a tray notification and opens the release page on click |
 | **Log rotation** | Keeps only the last 3 days of logs, trimmed on startup — never grows without bound |
@@ -59,7 +61,7 @@ A Listary-style quick launcher written in Qt / C++: index every executable → d
 | `Enter` / mouse click | Launch the selected result |
 | `Ctrl + Enter` | Reveal it in the file manager |
 | `Shift + Enter` | Run as administrator |
-| `Esc` | Hide the launcher |
+| `Esc` | Hide the launcher (also closes it while pinned; the pin preference is kept) |
 | Right-click a result | Run as admin / open location / copy path; file-search results also offer “Copy file” and “Open containing folder” |
 
 ## Plugins
@@ -77,6 +79,8 @@ They need **no Qt and no OpenSSL** — the host performs network requests on the
 - The file search index unloads after 10 idle minutes and warms up in the background when `Alt+S` opens the panel (usually 0.2–0.5 s), so it doesn't sit on hundreds of megabytes;
 - File search is **not all-files by default**: it scans the user profile, Public and non-system fixed drives, skips hidden/system entries and excludes 24 directory names such as `Windows`, `Program Files` and `AppData` (full list in `filesearch.ini`). For Everything-like coverage set `index_scope=all` in `!config` (or type `!scope all`) and run `!reindex`: every fixed volume including `C:\` is scanned, hidden and system files are included, and the built-in directory exclusions are dropped except for a few safety ones. The first build is noticeably slower and the snapshot bigger, which is why it is off by default. To include hidden/system files without scanning the system volume, set `include_hidden=1` alone;
 - Result columns are chosen with `columns=` in `filesearch.ini` (open it with `!config`), e.g. `columns=name,path,size,mtime`. Available: `name`, `path` (full path), `dir` (containing folder), `size`, `mtime` (modified), `ctime` (created), `ext` (extension); they appear in the order written, and `off` restores the classic two-line view. `!columns name,dir,size,mtime` applies the change immediately and persists it; `!status` shows the current scope and columns;
+- **Pin the result panel**: the `Pin` button at the right edge of the search box (also Settings → pin results) keeps the panel open after you open a result or switch between the app and file-search plugins, which is handy when picking several files. `Esc` still closes it, and the pin preference is kept for the next invocation. The state lives in `ui/pinResults` and survives restarts;
+- **Click a column header to sort (Everything-style)**: clicking Name / Path / Size / Date Modified / Date Created / Extension sorts on that column. Clicking the same header flips the direction; switching to another column starts ascending. A blue triangle marks the active column (up = ascending, down = descending) and sortable headers show a pointing-hand cursor. Each click re-runs the query and writes `sort_mode` / `sort_desc` to `filesearch.ini`, so the choice survives queries and restarts; `!sort name|size|mtime|ctime|path|dir|ext [asc|desc]` edits the same settings;
 - The tray's Plugins submenu opens a plugin directly (fallback when hotkeys are unavailable);
 - To write your own: [plugin guide](docs/PLUGINS_EN.md) ([中文](docs/PLUGINS.md)) with a minimal sample, the action protocol and a CMake template;
 - Load failures never pop a dialog — the reason is shown in Plugin Manager, and plugin logs go to `logs/YYYYMMDD.txt`.

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QPoint>
 #include <QRect>
 #include <QSize>
 #include <QString>
@@ -25,11 +26,16 @@ struct ResultColumn
     /** 0 = 弹性列，>0 = 固定像素宽度。 */
     int width = 0;
     bool rightAligned = false;
+    /** 插件自定义的排序键；为空表示该列不可点击排序（老插件/纯展示列）。 */
+    QString sortKey;
+    /** 0 = 当前未按该列排序；1 = 升序；2 = 降序（插件在 spec 里声明）。 */
+    int sortOrder = 0;
 
     bool operator==(const ResultColumn &other) const
     {
         return width == other.width && rightAligned == other.rightAligned
-               && label == other.label;
+               && label == other.label && sortKey == other.sortKey
+               && sortOrder == other.sortOrder;
     }
 };
 
@@ -41,21 +47,44 @@ QVector<QRect> resultColumnRects(const QRect &rowRect, const QVector<ResultColum
 
 /**
  * 列视图表头：常驻在输入框下方、结果列表上方。
- * 不参与选中、不接收焦点，只画列名和分隔线；无需 Q_OBJECT（没有自己的信号槽）。
+ * 不参与选中、不接收焦点；点击带排序键的列发出 columnClicked，
+ * 当前排序列右侧画一个箭头（升序向上、降序向下），参照 Everything。
  */
 class ResultColumnHeader : public QWidget
 {
+    Q_OBJECT
+
 public:
     explicit ResultColumnHeader(QWidget *parent = nullptr);
 
     void setColumns(const QVector<ResultColumn> &columns);
     const QVector<ResultColumn> &columns() const { return m_columns; }
 
+    /** 按排序键设置箭头；key 为空或列不存在时清除箭头。 */
+    void setSortIndicator(const QString &sortKey, bool ascending);
+    QString sortKey() const { return m_sortKey; }
+    bool ascending() const { return m_ascending; }
+
     QSize sizeHint() const override;
+
+signals:
+    /** 点击了可排序列，参数是列下标。 */
+    void columnClicked(int column);
 
 protected:
     void paintEvent(QPaintEvent *event) override;
+    void mouseMoveEvent(QMouseEvent *event) override;
+    void mousePressEvent(QMouseEvent *event) override;
+    void mouseReleaseEvent(QMouseEvent *event) override;
+    void leaveEvent(QEvent *event) override;
 
 private:
+    int columnAt(const QPoint &position) const;
+    bool sortableAt(int column) const;
+
     QVector<ResultColumn> m_columns;
+    QString m_sortKey;
+    bool m_ascending = true;
+    int m_hoverColumn = -1;
+    int m_pressedColumn = -1;
 };

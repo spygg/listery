@@ -223,8 +223,8 @@ int PluginHost::loadFromDirectory(const QString &directory, QString *errorMessag
             m_plugins.push_back(std::move(entry));
             continue;
         }
-        if (api->apiVersion != LISTERY_PLUGIN_API_VERSION) {
-            entry->info.error = tr("插件接口版本 %1 与本程序不兼容（需要 %2）")
+        if (api->apiVersion < 1 || api->apiVersion > LISTERY_PLUGIN_API_VERSION) {
+            entry->info.error = tr("插件接口版本 %1 与本程序不兼容（支持 1..%2）")
                                     .arg(api->apiVersion)
                                     .arg(LISTERY_PLUGIN_API_VERSION);
             m_plugins.push_back(std::move(entry));
@@ -443,6 +443,23 @@ bool PluginHost::configure(const QString &id, void *nativeParentWindow)
     for (auto &plugin : m_plugins) {
         if (plugin->info.id == id && plugin->api && plugin->api->configure)
             return plugin->api->configure(nativeParentWindow) == 0;
+    }
+    return false;
+}
+
+bool PluginHost::setSort(const QString &id, const QString &columnKey, bool ascending)
+{
+    if (columnKey.isEmpty())
+        return false;
+    for (auto &plugin : m_plugins) {
+        if (plugin->info.id != id || !plugin->info.initialized || plugin->api == nullptr)
+            continue;
+        // 先看 apiVersion 再读 setResultSort：老插件的描述符没有这个字段，
+        // 直接按新布局读取会越界（apiVersion >= 2 才保证结构体完整）。
+        if (plugin->api->apiVersion < 2 || plugin->api->setResultSort == nullptr)
+            return false;
+        const QByteArray keyUtf8 = columnKey.toUtf8();
+        return plugin->api->setResultSort(keyUtf8.constData(), ascending ? 1 : 0) == 0;
     }
     return false;
 }

@@ -21,6 +21,7 @@ const char *kKeyLanguage = "ui/language";
 const char *kKeyAutoScan = "index/autoScanOnStartup";
 const char *kKeyRescanMinutes = "index/rescanIntervalMinutes";
 const char *kKeyHideOnFocusLost = "ui/hideWhenFocusLost";
+const char *kKeyPinResults = "ui/pinResults";
 const char *kKeySmartSchedule = "index/smartSchedule";
 const char *kKeyUseLocate = "index/useLocateIndex";
 const char *kKeyAutoUpdate = "update/autoCheck";
@@ -259,6 +260,17 @@ bool AppSettings::hideWhenFocusLost() const
 void AppSettings::setHideWhenFocusLost(bool on)
 {
     m_settings->setValue(QString::fromLatin1(kKeyHideOnFocusLost), on);
+    m_settings->sync();
+}
+
+bool AppSettings::pinResults() const
+{
+    return m_settings->value(QString::fromLatin1(kKeyPinResults), false).toBool();
+}
+
+void AppSettings::setPinResults(bool on)
+{
+    m_settings->setValue(QString::fromLatin1(kKeyPinResults), on);
     m_settings->sync();
 }
 
