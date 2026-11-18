@@ -30,6 +30,7 @@
 #include <QMessageBox>
 #include <QMutex>
 #include <QPainter>
+#include <QProcess>
 #include <QPixmap>
 #include <QTemporaryDir>
 #include <QTimer>
@@ -45,6 +46,8 @@
 #endif
 
 namespace {
+/** 更新下载完成后要安装的包路径：事件循环退出后在 main() 里拉起安装器。 */
+QString g_pendingInstaller;
 QFile *g_logFile = nullptr;
 QString g_logDir;
 QString g_logDate;
@@ -392,6 +395,14 @@ int main(int argc, char *argv[])
     if (!controller.initialize())
         return 1;
 
+    // 安装包落盘后：先让本进程退出（释放 index.db / Qt DLL 等文件），
+    // 再由 main() 在事件循环结束后启动静默安装，避免“程序还在跑就覆盖文件”。
+    QObject::connect(&controller, &AppController::installUpdateRequested, &app,
+                     [&app](const QString &installerPath) {
+                         g_pendingInstaller = installerPath;
+                         QTimer::singleShot(0, &app, &QApplication::quit);
+                     });
+
     if (testHotkey) {
 #ifdef Q_OS_WIN
         QTimer::singleShot(1200, &controller, []() { sendDoubleCtrl(); });
@@ -419,6 +430,23 @@ int main(int argc, char *argv[])
     }
 
     const int exitCode = app.exec();
+
+    // 到这里主程序已经退出事件循环、托盘与热键均已释放，再安装新版本。
+    // 安装器的 CloseApplications=yes 只是兜底，正常路径靠这里的先后顺序保证。
+    if (!g_pendingInstaller.isEmpty()) {
+#ifdef Q_OS_WIN
+        const QStringList args = QStringList()
+            << QStringLiteral("/VERYSILENT")
+            << QStringLiteral("/NORESTART")
+            << QStringLiteral("/CLOSEAPPLICATIONS")
+            << QStringLiteral("/NOCANCEL");
+        if (!QProcess::startDetached(g_pendingInstaller, args))
+            qWarning("Listery: 无法启动更新安装器：%s", qPrintable(g_pendingInstaller));
+#else
+        Updater::openUrl(g_pendingInstaller);
+#endif
+    }
+
     // 退出时把日志句柄关掉并释放：否则 QFile 及其缓冲要到进程结束才回收，
     // 调试器/文件监控也会一直认为日志被占用
     {

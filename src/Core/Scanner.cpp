@@ -722,13 +722,29 @@ bool Scanner::ingestBundle(const QFileInfo &info, Database &db)
 }
 #endif
 
+bool Scanner::matchesSkipPattern(const QString &lowerName, const QString &lowerPattern)
+{
+    if (lowerPattern.isEmpty())
+        return false;
+
+    // QDir::match 把空白当作「多个模式」的分隔符："Code Cache" 会被拆成
+    // "Code" 和 "Cache" 两条规则，于是任意名为 code 的目录（如 D:\code）都会被
+    // 误跳过，整个盘的程序凭空消失。默认名单都是字面目录名，先做整串比较；
+    // 只有明确写了通配符时才交给 QDir::match，仍支持用户自定义通配规则。
+    if (lowerPattern.contains(QLatin1Char('*')) || lowerPattern.contains(QLatin1Char('?'))
+        || lowerPattern.contains(QLatin1Char('['))) {
+        return QDir::match(lowerPattern, lowerName);
+    }
+    return lowerName == lowerPattern.trimmed();
+}
+
 bool Scanner::isSkippedDirectory(const QString &name) const
 {
     if (m_skipPatternsLower.isEmpty())
         return false;
     const QString lower = name.toLower();
     for (const QString &pattern : m_skipPatternsLower) {
-        if (QDir::match(pattern, lower))
+        if (matchesSkipPattern(lower, pattern))
             return true;
     }
     return false;

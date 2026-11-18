@@ -50,6 +50,10 @@ public:
     /** 插件宿主（设置界面与托盘菜单要用）。 */
     PluginHost *pluginHost() const { return m_plugins; }
 
+signals:
+    /** 更新包已下载完成：主程序先退出，再由 main() 启动安装器。 */
+    void installUpdateRequested(const QString &installerPath);
+
 public slots:
     void showLauncher();
     /** @param deep true 表示强制全量遍历（人工重建索引、或快速通道结果可疑时复核）。 */
@@ -89,7 +93,8 @@ private:
     void onUpdateAvailable(const ReleaseInfo &release, const QString &current);
     void onUpdateUpToDate(const QString &current);
     void onUpdateCheckFailed(const QString &error);
-    /** 托盘消息被点击时打开已缓存的更新发布页。 */
+    void onUpdateDownloadFinished(const QString &filePath, const QString &error);
+    /** 托盘消息被点击时：有内置安装包就下载，否则打开发布页。 */
     void openPendingUpdate();
     void setupScanSchedule();
     void setupConnections();
@@ -134,6 +139,9 @@ private:
     QMenu *m_pluginMenu = nullptr;
     /** 点击托盘更新通知时要打开的发布页（仅一条，避免 messageClicked 串台）。 */
     QString m_pendingUpdateUrl;
+    /** 发现 New Release 时缓存的安装包直链；Windows 下优先走内置下载。 */
+    QString m_pendingInstallUrl;
+    QString m_pendingInstallFile;
     /** 本次检查是否由用户从托盘手动触发：结果要用气泡反馈，自动检查则只记日志。 */
     bool m_updateNotify = false;
     QAction *m_actionRescan = nullptr;

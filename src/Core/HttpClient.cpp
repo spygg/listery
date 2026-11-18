@@ -1,7 +1,12 @@
 #include "Core/HttpClient.h"
 
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
 #include <QThread>
 #include <QTimer>
+
+#include <functional>
 
 #ifdef Q_OS_WIN
 #  ifndef NOMINMAX
@@ -50,12 +55,14 @@ QString winHttpErrorText(DWORD code)
     }
 }
 
-/** 同步执行一次 GET，由工作线程调用。 */
-void winHttpGet(const QUrl &url, const QString &userAgent, const QStringList &headers,
-                int timeoutMs, int *statusOut, QByteArray *bodyOut, QString *errorOut)
+/** 同步执行一次 GET，由工作线程调用。数据块交给 onData 处理：返回 false 表示写入失败，
+ *  立即中止请求。传 contentLengthOut 可取到服务器声明的 Content-Length（未知为 -1）。 */
+void winHttpFetch(const QUrl &url, const QString &userAgent, const QStringList &headers,
+                  int timeoutMs, int *statusOut, qint64 *contentLengthOut,
+                  const std::function<bool(const char *, DWORD)> &onData, QString *errorOut)
 {
     *statusOut = 0;
-    bodyOut->clear();
+    *contentLengthOut = -1;
     errorOut->clear();
 
     const QString scheme = url.scheme().toLower();
@@ -156,6 +163,13 @@ void winHttpGet(const QUrl &url, const QString &userAgent, const QStringList &he
                             WINHTTP_NO_HEADER_INDEX)) {
         *statusOut = static_cast<int>(status);
     }
+    DWORD contentLength = 0;
+    DWORD contentLengthSize = sizeof(contentLength);
+    if (WinHttpQueryHeaders(request, WINHTTP_QUERY_CONTENT_LENGTH | WINHTTP_QUERY_FLAG_NUMBER,
+                            WINHTTP_HEADER_NAME_BY_INDEX, &contentLength, &contentLengthSize,
+                            WINHTTP_NO_HEADER_INDEX)) {
+        *contentLengthOut = static_cast<qint64>(contentLength);
+    }
 
     for (;;) {
         DWORD available = 0;
@@ -176,9 +190,8 @@ void winHttpGet(const QUrl &url, const QString &userAgent, const QStringList &he
         if (read == 0)
             break;
         chunk.resize(static_cast<int>(read));
-        bodyOut->append(chunk);
-        if (bodyOut->size() > kMaxBodyBytes) {
-            *errorOut = QStringLiteral("响应内容过大");
+        if (!onData(chunk.constData(), read)) {
+            *errorOut = QStringLiteral("写入下载文件失败");
             break;
         }
     }
@@ -217,7 +230,16 @@ protected:
         QString error;
 
 #ifdef Q_OS_WIN
-        winHttpGet(m_url, m_userAgent, m_headers, m_timeoutMs, &status, &body, &error);
+        qint64 total = -1;
+        winHttpFetch(m_url, m_userAgent, m_headers, m_timeoutMs, &status, &total,
+                     [&body](const char *data, DWORD len) -> bool {
+                         body.append(data, static_cast<int>(len));
+                         // 更新检查与插件查询都是小 JSON；超了多半是打到了错误页面
+                         return body.size() <= kMaxBodyBytes;
+                     },
+                     &error);
+        if (error.isEmpty() && body.size() > kMaxBodyBytes)
+            error = QStringLiteral("响应内容过大");
 #else
         if (m_url.scheme().compare(QLatin1String("https"), Qt::CaseInsensitive) == 0
             && !QSslSocket::supportsSsl()) {
@@ -267,6 +289,103 @@ private:
     int m_timeoutMs;
 };
 
+/** 在工作线程里把响应流式写到文件；进度与结果都通过队列信号送回调用线程。 */
+class HttpDownloadWorker : public QThread
+{
+    Q_OBJECT
+
+public:
+    HttpDownloadWorker(quint64 id, QUrl url, QString userAgent, QString path, int timeoutMs)
+        : m_id(id)
+        , m_url(std::move(url))
+        , m_userAgent(std::move(userAgent))
+        , m_path(std::move(path))
+        , m_timeoutMs(timeoutMs)
+    {
+    }
+
+signals:
+    void progress(quint64 id, qint64 received, qint64 total);
+    void done(quint64 id, const QString &path, const QString &error);
+
+protected:
+    void run() override
+    {
+        QFile file(m_path);
+        if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            emit done(m_id, m_path, QStringLiteral("无法创建下载文件：%1").arg(m_path));
+            return;
+        }
+
+        QString error;
+        qint64 received = 0;
+#ifdef Q_OS_WIN
+        int status = 0;
+        qint64 total = -1;
+        winHttpFetch(m_url, m_userAgent, QStringList(), m_timeoutMs, &status, &total,
+                     [&](const char *data, DWORD len) -> bool {
+                         if (file.write(data, static_cast<qint64>(len)) != static_cast<qint64>(len))
+                             return false;
+                         received += static_cast<qint64>(len);
+                         emit progress(m_id, received, total);
+                         return true;
+                     },
+                     &error);
+        if (error.isEmpty() && status != 200)
+            error = status > 0 ? QStringLiteral("服务器返回 HTTP %1").arg(status)
+                               : QStringLiteral("服务器没有返回内容");
+#else
+        if (m_url.scheme().compare(QLatin1String("https"), Qt::CaseInsensitive) == 0
+            && !QSslSocket::supportsSsl()) {
+            error = QStringLiteral("当前系统缺少 TLS 运行库，无法发起 HTTPS 请求");
+        } else {
+            QNetworkAccessManager network;
+            QNetworkRequest request(m_url);
+            request.setHeader(QNetworkRequest::UserAgentHeader, m_userAgent);
+            QNetworkReply *reply = network.get(request);
+            QEventLoop loop;
+            QTimer timer;
+            timer.setSingleShot(true);
+            QObject::connect(&timer, &QTimer::timeout, &loop, [reply, &loop]() {
+                reply->abort();
+                loop.quit();
+            });
+            QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+            QObject::connect(reply, &QNetworkReply::downloadProgress, this,
+                             [this](qint64 got, qint64 all) { emit progress(m_id, got, all); });
+            QObject::connect(reply, &QNetworkReply::readyRead, this, [&]() {
+                const QByteArray chunk = reply->readAll();
+                received += chunk.size();
+                if (file.write(chunk) != chunk.size())
+                    error = QStringLiteral("写入下载文件失败");
+            });
+            timer.start(qBound(1000, m_timeoutMs, 600000));
+            loop.exec();
+            if (error.isEmpty() && reply->error() != QNetworkReply::NoError)
+                error = reply->errorString();
+            const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+            if (error.isEmpty() && status != 0 && status != 200)
+                error = QStringLiteral("服务器返回 HTTP %1").arg(status);
+            delete reply;
+        }
+#endif
+        file.close();
+        if (!error.isEmpty()) {
+            file.remove(); // 不留半成品，避免下次误当成完整安装包
+            emit done(m_id, m_path, error);
+            return;
+        }
+        emit done(m_id, m_path, QString());
+    }
+
+private:
+    quint64 m_id;
+    QUrl m_url;
+    QString m_userAgent;
+    QString m_path;
+    int m_timeoutMs;
+};
+
 HttpClient::HttpClient(QObject *parent)
     : QObject(parent)
 {
@@ -294,6 +413,38 @@ quint64 HttpClient::get(const QUrl &url, const QString &userAgent,
     QTimer::singleShot(timeout, this, [this, id]() {
         if (m_pending.remove(id))
             emit finished(id, 0, QByteArray(), QStringLiteral("网络请求超时"));
+    });
+    worker->start();
+    return id;
+}
+
+quint64 HttpClient::downloadToFile(const QUrl &url, const QString &userAgent,
+                                   const QString &filePath, int timeoutMs)
+{
+    const quint64 id = m_nextId++;
+    const int timeout = qBound(1000, timeoutMs, 600000);
+    QFileInfo info(filePath);
+    QDir().mkpath(info.absolutePath());
+
+    m_downloadPending.insert(id);
+    auto *worker = new HttpDownloadWorker(id, url, userAgent, filePath, timeout);
+    connect(worker, &HttpDownloadWorker::progress, this,
+            [this](quint64 requestId, qint64 received, qint64 total) {
+                if (m_downloadPending.contains(requestId))
+                    emit downloadProgress(requestId, received, total);
+            });
+    connect(worker, &HttpDownloadWorker::done, this,
+            [this](quint64 requestId, const QString &path, const QString &error) {
+                if (!m_downloadPending.remove(requestId))
+                    return;
+                emit downloadFinished(requestId, path, error);
+            });
+    connect(worker, &QThread::finished, worker, &QObject::deleteLater);
+    QTimer::singleShot(timeout, this, [this, id, filePath]() {
+        if (m_downloadPending.remove(id)) {
+            QFile::remove(filePath);
+            emit downloadFinished(id, filePath, QStringLiteral("下载超时"));
+        }
     });
     worker->start();
     return id;

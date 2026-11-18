@@ -81,6 +81,22 @@ Chemin : %2</translation>
         <translation>La version %1 est disponible (actuelle : %2). Cliquez pour télécharger.</translation>
     </message>
     <message>
+        <source>发现新版本 %1（当前 %2），点击下载并安装</source>
+        <translation>La version %1 est disponible (actuelle : %2). Cliquez pour télécharger et installer.</translation>
+    </message>
+    <message>
+        <source>正在下载更新…</source>
+        <translation>Téléchargement de la mise à jour…</translation>
+    </message>
+    <message>
+        <source>更新下载失败：%1</source>
+        <translation>Échec du téléchargement de la mise à jour : %1</translation>
+    </message>
+    <message>
+        <source>更新已下载，正在安装…</source>
+        <translation>Mise à jour téléchargée, installation en cours…</translation>
+    </message>
+    <message>
         <source>当前平台未实现全局双击 Ctrl，请用托盘菜单打开搜索框</source>
         <translation>Le double Ctrl global n'est pas disponible sur cette plateforme. Ouvrez la recherche depuis le menu de la zone de notification.</translation>
     </message>
@@ -528,5 +544,132 @@ Vous pouvez ouvrir la recherche depuis le menu de la zone de notification.</tran
         <source>配置…</source>
         <translation>Configurer…</translation>
     </message>
-</context>
-</TS>
+    <message>
+        <source>%1 和 %2 都使用 %3，后一个将无法触发。请改成不同的组合，或留空表示不占用。</source>
+        <translation>%1 et %2 utilisent tous deux %3 ; le second ne se déclenchera pas. Choisissez d'autres combinaisons ou laissez un champ vide.</translation>
+    </message>
+    <message>
+        <source>%1（已停用）</source>
+        <translation>%1 (désactivé)</translation>
+    </message>
+    <message>
+        <source>%1（未加载）</source>
+        <translation>%1 (non chargé)</translation>
+    </message>
+    <message>
+        <source>与面板输入框右侧的“固定”按钮同步；Esc 仍可关闭面板</source>
+        <translation>Synchronisé avec le bouton Épingler à droite du champ de saisie ; Échap ferme toujours le panneau</translation>
+    </message>
+    <message>
+        <source>全局热键</source>
+        <translation>Raccourci global</translation>
+    </message>
+    <message>
+        <source>启用该插件</source>
+        <translation>Activer ce plugin</translation>
+    </message>
+    <message>
+        <source>固定</source>
+        <translation>Épingler</translation>
+    </message>
+    <message>
+        <source>固定结果面板（选择结果后不隐藏）</source>
+        <translation>Épingler le panneau de résultats (ne pas masquer après sélection)</translation>
+    </message>
+    <message>
+        <source>固定结果面板：选择结果后不隐藏；Esc 仍可关闭</source>
+        <translation>Épingler le panneau de résultats : ne pas masquer après sélection ; Échap ferme toujours</translation>
+    </message>
+    <message>
+        <source>已停用</source>
+        <translation>Désactivé</translation>
+    </message>
+    <message>
+        <source>已加载</source>
+        <translation>Chargé</translation>
+    </message>
+    <message>
+        <source>已发现 %1 个插件，可在这里逐个启用、修改热键或打开插件设置。</source>
+        <translation>%1 plugins trouvés. Activez-les, modifiez les raccourcis ou ouvrez leurs paramètres ici.</translation>
+    </message>
+    <message>
+        <source>已固定</source>
+        <translation>Épinglé</translation>
+    </message>
+    <message>
+        <source>打开目录</source>
+        <translation>Ouvrir le dossier</translation>
+    </message>
+    <message>
+        <source>把 .dll / .so / .dylib 放进插件目录，重启 Listery 后即可在这里管理。</source>
+        <translation>Placez les fichiers .dll / .so / .dylib dans le dossier des plugins et redémarrez Listery pour les gérer ici.</translation>
+    </message>
+    <message>
+        <source>插件接口版本 %1 与本程序不兼容（支持 1..%2）</source>
+        <translation>Version de l'API plugin %1 incompatible (prise en charge : 1..%2)</translation>
+    </message>
+    <message>
+        <source>插件未加载，无法启用</source>
+        <translation>Plugin non chargé, impossible de l'activer</translation>
+    </message>
+    <message>
+        <source>插件管理</source>
+        <translation>Gestionnaire de plugins</translation>
+    </message>
+    <message>
+        <source>插件管理…</source>
+        <translation>Plugins…</translation>
+    </message>
+    <message>
+        <source>插件设置…</source>
+        <translation>Paramètres du plugin…</translation>
+    </message>
+    <message>
+        <source>搜索本机文件：文件名、ext:pdf、path:项目；!help 查看命令</source>
+        <translation>Rechercher les fichiers locaux : nom, ext:pdf, path:projet ; tapez !help pour les commandes</translation>
+    </message>
+    <message>
+        <source>文件：%1</source>
+        <translation>Fichier : %1</translation>
+    </message>
+    <message>
+        <source>有程序的分区按下面的间隔刷新；只有零星几个的放宽到 2 倍；</source>
+        <translation>Les volumes contenant des programmes sont actualisés à l'intervalle ci-dessous ; ceux qui n'en ont que quelques-uns passent à 2x ;</translation>
+    </message>
+    <message>
+        <source>未加载</source>
+        <translation>Non chargé</translation>
+    </message>
+    <message>
+        <source>未发现插件</source>
+        <translation>Aucun plugin trouvé</translation>
+    </message>
+    <message>
+        <source>未发现插件。把 .dll / .so / .dylib 放进插件目录后重启 Listery。</source>
+        <translation>Aucun plugin trouvé. Placez les fichiers .dll / .so / .dylib dans le dossier des plugins et redémarrez Listery.</translation>
+    </message>
+    <message>
+        <source>未知</source>
+        <translation>Inconnu</translation>
+    </message>
+    <message>
+        <source>热键冲突</source>
+        <translation>Conflit de raccourci</translation>
+    </message>
+    <message>
+        <source>版本：%1</source>
+        <translation>Version : %1</translation>
+    </message>
+    <message>
+        <source>结果面板已固定：选择后不隐藏，再点一次取消；Esc 仍可关闭</source>
+        <translation>Résultats épinglés : ne pas masquer après sélection ; cliquez à nouveau pour désépingler ; Échap ferme toujours</translation>
+    </message>
+    <message>
+        <source>该插件没有提供独立设置界面</source>
+        <translation>Ce plugin n'a pas d'interface de paramètres dédiée</translation>
+    </message>
+    <message>
+        <source>读取 mlocate / plocate 的快照而不是遍历整个文件系统；</source>
+        <translation>Utiliser l'instantané mlocate / plocate au lieu de parcourir tout le système de fichiers ;</translation>
+    </message>
+</context></TS>

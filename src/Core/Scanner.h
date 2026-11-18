@@ -63,6 +63,10 @@ public:
     static QStringList hiddenRootsFor(const QStringList &volumes);
     /** locate 是否可用（仅 Unix）：用于向用户解释为什么这一轮这么快。 */
     static bool locateAvailable();
+    /** 目录名是否命中一条跳过规则（两个参数都应已转成小写）。
+     *  单独提出来是为了自检：QDir::match 会把空格当成多个模式的分隔符，
+     *  "code cache" 会误伤名为 code 的目录，必须用整串比较兜住。 */
+    static bool matchesSkipPattern(const QString &lowerName, const QString &lowerPattern);
 
 signals:
     void progressChanged(const QString &root, int directories, int filesFound);

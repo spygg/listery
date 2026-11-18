@@ -413,6 +413,8 @@ void AppController::setupUpdater()
             this, &AppController::onUpdateUpToDate);
     connect(m_updater, &Updater::checkFailed,
             this, &AppController::onUpdateCheckFailed);
+    connect(m_updater, &Updater::downloadFinished,
+            this, &AppController::onUpdateDownloadFinished);
 
     // 托盘菜单里提供手动检查入口
     if (m_tray && m_tray->contextMenu())
@@ -446,6 +448,30 @@ void AppController::onUpdateAvailable(const ReleaseInfo &release, const QString 
     m_pendingUpdateUrl = release.htmlUrl;
     m_updateNotify = false;
     m_settings.setLastUpdateCheck(QDateTime::currentMSecsSinceEpoch());
+
+#ifdef Q_OS_WIN
+    // Windows 安装包随 Release 一起发布：优先内置下载，点通知即下载+安装，
+    // 不再让用户去浏览器里翻页面（某些网络环境下发布页打不开但 API 可用）
+    m_pendingInstallUrl = Updater::windowsInstallerUrl(release);
+    if (!m_pendingInstallUrl.isEmpty()) {
+        m_pendingInstallFile = dataDirectory() + QStringLiteral("/updates/")
+                             + Updater::windowsInstallerAssetName();
+        if (m_tray) {
+            m_tray->showMessage(tr("Listery 有更新"),
+                                tr("发现新版本 %1（当前 %2），点击下载并安装")
+                                    .arg(release.version, current),
+                                QSystemTrayIcon::Information, 10000);
+        }
+        qInfo("Listery: 新版本可用 %s（当前 %s），安装包 %s",
+              qPrintable(release.version), qPrintable(current),
+              qPrintable(m_pendingInstallUrl));
+        return;
+    }
+#endif
+
+    // 没有可内置下载的安装包（非 Windows 平台或 Release 改了附件名）：退回发布页
+    m_pendingInstallUrl.clear();
+    m_pendingInstallFile.clear();
     if (m_tray) {
         m_tray->showMessage(tr("Listery 有更新"),
                             tr("发现新版本 %1（当前 %2），点击前往下载")
@@ -481,10 +507,46 @@ void AppController::onUpdateCheckFailed(const QString &error)
 
 void AppController::openPendingUpdate()
 {
+    if (!m_pendingInstallUrl.isEmpty()) {
+        const QString url = m_pendingInstallUrl;
+        const QString file = m_pendingInstallFile;
+        // 先清掉，避免用户连点两次通知触发两个下载任务
+        m_pendingInstallUrl.clear();
+        m_pendingInstallFile.clear();
+        if (m_updater && m_updater->downloadInstaller(url, file)) {
+            qInfo("Listery: 开始下载更新包到 %s", qPrintable(file));
+            if (m_tray) {
+                m_tray->showMessage(QStringLiteral("Listery"), tr("正在下载更新…"),
+                                    QSystemTrayIcon::Information, 3000);
+            }
+            return;
+        }
+    }
     if (!m_pendingUpdateUrl.isEmpty()) {
         Updater::openUrl(m_pendingUpdateUrl);
         m_pendingUpdateUrl.clear();
     }
+}
+
+void AppController::onUpdateDownloadFinished(const QString &filePath, const QString &error)
+{
+    if (!error.isEmpty()) {
+        qWarning("Listery: 更新包下载失败：%s", qPrintable(error));
+        if (m_tray) {
+            m_tray->showMessage(QStringLiteral("Listery"),
+                                tr("更新下载失败：%1").arg(error),
+                                QSystemTrayIcon::Warning, 6000);
+        }
+        return;
+    }
+
+    qInfo("Listery: 更新包已下载：%s", qPrintable(filePath));
+    if (m_tray) {
+        m_tray->showMessage(QStringLiteral("Listery"), tr("更新已下载，正在安装…"),
+                            QSystemTrayIcon::Information, 4000);
+    }
+    // 通知 main()：先退出事件循环让本进程释放文件，再由 main 拉起静默安装
+    emit installUpdateRequested(filePath);
 }
 
 bool AppController::setupSingleInstance()

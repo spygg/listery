@@ -8,6 +8,7 @@
 #endif
 
 #include <QDesktopServices>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QUrl>
@@ -31,6 +32,8 @@ Updater::Updater(QObject *parent)
     , m_http(new HttpClient(this))
 {
     connect(m_http, &HttpClient::finished, this, &Updater::onHttpFinished);
+    connect(m_http, &HttpClient::downloadProgress, this, &Updater::onDownloadProgress);
+    connect(m_http, &HttpClient::downloadFinished, this, &Updater::onDownloadFinished);
 }
 
 Updater::~Updater() = default;
@@ -119,9 +122,59 @@ void Updater::onHttpFinished(quint64 requestId, int status, const QByteArray &bo
     release.publishedAt = root.value(QStringLiteral("published_at")).toString();
     release.prerelease = root.value(QStringLiteral("prerelease")).toBool();
 
+    const QJsonArray assets = root.value(QStringLiteral("assets")).toArray();
+    for (const QJsonValue &value : assets) {
+        if (!value.isObject())
+            continue;
+        const QJsonObject asset = value.toObject();
+        ReleaseAsset item;
+        item.name = asset.value(QStringLiteral("name")).toString();
+        item.browserDownloadUrl = asset.value(QStringLiteral("browser_download_url")).toString();
+        item.size = static_cast<qint64>(asset.value(QStringLiteral("size")).toDouble());
+        if (!item.name.isEmpty() && !item.browserDownloadUrl.isEmpty())
+            release.assets.append(item);
+    }
+
     const QString current = currentVersion();
     if (compareVersions(release.version, current) > 0)
         emit updateAvailable(release, current);
     else
         emit upToDate(current);
+}
+
+QString Updater::windowsInstallerAssetName()
+{
+    return QStringLiteral("listery-windows-setup.exe");
+}
+
+QString Updater::windowsInstallerUrl(const ReleaseInfo &release)
+{
+    const QString wanted = windowsInstallerAssetName().toLower();
+    for (const ReleaseAsset &asset : release.assets) {
+        if (asset.name.toLower() == wanted)
+            return asset.browserDownloadUrl;
+    }
+    return QString();
+}
+
+bool Updater::downloadInstaller(const QString &downloadUrl, const QString &targetPath)
+{
+    if (!m_http || downloadUrl.isEmpty() || targetPath.isEmpty())
+        return false;
+    m_http->downloadToFile(QUrl::fromUserInput(downloadUrl),
+                           QStringLiteral("Listery/%1 (update-download)").arg(currentVersion()),
+                           targetPath, 120000);
+    return true;
+}
+
+void Updater::onDownloadProgress(quint64 requestId, qint64 received, qint64 total)
+{
+    Q_UNUSED(requestId)
+    emit downloadProgress(received, total);
+}
+
+void Updater::onDownloadFinished(quint64 requestId, const QString &filePath, const QString &error)
+{
+    Q_UNUSED(requestId)
+    emit downloadFinished(filePath, error);
 }

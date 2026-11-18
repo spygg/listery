@@ -81,6 +81,22 @@
         <translation>發現新版本 %1（目前 %2），點擊前往下載</translation>
     </message>
     <message>
+        <source>发现新版本 %1（当前 %2），点击下载并安装</source>
+        <translation>發現新版本 %1（目前 %2），點擊下載並安裝</translation>
+    </message>
+    <message>
+        <source>正在下载更新…</source>
+        <translation>正在下載更新…</translation>
+    </message>
+    <message>
+        <source>更新下载失败：%1</source>
+        <translation>更新下載失敗：%1</translation>
+    </message>
+    <message>
+        <source>更新已下载，正在安装…</source>
+        <translation>更新已下載，正在安裝…</translation>
+    </message>
+    <message>
         <source>当前平台未实现全局双击 Ctrl，请用托盘菜单打开搜索框</source>
         <translation>目前平台未實作全域雙擊 Ctrl，請用系統匣選單開啟搜尋框</translation>
     </message>
@@ -528,5 +544,132 @@
         <source>配置…</source>
         <translation>設定…</translation>
     </message>
-</context>
-</TS>
+    <message>
+        <source>%1 和 %2 都使用 %3，后一个将无法触发。请改成不同的组合，或留空表示不占用。</source>
+        <translation>%1 和 %2 都使用 %3，後一個將無法觸發。請改成不同的組合，或留空表示不佔用。</translation>
+    </message>
+    <message>
+        <source>%1（已停用）</source>
+        <translation>%1（已停用）</translation>
+    </message>
+    <message>
+        <source>%1（未加载）</source>
+        <translation>%1（未載入）</translation>
+    </message>
+    <message>
+        <source>与面板输入框右侧的“固定”按钮同步；Esc 仍可关闭面板</source>
+        <translation>與面板輸入框右側的「固定」按鈕同步；Esc 仍可關閉面板</translation>
+    </message>
+    <message>
+        <source>全局热键</source>
+        <translation>全域快速鍵</translation>
+    </message>
+    <message>
+        <source>启用该插件</source>
+        <translation>啟用此外掛</translation>
+    </message>
+    <message>
+        <source>固定</source>
+        <translation>固定</translation>
+    </message>
+    <message>
+        <source>固定结果面板（选择结果后不隐藏）</source>
+        <translation>固定結果面板（選擇結果後不隱藏）</translation>
+    </message>
+    <message>
+        <source>固定结果面板：选择结果后不隐藏；Esc 仍可关闭</source>
+        <translation>固定結果面板：選擇結果後不隱藏；Esc 仍可關閉</translation>
+    </message>
+    <message>
+        <source>已停用</source>
+        <translation>已停用</translation>
+    </message>
+    <message>
+        <source>已加载</source>
+        <translation>已載入</translation>
+    </message>
+    <message>
+        <source>已发现 %1 个插件，可在这里逐个启用、修改热键或打开插件设置。</source>
+        <translation>已發現 %1 個外掛，可在這裡逐一啟用、修改快速鍵或開啟外掛設定。</translation>
+    </message>
+    <message>
+        <source>已固定</source>
+        <translation>已固定</translation>
+    </message>
+    <message>
+        <source>打开目录</source>
+        <translation>開啟目錄</translation>
+    </message>
+    <message>
+        <source>把 .dll / .so / .dylib 放进插件目录，重启 Listery 后即可在这里管理。</source>
+        <translation>把 .dll / .so / .dylib 放進外掛目錄，重新啟動 Listery 後即可在這裡管理。</translation>
+    </message>
+    <message>
+        <source>插件接口版本 %1 与本程序不兼容（支持 1..%2）</source>
+        <translation>外掛介面版本 %1 與本程式不相容（支援 1..%2）</translation>
+    </message>
+    <message>
+        <source>插件未加载，无法启用</source>
+        <translation>外掛未載入，無法啟用</translation>
+    </message>
+    <message>
+        <source>插件管理</source>
+        <translation>外掛管理</translation>
+    </message>
+    <message>
+        <source>插件管理…</source>
+        <translation>外掛管理…</translation>
+    </message>
+    <message>
+        <source>插件设置…</source>
+        <translation>外掛設定…</translation>
+    </message>
+    <message>
+        <source>搜索本机文件：文件名、ext:pdf、path:项目；!help 查看命令</source>
+        <translation>搜尋本機檔案：檔名、ext:pdf、path:專案；!help 檢視命令</translation>
+    </message>
+    <message>
+        <source>文件：%1</source>
+        <translation>檔案：%1</translation>
+    </message>
+    <message>
+        <source>有程序的分区按下面的间隔刷新；只有零星几个的放宽到 2 倍；</source>
+        <translation>有程式的磁碟分割依下列間隔重新整理；只有零星幾個的放寬為 2 倍；</translation>
+    </message>
+    <message>
+        <source>未加载</source>
+        <translation>未載入</translation>
+    </message>
+    <message>
+        <source>未发现插件</source>
+        <translation>未發現外掛</translation>
+    </message>
+    <message>
+        <source>未发现插件。把 .dll / .so / .dylib 放进插件目录后重启 Listery。</source>
+        <translation>未發現外掛。把 .dll / .so / .dylib 放進外掛目錄後重新啟動 Listery。</translation>
+    </message>
+    <message>
+        <source>未知</source>
+        <translation>未知</translation>
+    </message>
+    <message>
+        <source>热键冲突</source>
+        <translation>快速鍵衝突</translation>
+    </message>
+    <message>
+        <source>版本：%1</source>
+        <translation>版本：%1</translation>
+    </message>
+    <message>
+        <source>结果面板已固定：选择后不隐藏，再点一次取消；Esc 仍可关闭</source>
+        <translation>結果面板已固定：選擇後不隱藏，再點一次取消；Esc 仍可關閉</translation>
+    </message>
+    <message>
+        <source>该插件没有提供独立设置界面</source>
+        <translation>此外掛沒有提供獨立設定介面</translation>
+    </message>
+    <message>
+        <source>读取 mlocate / plocate 的快照而不是遍历整个文件系统；</source>
+        <translation>讀取 mlocate / plocate 的快照，而非遍歷整個檔案系統；</translation>
+    </message>
+</context></TS>

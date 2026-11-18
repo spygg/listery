@@ -25,8 +25,22 @@ namespace {
 QStringList splitList(const QString &text)
 {
     QStringList parts;
-    static const QRegularExpression separators(QStringLiteral("[,，;；\\s]+"));
-    for (const QString &part : text.split(separators)) {
+    // 绝不能按空白切分：默认跳过目录里有 "System Volume Information"、
+    // "Code Cache"、"Service Worker" 这类带空格的名字，按空白拆开后会出现
+    // 裸的 "Code" —— 它能匹配任意名为 code 的目录（如 D:\code），
+    // 于是整棵目录树被跳过，那个盘的所有程序从索引里凭空消失。
+    static const QRegularExpression separators(QStringLiteral("[,，;；]"));
+    if (text.contains(separators)) {
+        for (const QString &part : text.split(separators)) {
+            const QString trimmed = part.trimmed();
+            if (!trimmed.isEmpty())
+                parts.append(trimmed);
+        }
+        return parts;
+    }
+    // 没有用逗号/分号时，兼容用户直接敲 "exe com bat" 的空格分隔习惯
+    static const QRegularExpression spaces(QStringLiteral("\\s+"));
+    for (const QString &part : text.split(spaces)) {
         const QString trimmed = part.trimmed();
         if (!trimmed.isEmpty())
             parts.append(trimmed);

@@ -553,6 +553,31 @@ int SelfTest::run()
               QStringLiteral("去掉版本号前缀 v"));
         check(Updater::compareVersions(Updater::currentVersion(), QStringLiteral("0.0.1")) >= 0,
               QStringLiteral("当前版本 %1 不低于 0.0.1").arg(Updater::currentVersion()));
+
+        // 内置更新：能从 Release assets 里挑出 Windows 安装包；缺附件时返回空
+        ReleaseInfo fake;
+        ReleaseAsset zip;
+        zip.name = QStringLiteral("listery-windows.zip");
+        zip.browserDownloadUrl = QStringLiteral("https://example.test/listery-windows.zip");
+        fake.assets.append(zip);
+        check(Updater::windowsInstallerUrl(fake).isEmpty(),
+              QStringLiteral("没有安装包附件时不提供内置下载链接"));
+        ReleaseAsset setup;
+        setup.name = Updater::windowsInstallerAssetName();
+        setup.browserDownloadUrl = QStringLiteral("https://example.test/listery-windows-setup.exe");
+        setup.size = 1024;
+        fake.assets.append(setup);
+        check(Updater::windowsInstallerUrl(fake) == setup.browserDownloadUrl,
+              QStringLiteral("从 assets 中识别 Windows 安装包直链"));
+
+        // 回归：QDir::match 会把空格当多个模式，"code cache" 曾误伤 D:\code，
+        // 导致整个盘的可执行文件被 removeStale 清空
+        check(!Scanner::matchesSkipPattern(QStringLiteral("code"), QStringLiteral("code cache")),
+              QStringLiteral("跳过规则 \"Code Cache\" 不会误伤名为 code 的目录"));
+        check(Scanner::matchesSkipPattern(QStringLiteral("code cache"), QStringLiteral("code cache")),
+              QStringLiteral("多词跳过规则仍匹配同名目录"));
+        check(Scanner::matchesSkipPattern(QStringLiteral("temp123"), QStringLiteral("temp*")),
+              QStringLiteral("显式通配符规则仍然有效"));
     }
 
     // ---- 8. AppData 隐藏目录扫描：用户级应用（豆包等）装在 AppData\Local，

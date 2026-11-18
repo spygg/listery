@@ -81,6 +81,22 @@ Path: %2</translation>
         <translation>Version %1 is available (current: %2). Click to download.</translation>
     </message>
     <message>
+        <source>发现新版本 %1（当前 %2），点击下载并安装</source>
+        <translation>Version %1 is available (current: %2). Click to download and install.</translation>
+    </message>
+    <message>
+        <source>正在下载更新…</source>
+        <translation>Downloading update…</translation>
+    </message>
+    <message>
+        <source>更新下载失败：%1</source>
+        <translation>Update download failed: %1</translation>
+    </message>
+    <message>
+        <source>更新已下载，正在安装…</source>
+        <translation>Update downloaded. Installing…</translation>
+    </message>
+    <message>
         <source>当前平台未实现全局双击 Ctrl，请用托盘菜单打开搜索框</source>
         <translation>Global double-Ctrl is not available on this platform. Use the tray menu to open the search box.</translation>
     </message>
@@ -528,5 +544,132 @@ You can open the search box from the tray menu.</translation>
         <source>配置…</source>
         <translation>Configure…</translation>
     </message>
-</context>
-</TS>
+    <message>
+        <source>%1 和 %2 都使用 %3，后一个将无法触发。请改成不同的组合，或留空表示不占用。</source>
+        <translation>%1 and %2 both use %3; the latter will not trigger. Choose different combinations, or leave one empty.</translation>
+    </message>
+    <message>
+        <source>%1（已停用）</source>
+        <translation>%1 (disabled)</translation>
+    </message>
+    <message>
+        <source>%1（未加载）</source>
+        <translation>%1 (not loaded)</translation>
+    </message>
+    <message>
+        <source>与面板输入框右侧的“固定”按钮同步；Esc 仍可关闭面板</source>
+        <translation>Synced with the Pin button to the right of the input box; Esc still closes the panel</translation>
+    </message>
+    <message>
+        <source>全局热键</source>
+        <translation>Global hotkey</translation>
+    </message>
+    <message>
+        <source>启用该插件</source>
+        <translation>Enable this plugin</translation>
+    </message>
+    <message>
+        <source>固定</source>
+        <translation>Pin</translation>
+    </message>
+    <message>
+        <source>固定结果面板（选择结果后不隐藏）</source>
+        <translation>Pin results panel (do not hide after selecting a result)</translation>
+    </message>
+    <message>
+        <source>固定结果面板：选择结果后不隐藏；Esc 仍可关闭</source>
+        <translation>Pin results panel: do not hide after selecting a result; Esc still closes</translation>
+    </message>
+    <message>
+        <source>已停用</source>
+        <translation>Disabled</translation>
+    </message>
+    <message>
+        <source>已加载</source>
+        <translation>Loaded</translation>
+    </message>
+    <message>
+        <source>已发现 %1 个插件，可在这里逐个启用、修改热键或打开插件设置。</source>
+        <translation>Found %1 plugins. Enable them, change hotkeys, or open plugin settings here.</translation>
+    </message>
+    <message>
+        <source>已固定</source>
+        <translation>Pinned</translation>
+    </message>
+    <message>
+        <source>打开目录</source>
+        <translation>Open folder</translation>
+    </message>
+    <message>
+        <source>把 .dll / .so / .dylib 放进插件目录，重启 Listery 后即可在这里管理。</source>
+        <translation>Put .dll / .so / .dylib files in the plugins folder and restart Listery to manage them here.</translation>
+    </message>
+    <message>
+        <source>插件接口版本 %1 与本程序不兼容（支持 1..%2）</source>
+        <translation>Plugin API version %1 is incompatible (supported: 1..%2)</translation>
+    </message>
+    <message>
+        <source>插件未加载，无法启用</source>
+        <translation>Plugin is not loaded; cannot enable it</translation>
+    </message>
+    <message>
+        <source>插件管理</source>
+        <translation>Plugin Manager</translation>
+    </message>
+    <message>
+        <source>插件管理…</source>
+        <translation>Plugins…</translation>
+    </message>
+    <message>
+        <source>插件设置…</source>
+        <translation>Plugin Settings…</translation>
+    </message>
+    <message>
+        <source>搜索本机文件：文件名、ext:pdf、path:项目；!help 查看命令</source>
+        <translation>Search local files: name, ext:pdf, path:project; type !help for commands</translation>
+    </message>
+    <message>
+        <source>文件：%1</source>
+        <translation>File: %1</translation>
+    </message>
+    <message>
+        <source>有程序的分区按下面的间隔刷新；只有零星几个的放宽到 2 倍；</source>
+        <translation>Volumes with programs refresh at the interval below; those with only a few are relaxed to 2x;</translation>
+    </message>
+    <message>
+        <source>未加载</source>
+        <translation>Not loaded</translation>
+    </message>
+    <message>
+        <source>未发现插件</source>
+        <translation>No plugins found</translation>
+    </message>
+    <message>
+        <source>未发现插件。把 .dll / .so / .dylib 放进插件目录后重启 Listery。</source>
+        <translation>No plugins found. Put .dll / .so / .dylib files in the plugins folder and restart Listery.</translation>
+    </message>
+    <message>
+        <source>未知</source>
+        <translation>Unknown</translation>
+    </message>
+    <message>
+        <source>热键冲突</source>
+        <translation>Hotkey conflict</translation>
+    </message>
+    <message>
+        <source>版本：%1</source>
+        <translation>Version: %1</translation>
+    </message>
+    <message>
+        <source>结果面板已固定：选择后不隐藏，再点一次取消；Esc 仍可关闭</source>
+        <translation>Results pinned: will not hide on selection; click again to unpin; Esc still closes</translation>
+    </message>
+    <message>
+        <source>该插件没有提供独立设置界面</source>
+        <translation>This plugin has no separate settings UI</translation>
+    </message>
+    <message>
+        <source>读取 mlocate / plocate 的快照而不是遍历整个文件系统；</source>
+        <translation>Use the mlocate / plocate snapshot instead of walking the whole filesystem;</translation>
+    </message>
+</context></TS>

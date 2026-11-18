@@ -29,12 +29,23 @@ public:
     quint64 get(const QUrl &url, const QString &userAgent,
                 const QStringList &headers = QStringList(), int timeoutMs = 10000);
 
+    /** 流式下载到文件（不经过 8MB 内存上限）。失败时不会留下半成品文件。
+     *  返回请求序号；进度与结果分别通过 downloadProgress / downloadFinished 上报。 */
+    quint64 downloadToFile(const QUrl &url, const QString &userAgent,
+                           const QString &filePath, int timeoutMs = 60000);
+
 signals:
     /** status 为 0 表示没拿到响应；此时 error 非空。body 为原始字节（UTF-8 / JSON）。 */
     void finished(quint64 requestId, int status, const QByteArray &body, const QString &error);
+
+    /** 下载进度：total 为服务器 Content-Length，未知时为 -1。 */
+    void downloadProgress(quint64 requestId, qint64 received, qint64 total);
+    /** 下载结束：error 为空表示成功，filePath 为落盘路径。 */
+    void downloadFinished(quint64 requestId, const QString &filePath, const QString &error);
 
 private:
     quint64 m_nextId = 1;
     /** 尚未上报结果的请求；总时限先到后，工作线程迟到的结果会被丢弃。 */
     QSet<quint64> m_pending;
+    QSet<quint64> m_downloadPending;
 };

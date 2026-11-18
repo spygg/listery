@@ -4,6 +4,7 @@
 
 #include <QCoreApplication>
 #include <QDate>
+#include <QDebug>
 #include <QDir>
 #include <QFile>
 #include <QSettings>
@@ -27,9 +28,10 @@ const char *kKeyUseLocate = "index/useLocateIndex";
 const char *kKeyAutoUpdate = "update/autoCheck";
 const char *kKeyLastUpdateCheck = "update/lastCheck";
 const char *kKeySchemaVersion = "meta/schemaVersion";
-/** 跳过目录默认值的版本：升到 2 时把 AppData 下的缓存目录补进老用户的配置。 */
+/** 跳过目录默认值的版本：v2 补 AppData 缓存目录；v3 修复旧版设置界面把
+ *  多词目录名按空白拆散（"Code Cache" -> "Code", "Cache"）导致误伤 D:\code 的问题。 */
 const char *kKeySkipDirsVersion = "index/skipDirsVersion";
-const int kVSkipDirsVersion = 2;
+const int kVSkipDirsVersion = 3;
 
 QStringList defaultExtensions()
 {
@@ -391,6 +393,34 @@ void AppSettings::ensureDefaults()
     const int skipVersion = m_settings->value(QString::fromLatin1(kKeySkipDirsVersion), 1).toInt();
     if (skipVersion < kVSkipDirsVersion) {
         QStringList merged = skipDirectoryPatterns();
+
+        // v3：修复旧版设置界面按空白切分留下的碎片。被拆出来的裸 "Code" 会
+        // 匹配任意名为 code 的目录（典型如 D:\code），让整个盘的程序都索引不到；
+        // 这些碎片本身没有意义，丢掉后用完整的默认名单重建。
+        static const QStringList kFragments = QStringList()
+            << QStringLiteral("System") << QStringLiteral("Volume")
+            << QStringLiteral("Information") << QStringLiteral("Code")
+            << QStringLiteral("Cache") << QStringLiteral("Service")
+            << QStringLiteral("Worker");
+        bool mangled = false;
+        for (const QString &pattern : merged) {
+            if (kFragments.contains(pattern, Qt::CaseInsensitive)) {
+                mangled = true;
+                break;
+            }
+        }
+        if (mangled) {
+            QStringList repaired = defaultSkipPatterns();
+            for (const QString &pattern : merged) {
+                if (kFragments.contains(pattern, Qt::CaseInsensitive))
+                    continue;
+                if (!repaired.contains(pattern, Qt::CaseInsensitive))
+                    repaired.append(pattern);
+            }
+            merged = repaired;
+            qWarning("Listery: 已修复被旧版本拆散的跳过目录配置（D:\\code 不再被误跳过）");
+        }
+
         static const QStringList kAddedInV2 = QStringList()
             << QStringLiteral("Packages")
             << QStringLiteral("Cache")
