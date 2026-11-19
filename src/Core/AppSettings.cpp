@@ -368,6 +368,25 @@ bool AppSettings::isHotkeyDisabled(const QString &value)
     return value.compare(QLatin1String("none"), Qt::CaseInsensitive) == 0;
 }
 
+int AppSettings::pluginColumnWidth(const QString &pluginId, const QString &columnKey) const
+{
+    if (pluginId.isEmpty() || columnKey.isEmpty())
+        return 0;
+    return m_settings
+        ->value(QStringLiteral("plugins/%1/columnWidth/%2").arg(pluginId, columnKey), 0)
+        .toInt();
+}
+
+void AppSettings::setPluginColumnWidth(const QString &pluginId, const QString &columnKey,
+                                       int width)
+{
+    if (pluginId.isEmpty() || columnKey.isEmpty())
+        return;
+    m_settings->setValue(QStringLiteral("plugins/%1/columnWidth/%2").arg(pluginId, columnKey),
+                         width);
+    m_settings->sync();
+}
+
 int AppSettings::schemaVersion() const
 {
     return m_settings->value(QString::fromLatin1(kKeySchemaVersion), 1).toInt();

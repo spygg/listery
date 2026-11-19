@@ -30,6 +30,8 @@ public:
 
     /** 整张表一份列定义，不重复塞进每一行；空 = 经典两行样式。 */
     void setColumns(const QVector<ResultColumn> &columns);
+    /** 拖动表头时只换几何，不重置模型（否则大结果集每帧都会闪烁）。 */
+    void setColumnGeometry(const QVector<ResultColumn> &columns) { m_columns = columns; }
     const QVector<ResultColumn> &columns() const { return m_columns; }
     bool hasColumns() const { return !m_columns.isEmpty(); }
 

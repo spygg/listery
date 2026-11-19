@@ -21,6 +21,8 @@
 namespace {
 const int kRowHeight = 54;
 const int kIconSize = 32;
+/** 表头拖拽相关：命中缝隙的容差。 */
+const int kDividerHitRadius = 5;
 
 QFileIconProvider *iconProvider()
 {
@@ -231,6 +233,9 @@ void ResultColumnHeader::setColumns(const QVector<ResultColumn> &columns)
         m_sortKey.clear();
     }
     m_hoverColumn = -1;
+    m_hoverDivider = -1;
+    m_resizeColumn = -1;
+    m_resizeMoved = false;
     unsetCursor();
     update();
 }
@@ -252,6 +257,21 @@ int ResultColumnHeader::columnAt(const QPoint &position) const
     const QVector<QRect> cells = resultColumnRects(rect(), m_columns);
     for (int i = 0; i < cells.size(); ++i) {
         if (cells.at(i).contains(position))
+            return i;
+    }
+    return -1;
+}
+
+/** 命中的是第 i 列与第 i+1 列之间的边界（返回 i）。 */
+int ResultColumnHeader::dividerAt(const QPoint &position) const
+{
+    if (m_columns.size() < 2 || position.y() < 2 || position.y() > rect().height() - 2)
+        return -1;
+    const QVector<QRect> cells = resultColumnRects(rect(), m_columns);
+    for (int i = 0; i + 1 < cells.size(); ++i) {
+        // resultColumnRects 每列左右各缩了 4px；加回来就是原始边界线。
+        const int boundary = cells.at(i).right() + 4;
+        if (qAbs(position.x() - boundary) <= kDividerHitRadius)
             return i;
     }
     return -1;
@@ -321,16 +341,58 @@ void ResultColumnHeader::paintEvent(QPaintEvent *event)
             painter.drawPolygon(arrow);
         }
     }
+
+    // 列边界：平时一条浅线，悬停/拖动时高亮，提示这里可以拉伸宽度。
+    for (int i = 0; i + 1 < cells.size(); ++i) {
+        const int x = cells.at(i).right() + 4;
+        const bool active = (m_resizeColumn == i) || (m_resizeColumn < 0 && m_hoverDivider == i);
+        painter.setPen(QColor(active ? 0x1A6CF0 : 0xD9DEE6));
+        painter.drawLine(x, 6, x, rect().height() - 6);
+        if (active) {
+            const int cy = rect().center().y();
+            painter.setPen(QColor(0x1A, 0x6C, 0xF0));
+            painter.drawLine(x - 2, cy - 3, x - 2, cy + 3);
+            painter.drawLine(x + 2, cy - 3, x + 2, cy + 3);
+        }
+    }
 }
 
 void ResultColumnHeader::mouseMoveEvent(QMouseEvent *event)
 {
+    if (m_resizeColumn >= 0) {
+        const int delta = event->pos().x() - m_resizeStartX;
+        const int minDelta = ResultLayout::kMinColumnWidth - m_resizeStartWidth;
+        int maxDelta = m_resizeRightFixed ? m_resizeRightWidth - ResultLayout::kMinColumnWidth : 100000;
+        maxDelta = qMax(minDelta, maxDelta);
+        const int applied = qBound(minDelta, delta, maxDelta);
+        if (applied == 0 && !m_resizeMoved) {
+            QWidget::mouseMoveEvent(event);
+            return;
+        }
+        m_resizeMoved = true;
+        m_columns[m_resizeColumn].width = qMax(ResultLayout::kMinColumnWidth, m_resizeStartWidth + applied);
+        if (m_resizeRightFixed)
+            m_columns[m_resizeColumn + 1].width =
+                qMax(ResultLayout::kMinColumnWidth, m_resizeRightWidth - applied);
+        emit columnsResized(m_columns, false);
+        update();
+        QWidget::mouseMoveEvent(event);
+        return;
+    }
+
+    const int divider = dividerAt(event->pos());
+    if (divider != m_hoverDivider) {
+        m_hoverDivider = divider;
+        update();
+    }
     const int column = columnAt(event->pos());
     if (column != m_hoverColumn) {
         m_hoverColumn = column;
         update();
     }
-    if (sortableAt(column))
+    if (divider >= 0)
+        setCursor(Qt::SplitHCursor);
+    else if (sortableAt(column))
         setCursor(Qt::PointingHandCursor);
     else
         unsetCursor();
@@ -340,6 +402,24 @@ void ResultColumnHeader::mouseMoveEvent(QMouseEvent *event)
 void ResultColumnHeader::mousePressEvent(QMouseEvent *event)
 {
     if (event->button() == Qt::LeftButton) {
+        const int divider = dividerAt(event->pos());
+        if (divider >= 0) {
+            const QVector<QRect> cells = resultColumnRects(rect(), m_columns);
+            m_resizeColumn = divider;
+            m_resizeStartX = event->pos().x();
+            m_resizeStartWidth = cells.at(divider).width() + 8; // 还原左右各 4px 内边距
+            m_resizeRightFixed = divider + 1 < cells.size() && m_columns.at(divider + 1).width > 0;
+            m_resizeRightWidth =
+                m_resizeRightFixed ? cells.at(divider + 1).width() + 8 : 0;
+            m_resizeMoved = false;
+            m_pressedColumn = -1;
+            setCursor(Qt::SplitHCursor);
+            // 拖动可能移出表头，抓住鼠标才能持续收到 move/release
+            if (isVisible())
+                grabMouse();
+            update();
+            return;
+        }
         m_pressedColumn = columnAt(event->pos());
         update();
     }
@@ -349,6 +429,18 @@ void ResultColumnHeader::mousePressEvent(QMouseEvent *event)
 void ResultColumnHeader::mouseReleaseEvent(QMouseEvent *event)
 {
     if (event->button() == Qt::LeftButton) {
+        if (m_resizeColumn >= 0) {
+            const bool moved = m_resizeMoved;
+            m_resizeColumn = -1;
+            m_resizeMoved = false;
+            if (isVisible())
+                releaseMouse();
+            unsetCursor();
+            update();
+            if (moved)
+                emit columnsResized(m_columns, true);
+            return;
+        }
         const int column = columnAt(event->pos());
         const int pressed = m_pressedColumn;
         m_pressedColumn = -1;
@@ -361,9 +453,12 @@ void ResultColumnHeader::mouseReleaseEvent(QMouseEvent *event)
 
 void ResultColumnHeader::leaveEvent(QEvent *event)
 {
-    m_hoverColumn = -1;
-    unsetCursor();
-    update();
+    if (m_resizeColumn < 0) {
+        m_hoverColumn = -1;
+        m_hoverDivider = -1;
+        unsetCursor();
+        update();
+    }
     QWidget::leaveEvent(event);
 }
 

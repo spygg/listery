@@ -2,6 +2,7 @@
 
 #include "Core/PluginHost.h"
 #include "Core/SearchEngine.h"
+#include "Ui/ResultColumns.h"
 
 #include <QPoint>
 #include <QWidget>
@@ -14,6 +15,7 @@ class QMenu;
 class QAction;
 class QTimer;
 class QToolButton;
+class AppSettings;
 class PluginHost;
 class ResultModel;
 class ResultColumnHeader;
@@ -58,6 +60,8 @@ public:
 
     /** 插件宿主：设置后面板才能进入插件模式。 */
     void setPluginHost(PluginHost *host);
+    /** 设置对象用于持久化用户拖动后的列宽；不设置时列宽只在本次会话有效。 */
+    void setSettings(AppSettings *settings);
 
     /** 进入插件模式并弹出面板（由插件热键触发）。 */
     void beginPluginSession(const QString &pluginId, const QString &displayName,
@@ -114,9 +118,18 @@ private:
                          const QString &placeholder);
     /** 表头点击：把列排序键交给插件，成功后重新发起当前查询拿全局排序结果。 */
     void requestColumnSort(int column);
+    /** 表头列宽被拖动：预览时只同步几何，松手后写设置。 */
+    void columnsResized(const QVector<ResultColumn> &columns, bool committed);
+
+    /** 列标识：优先用插件排序键，退化到列名（老插件没有排序键）。 */
+    QString columnKey(const ResultColumn &column) const;
+    /** 把用户自定义列宽覆盖到插件本次提交的列定义上。 */
+    void applyColumnWidths(QVector<ResultColumn> &columns) const;
+    void saveColumnWidths(const QVector<ResultColumn> &columns) const;
 
     SearchService *m_service = nullptr;
     PluginHost *m_pluginHost = nullptr;
+    AppSettings *m_settings = nullptr;
     LauncherMode m_mode = LauncherMode::Programs;
     QString m_pluginId;
     QString m_pluginName;

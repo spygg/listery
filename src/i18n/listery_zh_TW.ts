@@ -178,6 +178,10 @@
         <source>检查更新失败：%1</source>
         <translation>檢查更新失敗：%1</translation>
     </message>
+    <message>
+        <source>插件管理…</source>
+        <translation>外掛管理…</translation>
+    </message>
 </context>
 <context>
     <name>LaunchService</name>
@@ -672,4 +676,103 @@
         <source>读取 mlocate / plocate 的快照而不是遍历整个文件系统；</source>
         <translation>讀取 mlocate / plocate 的快照，而非遍歷整個檔案系統；</translation>
     </message>
-</context></TS>
+</context><context>
+    <name>PluginManagerDialog</name>
+    <message>
+        <source>插件管理</source>
+        <translation>外掛管理</translation>
+    </message>
+    <message>
+        <source>未发现插件</source>
+        <translation>未發現外掛</translation>
+    </message>
+    <message>
+        <source>把 .dll / .so / .dylib 放进插件目录，重启 Listery 后即可在这里管理。</source>
+        <translation>把 .dll / .so / .dylib 放進外掛目錄，重新啟動 Listery 後即可在這裡管理。</translation>
+    </message>
+    <message>
+        <source>插件目录：%1</source>
+        <translation>外掛目錄：%1</translation>
+    </message>
+    <message>
+        <source>打开目录</source>
+        <translation>開啟目錄</translation>
+    </message>
+    <message>
+        <source>保存</source>
+        <translation>儲存</translation>
+    </message>
+    <message>
+        <source>取消</source>
+        <translation>取消</translation>
+    </message>
+    <message>
+        <source>启用该插件</source>
+        <translation>啟用此外掛</translation>
+    </message>
+    <message>
+        <source>插件未加载，无法启用</source>
+        <translation>外掛未載入，無法啟用</translation>
+    </message>
+    <message>
+        <source>加载失败：%1</source>
+        <translation>載入失敗：%1</translation>
+    </message>
+    <message>
+        <source>留空表示不占用全局热键（仍可从托盘菜单进入）</source>
+        <translation>留空表示不占用全域熱鍵（仍可從系統匣選單進入）</translation>
+    </message>
+    <message>
+        <source>全局热键</source>
+        <translation>全域快速鍵</translation>
+    </message>
+    <message>
+        <source>插件设置…</source>
+        <translation>外掛設定…</translation>
+    </message>
+    <message>
+        <source>该插件没有提供独立设置界面</source>
+        <translation>此外掛沒有提供獨立設定介面</translation>
+    </message>
+    <message>
+        <source>版本：%1</source>
+        <translation>版本：%1</translation>
+    </message>
+    <message>
+        <source>未知</source>
+        <translation>未知</translation>
+    </message>
+    <message>
+        <source>文件：%1</source>
+        <translation>檔案：%1</translation>
+    </message>
+    <message>
+        <source>%1（未加载）</source>
+        <translation>%1（未載入）</translation>
+    </message>
+    <message>
+        <source>%1（已停用）</source>
+        <translation>%1（已停用）</translation>
+    </message>
+    <message>
+        <source>已停用</source>
+        <translation>已停用</translation>
+    </message>
+    <message>
+        <source>已加载</source>
+        <translation>已載入</translation>
+    </message>
+    <message>
+        <source>未加载</source>
+        <translation>未載入</translation>
+    </message>
+    <message>
+        <source>热键冲突</source>
+        <translation>快速鍵衝突</translation>
+    </message>
+    <message>
+        <source>%1 和 %2 都使用 %3，后一个将无法触发。请改成不同的组合，或留空表示不占用。</source>
+        <translation>%1 和 %2 都使用 %3，後一個將無法觸發。請改成不同的組合，或留空表示不佔用。</translation>
+    </message>
+</context>
+</TS>

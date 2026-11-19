@@ -139,6 +139,7 @@ bool AppController::initialize()
     m_usageThread->start();
 
     m_window = new LauncherWindow(m_searchService, m_settings.maxResults());
+    m_window->setSettings(&m_settings);
     m_window->setHideOnFocusLost(m_settings.hideWhenFocusLost());
     m_window->setPinned(m_settings.pinResults());
     m_window->setStatusText(tr("索引尚未建立"));

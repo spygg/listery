@@ -178,6 +178,10 @@ Vous pouvez ouvrir la recherche depuis le menu de la zone de notification.</tran
         <source>检查更新失败：%1</source>
         <translation>Échec de la recherche de mises à jour : %1</translation>
     </message>
+    <message>
+        <source>插件管理…</source>
+        <translation>Plugins…</translation>
+    </message>
 </context>
 <context>
     <name>LaunchService</name>
@@ -672,4 +676,103 @@ Vous pouvez ouvrir la recherche depuis le menu de la zone de notification.</tran
         <source>读取 mlocate / plocate 的快照而不是遍历整个文件系统；</source>
         <translation>Utiliser l'instantané mlocate / plocate au lieu de parcourir tout le système de fichiers ;</translation>
     </message>
-</context></TS>
+</context><context>
+    <name>PluginManagerDialog</name>
+    <message>
+        <source>插件管理</source>
+        <translation>Gestionnaire de plugins</translation>
+    </message>
+    <message>
+        <source>未发现插件</source>
+        <translation>Aucun plugin trouvé</translation>
+    </message>
+    <message>
+        <source>把 .dll / .so / .dylib 放进插件目录，重启 Listery 后即可在这里管理。</source>
+        <translation>Placez les fichiers .dll / .so / .dylib dans le dossier des plugins et redémarrez Listery pour les gérer ici.</translation>
+    </message>
+    <message>
+        <source>插件目录：%1</source>
+        <translation>Dossier des plugins : %1</translation>
+    </message>
+    <message>
+        <source>打开目录</source>
+        <translation>Ouvrir le dossier</translation>
+    </message>
+    <message>
+        <source>保存</source>
+        <translation>Enregistrer</translation>
+    </message>
+    <message>
+        <source>取消</source>
+        <translation>Annuler</translation>
+    </message>
+    <message>
+        <source>启用该插件</source>
+        <translation>Activer ce plugin</translation>
+    </message>
+    <message>
+        <source>插件未加载，无法启用</source>
+        <translation>Plugin non chargé, impossible de l'activer</translation>
+    </message>
+    <message>
+        <source>加载失败：%1</source>
+        <translation>Échec du chargement : %1</translation>
+    </message>
+    <message>
+        <source>留空表示不占用全局热键（仍可从托盘菜单进入）</source>
+        <translation>Laisser vide pour ne pas occuper de raccourci global (toujours accessible depuis le menu de la zone de notification)</translation>
+    </message>
+    <message>
+        <source>全局热键</source>
+        <translation>Raccourci global</translation>
+    </message>
+    <message>
+        <source>插件设置…</source>
+        <translation>Paramètres du plugin…</translation>
+    </message>
+    <message>
+        <source>该插件没有提供独立设置界面</source>
+        <translation>Ce plugin n'a pas d'interface de paramètres dédiée</translation>
+    </message>
+    <message>
+        <source>版本：%1</source>
+        <translation>Version : %1</translation>
+    </message>
+    <message>
+        <source>未知</source>
+        <translation>Inconnu</translation>
+    </message>
+    <message>
+        <source>文件：%1</source>
+        <translation>Fichier : %1</translation>
+    </message>
+    <message>
+        <source>%1（未加载）</source>
+        <translation>%1 (non chargé)</translation>
+    </message>
+    <message>
+        <source>%1（已停用）</source>
+        <translation>%1 (désactivé)</translation>
+    </message>
+    <message>
+        <source>已停用</source>
+        <translation>Désactivé</translation>
+    </message>
+    <message>
+        <source>已加载</source>
+        <translation>Chargé</translation>
+    </message>
+    <message>
+        <source>未加载</source>
+        <translation>Non chargé</translation>
+    </message>
+    <message>
+        <source>热键冲突</source>
+        <translation>Conflit de raccourci</translation>
+    </message>
+    <message>
+        <source>%1 和 %2 都使用 %3，后一个将无法触发。请改成不同的组合，或留空表示不占用。</source>
+        <translation>%1 et %2 utilisent tous deux %3 ; le second ne se déclenchera pas. Choisissez d'autres combinaisons ou laissez un champ vide.</translation>
+    </message>
+</context>
+</TS>

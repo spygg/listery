@@ -178,6 +178,10 @@ You can open the search box from the tray menu.</translation>
         <source>检查更新失败：%1</source>
         <translation>Update check failed: %1</translation>
     </message>
+    <message>
+        <source>插件管理…</source>
+        <translation>Plugins…</translation>
+    </message>
 </context>
 <context>
     <name>LaunchService</name>
@@ -672,4 +676,103 @@ You can open the search box from the tray menu.</translation>
         <source>读取 mlocate / plocate 的快照而不是遍历整个文件系统；</source>
         <translation>Use the mlocate / plocate snapshot instead of walking the whole filesystem;</translation>
     </message>
-</context></TS>
+</context><context>
+    <name>PluginManagerDialog</name>
+    <message>
+        <source>插件管理</source>
+        <translation>Plugin Manager</translation>
+    </message>
+    <message>
+        <source>未发现插件</source>
+        <translation>No plugins found</translation>
+    </message>
+    <message>
+        <source>把 .dll / .so / .dylib 放进插件目录，重启 Listery 后即可在这里管理。</source>
+        <translation>Put .dll / .so / .dylib files in the plugins folder and restart Listery to manage them here.</translation>
+    </message>
+    <message>
+        <source>插件目录：%1</source>
+        <translation>Plugin folder: %1</translation>
+    </message>
+    <message>
+        <source>打开目录</source>
+        <translation>Open folder</translation>
+    </message>
+    <message>
+        <source>保存</source>
+        <translation>Save</translation>
+    </message>
+    <message>
+        <source>取消</source>
+        <translation>Cancel</translation>
+    </message>
+    <message>
+        <source>启用该插件</source>
+        <translation>Enable this plugin</translation>
+    </message>
+    <message>
+        <source>插件未加载，无法启用</source>
+        <translation>Plugin is not loaded; cannot enable it</translation>
+    </message>
+    <message>
+        <source>加载失败：%1</source>
+        <translation>Failed to load: %1</translation>
+    </message>
+    <message>
+        <source>留空表示不占用全局热键（仍可从托盘菜单进入）</source>
+        <translation>Leave empty to avoid taking a global hotkey (still reachable from the tray menu)</translation>
+    </message>
+    <message>
+        <source>全局热键</source>
+        <translation>Global hotkey</translation>
+    </message>
+    <message>
+        <source>插件设置…</source>
+        <translation>Plugin Settings…</translation>
+    </message>
+    <message>
+        <source>该插件没有提供独立设置界面</source>
+        <translation>This plugin has no separate settings UI</translation>
+    </message>
+    <message>
+        <source>版本：%1</source>
+        <translation>Version: %1</translation>
+    </message>
+    <message>
+        <source>未知</source>
+        <translation>Unknown</translation>
+    </message>
+    <message>
+        <source>文件：%1</source>
+        <translation>File: %1</translation>
+    </message>
+    <message>
+        <source>%1（未加载）</source>
+        <translation>%1 (not loaded)</translation>
+    </message>
+    <message>
+        <source>%1（已停用）</source>
+        <translation>%1 (disabled)</translation>
+    </message>
+    <message>
+        <source>已停用</source>
+        <translation>Disabled</translation>
+    </message>
+    <message>
+        <source>已加载</source>
+        <translation>Loaded</translation>
+    </message>
+    <message>
+        <source>未加载</source>
+        <translation>Not loaded</translation>
+    </message>
+    <message>
+        <source>热键冲突</source>
+        <translation>Hotkey conflict</translation>
+    </message>
+    <message>
+        <source>%1 和 %2 都使用 %3，后一个将无法触发。请改成不同的组合，或留空表示不占用。</source>
+        <translation>%1 and %2 both use %3; the latter will not trigger. Choose different combinations, or leave one empty.</translation>
+    </message>
+</context>
+</TS>

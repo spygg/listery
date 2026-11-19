@@ -81,6 +81,10 @@ public:
     void setPluginHotkey(const QString &pluginId, const QString &hotkey);
     static bool isHotkeyDisabled(const QString &value);
 
+    /** 用户拖动插件结果表头后的列宽（0 / 负数表示沿用插件默认值）。 */
+    int pluginColumnWidth(const QString &pluginId, const QString &columnKey) const;
+    void setPluginColumnWidth(const QString &pluginId, const QString &columnKey, int width);
+
     // 在线升级
     /** 启动时自动检查更新（每天至多一次）。 */
     bool autoCheckUpdates() const;

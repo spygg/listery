@@ -770,6 +770,34 @@ int SelfTest::run()
         }
         check(clicked == 1, QStringLiteral("点击“大小”表头发出 columnClicked(1)"));
 
+        // 拖动“名称 / 大小”边界：左列变宽、右列（固定宽度）变窄并发出新列宽
+        clicked = -1;
+        QVector<ResultColumn> resized;
+        QObject::connect(&header, &ResultColumnHeader::columnsResized,
+                         [&resized](const QVector<ResultColumn> &value, bool committed) {
+                             if (committed)
+                                 resized = value;
+                         });
+        if (cells.size() == 3) {
+            const int boundary = cells.at(0).right() + 4;
+            const int y = header.rect().center().y();
+            const QPoint start(boundary, y);
+            const QPoint moved(boundary + 30, y);
+            QMouseEvent press(QEvent::MouseButtonPress, start, Qt::LeftButton,
+                              Qt::LeftButton, Qt::NoModifier);
+            QMouseEvent move(QEvent::MouseMove, moved, Qt::NoButton,
+                             Qt::LeftButton, Qt::NoModifier);
+            QMouseEvent release(QEvent::MouseButtonRelease, moved, Qt::LeftButton,
+                                Qt::NoButton, Qt::NoModifier);
+            QApplication::sendEvent(&header, &press);
+            QApplication::sendEvent(&header, &move);
+            QApplication::sendEvent(&header, &release);
+        }
+        check(resized.size() == 3 && resized.at(0).width > columns.at(0).width
+                  && resized.at(1).width < columns.at(1).width,
+              QStringLiteral("拖动表头边界能改列宽并发出 columnsResized"));
+        check(clicked == -1, QStringLiteral("拖动列宽不会误触发排序"));
+
         clicked = -1;
         ResultColumnHeader legacyHeader;
         legacyHeader.resize(600, ResultLayout::kColumnHeaderHeight);

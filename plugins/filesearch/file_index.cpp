@@ -450,8 +450,12 @@ uint64_t nameSignature(const char *text, size_t len)
 uint64_t querySignature(const std::vector<std::string> &tokens)
 {
     uint64_t mask = 0;
-    for (const std::string &token : tokens)
+    for (const std::string &token : tokens) {
+        // 通配符里的 * ? 不是文件名的组成部分，参与签名预筛会把所有结果挡掉
+        if (hasPathWildcard(token))
+            continue;
         mask |= nameSignature(token.data(), token.size());
+    }
     return mask;
 }
 
@@ -777,7 +781,7 @@ bool matchesFilters(const Index &index, const FileEntry &file, const char *name,
 
     if (!query.plain.empty()) {
         for (const std::string &token : query.plain) {
-            if (containsNoCase(name, nameLen, token.data(), token.size()))
+            if (pathTokenMatches(name, nameLen, token))
                 continue;
             if (allowPathForPlain && pathTokenMatches(dir, dirLen, token))
                 continue;
@@ -1288,19 +1292,30 @@ std::vector<uint32_t> searchIndex(const Index &index, const ParsedQuery &query,
     const Signature256 pathMask = querySignature256(query.path);
     std::vector<uint64_t> plainMasks;
     plainMasks.reserve(query.plain.size());
-    for (const std::string &token : query.plain)
-        plainMasks.push_back(nameSignature(token.data(), token.size()));
+    for (const std::string &token : query.plain) {
+        // 通配符模式没有固定的 bigram 签名，跳过预筛（0 表示不参与）
+        plainMasks.push_back(hasPathWildcard(token)
+                                 ? 0
+                                 : nameSignature(token.data(), token.size()));
+    }
     std::vector<Signature256> plainDirMasks;
     plainDirMasks.reserve(query.plain.size());
-    for (const std::string &token : query.plain)
-        plainDirMasks.push_back(nameSignature256(token.data(), token.size()));
+    for (const std::string &token : query.plain) {
+        if (hasPathWildcard(token))
+            plainDirMasks.emplace_back();
+        else
+            plainDirMasks.push_back(nameSignature256(token.data(), token.size()));
+    }
     // 正则没法直接做签名预筛，但正则里固定的字面量可以：先挡住绝大多数不可能命中的文件。
     std::vector<uint64_t> regexMasks;
     regexMasks.reserve(query.regexKeys.size());
     for (const std::string &key : query.regexKeys)
         regexMasks.push_back(nameSignature(key.data(), key.size()));
     // 粗筛：签名并集都不包含某个关键字的 bigram，说明全库不可能命中。
+    // 通配符 token 的 * ? 不是字面量，不能参与签名预筛。
     for (const std::string &token : query.plain) {
+        if (hasPathWildcard(token))
+            continue;
         if (!signaturePossible(index.nameSigUnion, token)
             && !signaturePossible(index.dirSigUnion, token))
             return results;
@@ -1473,7 +1488,7 @@ std::vector<uint32_t> searchIndex(const Index &index, const ParsedQuery &query,
     NameCursor cursor(index);
 
     // 1. 完整文件名命中（用户输入带扩展名的全名时最快）
-    if (query.plain.size() == 1) {
+    if (query.plain.size() == 1 && !hasPathWildcard(query.plain.front())) {
         const std::string &needle = query.plain.front();
         uint32_t pos = static_cast<uint32_t>(lowerBoundName(index, needle));
         cursor.seekBefore(pos);
@@ -1497,6 +1512,8 @@ std::vector<uint32_t> searchIndex(const Index &index, const ParsedQuery &query,
     // 2. 最长关键字的词首匹配
     const std::string *primary = nullptr;
     for (const std::string &token : query.plain) {
+        if (hasPathWildcard(token))
+            continue; // 通配符模式不能拿来做前缀定位
         if (primary == nullptr || token.size() > primary->size())
             primary = &token;
     }
@@ -1527,7 +1544,8 @@ std::vector<uint32_t> searchIndex(const Index &index, const ParsedQuery &query,
 
     bool anyPathPossible = false;
     for (const std::string &token : query.plain) {
-        if (signaturePossible(index.dirSigUnion, token)) {
+        // 通配符模式无法用签名排除目录命中，保守地认为路径可能命中
+        if (hasPathWildcard(token) || signaturePossible(index.dirSigUnion, token)) {
             anyPathPossible = true;
             break;
         }
@@ -1567,14 +1585,15 @@ std::vector<uint32_t> searchIndex(const Index &index, const ParsedQuery &query,
                         continue;
                     if (!buildDirPathInto(index, d, dirPath, dirStack))
                         continue;
-                    if (containsNoCase(dirPath.data(), dirPath.size(), token.data(), token.size()))
+                    if (pathTextMatches(dirPath.data(), dirPath.size(), token.data(),
+                                        token.size()))
                         dirMatches[d] |= bit;
                     continue;
                 }
                 if (!plainDirMasks[k].empty() && !index.dirSigs[d].contains(plainDirMasks[k]))
                     continue; // 路径签名里连 bigram 都没有，叶子名不可能命中
                 const char *leaf = index.dirNames.data() + dir.nameOff;
-                if (containsNoCase(leaf, dir.nameLen, token.data(), token.size()))
+                if (pathTextMatches(leaf, dir.nameLen, token.data(), token.size()))
                     dirMatches[d] |= bit;
             }
         }
@@ -1649,8 +1668,8 @@ std::vector<uint32_t> searchIndex(const Index &index, const ParsedQuery &query,
             bool byName = true;
             for (size_t k = 0; matched && k < query.plain.size(); ++k) {
                 const std::string &token = query.plain[k];
-                if (containsNoCase(nameBuffer.data(), nameBuffer.size(), token.data(),
-                                   token.size()))
+                if (pathTextMatches(nameBuffer.data(), nameBuffer.size(), token.data(),
+                                    token.size()))
                     continue;
                 if (allowPathTokens && k < trackedTokens && (dirBits & (1u << k)) != 0) {
                     byName = false;

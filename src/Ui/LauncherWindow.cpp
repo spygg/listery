@@ -1,5 +1,6 @@
 #include "Ui/LauncherWindow.h"
 
+#include "Core/AppSettings.h"
 #include "Core/LaunchService.h"
 #include "Core/PluginHost.h"
 #include "Core/QtCompat.h"
@@ -215,6 +216,8 @@ void LauncherWindow::buildUi()
     m_columnHeader->hide();
     connect(m_columnHeader, &ResultColumnHeader::columnClicked,
             this, &LauncherWindow::requestColumnSort);
+    connect(m_columnHeader, &ResultColumnHeader::columnsResized,
+            this, &LauncherWindow::columnsResized);
     cardLayout->addWidget(m_columnHeader);
     cardLayout->addWidget(m_list);
 
@@ -332,6 +335,49 @@ void LauncherWindow::setPluginHost(PluginHost *host)
         connect(m_pluginHost, &PluginHost::queryFinished,
                 this, &LauncherWindow::applyPluginResults);
     }
+}
+
+void LauncherWindow::setSettings(AppSettings *settings)
+{
+    m_settings = settings;
+}
+
+QString LauncherWindow::columnKey(const ResultColumn &column) const
+{
+    return column.sortKey.isEmpty() ? column.label : column.sortKey;
+}
+
+void LauncherWindow::applyColumnWidths(QVector<ResultColumn> &columns) const
+{
+    if (!m_settings || m_pluginId.isEmpty())
+        return;
+    for (ResultColumn &column : columns) {
+        const int width = m_settings->pluginColumnWidth(m_pluginId, columnKey(column));
+        if (width >= ResultLayout::kMinColumnWidth)
+            column.width = width;
+    }
+}
+
+void LauncherWindow::saveColumnWidths(const QVector<ResultColumn> &columns) const
+{
+    if (!m_settings || m_pluginId.isEmpty())
+        return;
+    for (const ResultColumn &column : columns) {
+        if (column.width >= ResultLayout::kMinColumnWidth)
+            m_settings->setPluginColumnWidth(m_pluginId, columnKey(column), column.width);
+    }
+}
+
+void LauncherWindow::columnsResized(const QVector<ResultColumn> &columns, bool committed)
+{
+    if (!committed) {
+        // 拖动过程中只换绘制用的几何；几千条结果时 beginResetModel 会明显卡顿。
+        m_model->setColumnGeometry(columns);
+        m_list->viewport()->update();
+        return;
+    }
+    m_model->setColumns(columns);
+    saveColumnWidths(columns);
 }
 
 void LauncherWindow::enterPluginMode(const QString &pluginId, const QString &displayName,
@@ -522,7 +568,9 @@ void LauncherWindow::applyPluginResults(quint64 sequence, QString pluginId, QStr
         return;
 
     // 列定义只在本次查询有效：命令类结果 / 旧插件没有列定义时回到经典两行样式。
-    const QVector<ResultColumn> columns = parseColumnSpec(columnSpec);
+    // 插件每次查询都会重发默认列宽，这里把用户拖动过的列宽盖回去。
+    QVector<ResultColumn> columns = parseColumnSpec(columnSpec);
+    applyColumnWidths(columns);
     m_model->setColumns(columns);
     m_columnHeader->setColumns(columns);
 

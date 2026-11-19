@@ -16,6 +16,8 @@ constexpr int kColumnLeftInset = 20;
 constexpr int kColumnBadgeSize = 20;
 constexpr int kColumnGap = 10;
 constexpr int kColumnRightInset = 14;
+/** 用户拖动表头时的列宽下限。 */
+constexpr int kMinColumnWidth = 48;
 /** SDK 里列定义 / 单元格文本的分隔符（ASCII US）。 */
 constexpr char kColumnSeparator = '\x1f';
 } // namespace ResultLayout
@@ -49,6 +51,7 @@ QVector<QRect> resultColumnRects(const QRect &rowRect, const QVector<ResultColum
  * 列视图表头：常驻在输入框下方、结果列表上方。
  * 不参与选中、不接收焦点；点击带排序键的列发出 columnClicked，
  * 当前排序列右侧画一个箭头（升序向上、降序向下），参照 Everything。
+ * 列与列之间的缝隙可以左右拖动改宽度，松手后发出 columnsResized。
  */
 class ResultColumnHeader : public QWidget
 {
@@ -70,6 +73,11 @@ public:
 signals:
     /** 点击了可排序列，参数是列下标。 */
     void columnClicked(int column);
+    /**
+     * 拖动列边界时给出新的整组列宽。
+     * committed=false 是拖拽中的预览，true 是松手后的最终结果（调用方据此持久化）。
+     */
+    void columnsResized(const QVector<ResultColumn> &columns, bool committed);
 
 protected:
     void paintEvent(QPaintEvent *event) override;
@@ -80,6 +88,7 @@ protected:
 
 private:
     int columnAt(const QPoint &position) const;
+    int dividerAt(const QPoint &position) const;
     bool sortableAt(int column) const;
 
     QVector<ResultColumn> m_columns;
@@ -87,4 +96,11 @@ private:
     bool m_ascending = true;
     int m_hoverColumn = -1;
     int m_pressedColumn = -1;
+    int m_hoverDivider = -1;
+    int m_resizeColumn = -1;
+    int m_resizeStartX = 0;
+    int m_resizeStartWidth = 0;
+    int m_resizeRightWidth = 0;
+    bool m_resizeRightFixed = false;
+    bool m_resizeMoved = false;
 };
