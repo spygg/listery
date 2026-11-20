@@ -182,6 +182,10 @@
         <source>插件管理…</source>
         <translation>外掛管理…</translation>
     </message>
+    <message>
+        <source>%1（%2）</source>
+        <translation>%1（%2）</translation>
+    </message>
 </context>
 <context>
     <name>LaunchService</name>
@@ -773,6 +777,33 @@
     <message>
         <source>%1 和 %2 都使用 %3，后一个将无法触发。请改成不同的组合，或留空表示不占用。</source>
         <translation>%1 和 %2 都使用 %3，後一個將無法觸發。請改成不同的組合，或留空表示不佔用。</translation>
+    </message>
+</context>
+<context>
+    <name>PluginMetadata</name>
+    <message>
+        <source>文件搜索</source>
+        <translation>檔案搜尋</translation>
+    </message>
+    <message>
+        <source>用 Alt+S 快速搜索本机文件；Everything 风格的多列结果（列可配置、表头点击排序），自建索引，不依赖 Everything。</source>
+        <translation>用 Alt+S 快速搜尋本機檔案；Everything 風格的多欄結果（欄位可設定、點擊表頭排序），自建索引，不依賴 Everything。</translation>
+    </message>
+    <message>
+        <source>英汉翻译</source>
+        <translation>英漢翻譯</translation>
+    </message>
+    <message>
+        <source>输入英文给汉语，输入汉语给英文；回车把译文复制到剪贴板</source>
+        <translation>輸入英文給漢語，輸入漢語給英文；Enter 將譯文複製到剪貼簿。</translation>
+    </message>
+    <message>
+        <source>法汉翻译</source>
+        <translation>法漢翻譯</translation>
+    </message>
+    <message>
+        <source>输入法语给汉语，输入汉语给法语；回车把译文复制到剪贴板</source>
+        <translation>輸入法語給漢語，輸入漢語給法語；Enter 將譯文複製到剪貼簿。</translation>
     </message>
 </context>
 </TS>

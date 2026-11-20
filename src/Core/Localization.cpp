@@ -1,5 +1,6 @@
 #include "Core/Localization.h"
 
+#include <QByteArray>
 #include <QCoreApplication>
 #include <QLocale>
 #include <QTranslator>
@@ -100,4 +101,12 @@ bool Localization::install(const QString &requested)
 QString Localization::current()
 {
     return g_current.isEmpty() ? QString::fromLatin1(kSourceLanguage) : g_current;
+}
+
+QString Localization::pluginText(const QString &source)
+{
+    if (source.isEmpty())
+        return source;
+    const QByteArray key = source.toUtf8();
+    return QCoreApplication::translate("PluginMetadata", key.constData());
 }

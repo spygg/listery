@@ -394,7 +394,7 @@ void AppController::rebuildPluginMenu()
             continue;
         const QString label = info.hotkey.isEmpty()
                                   ? info.name
-                                  : QStringLiteral("%1（%2）").arg(info.name, info.hotkey);
+                                  : tr("%1（%2）").arg(info.name, info.hotkey);
         QAction *action = m_pluginMenu->addAction(label);
         const QString pluginId = info.id;
         connect(action, &QAction::triggered, this, [this, pluginId]() {
@@ -997,8 +997,11 @@ void AppController::openPluginManager()
 void AppController::applySettings()
 {
     // 语言先于其它设置生效，刷新界面文字时用的就是新翻译
-    if (Localization::install(m_settings.language()))
+    if (Localization::install(m_settings.language())) {
+        if (m_plugins)
+            m_plugins->retranslate();
         retranslateUi();
+    }
 
     if (m_window) {
         m_window->setMaxResults(m_settings.maxResults());
@@ -1037,6 +1040,8 @@ void AppController::retranslateUi()
         m_actionPlugins->setText(tr("插件管理…"));
     if (m_pluginMenu)
         m_pluginMenu->setTitle(tr("插件"));
+    // 子菜单项是插件名，语言切换后要用新的译文重建
+    rebuildPluginMenu();
     if (m_actionCheckUpdate)
         m_actionCheckUpdate->setText(tr("检查更新…"));
     if (m_actionQuit)

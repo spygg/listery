@@ -42,6 +42,9 @@ struct PluginInfo
     QString name;
     QString version;
     QString description;
+    /** 插件描述符里的原文（简体中文）；切换语言时用它重新查表。 */
+    QString rawName;
+    QString rawDescription;
     QString filePath;
     QString defaultHotkey;
     /** 当前生效的热键（用户改过就用用户的，否则用插件默认值）。 */
@@ -82,6 +85,8 @@ public:
     void setEnabled(const QString &id, bool enabled);
     void setHotkey(const QString &id, const QString &hotkey);
     QStringList registeredHotkeys() const;
+    /** 界面语言变化后，用插件原文重新生成显示名与说明。 */
+    void retranslate();
 
     /** 发起一次插件查询，返回序号（与 SearchService 的序号语义一致）。 */
     quint64 beginQuery(const QString &id, const QString &query, int maxResults = 12);

@@ -1151,11 +1151,22 @@ int SelfTest::run()
                   == QStringLiteral("No results"),
               QStringLiteral("英文翻译生效：%1")
                   .arg(QCoreApplication::translate("LauncherWindow", "没有结果")));
+        check(Localization::pluginText(QStringLiteral("文件搜索"))
+                  == QStringLiteral("File Search"),
+              QStringLiteral("插件名跟随英文界面：%1")
+                  .arg(Localization::pluginText(QStringLiteral("文件搜索"))));
+        check(QCoreApplication::translate("AppController", "%1（%2）")
+                  == QStringLiteral("%1 (%2)"),
+              QStringLiteral("托盘插件菜单的热键格式跟随语言"));
 
         Localization::install(QStringLiteral("zh_TW"));
         check(QCoreApplication::translate("SettingsDialog", "保存") == QStringLiteral("儲存"),
               QStringLiteral("繁体翻译生效：%1")
                   .arg(QCoreApplication::translate("SettingsDialog", "保存")));
+        check(Localization::pluginText(QStringLiteral("英汉翻译"))
+                  == QStringLiteral("英漢翻譯"),
+              QStringLiteral("插件名跟随繁体界面：%1")
+                  .arg(Localization::pluginText(QStringLiteral("英汉翻译"))));
 
         Localization::install(previous);
         check(Localization::current() == previous,

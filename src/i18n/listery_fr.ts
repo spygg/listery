@@ -182,6 +182,10 @@ Vous pouvez ouvrir la recherche depuis le menu de la zone de notification.</tran
         <source>插件管理…</source>
         <translation>Plugins…</translation>
     </message>
+    <message>
+        <source>%1（%2）</source>
+        <translation>%1 (%2)</translation>
+    </message>
 </context>
 <context>
     <name>LaunchService</name>
@@ -773,6 +777,33 @@ Vous pouvez ouvrir la recherche depuis le menu de la zone de notification.</tran
     <message>
         <source>%1 和 %2 都使用 %3，后一个将无法触发。请改成不同的组合，或留空表示不占用。</source>
         <translation>%1 et %2 utilisent tous deux %3 ; le second ne se déclenchera pas. Choisissez d'autres combinaisons ou laissez un champ vide.</translation>
+    </message>
+</context>
+<context>
+    <name>PluginMetadata</name>
+    <message>
+        <source>文件搜索</source>
+        <translation>Recherche de fichiers</translation>
+    </message>
+    <message>
+        <source>用 Alt+S 快速搜索本机文件；Everything 风格的多列结果（列可配置、表头点击排序），自建索引，不依赖 Everything。</source>
+        <translation>Recherchez rapidement les fichiers locaux avec Alt+S ; résultats multicolonnes façon Everything (colonnes configurables, tri en cliquant sur l'en-tête), avec un index intégré qui ne dépend pas d'Everything.</translation>
+    </message>
+    <message>
+        <source>英汉翻译</source>
+        <translation>Traduction anglais-chinois</translation>
+    </message>
+    <message>
+        <source>输入英文给汉语，输入汉语给英文；回车把译文复制到剪贴板</source>
+        <translation>Saisissez de l'anglais pour obtenir du chinois, ou du chinois pour obtenir de l'anglais ; Entrée copie la traduction dans le presse-papiers.</translation>
+    </message>
+    <message>
+        <source>法汉翻译</source>
+        <translation>Traduction français-chinois</translation>
+    </message>
+    <message>
+        <source>输入法语给汉语，输入汉语给法语；回车把译文复制到剪贴板</source>
+        <translation>Saisissez du français pour obtenir du chinois, ou du chinois pour obtenir du français ; Entrée copie la traduction dans le presse-papiers.</translation>
     </message>
 </context>
 </TS>

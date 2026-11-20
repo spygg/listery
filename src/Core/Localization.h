@@ -29,4 +29,10 @@ bool install(const QString &code);
 /** 当前生效的语言代码。 */
 QString current();
 
+/**
+ * 插件描述里的名字/说明由插件以源语言（简体中文）提供，不经过 Qt 的 tr()。
+ * 这里用单独的 PluginMetadata 上下文查表，让它们也能跟随界面语言切换。
+ */
+QString pluginText(const QString &source);
+
 } // namespace Localization

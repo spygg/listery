@@ -1,6 +1,7 @@
 #include "Core/PluginHost.h"
 
 #include "Core/HttpClient.h"
+#include "Core/Localization.h"
 #include "Core/QtCompat.h"
 #include "listery_plugin_api.h"
 
@@ -243,9 +244,11 @@ int PluginHost::loadFromDirectory(const QString &directory, QString *errorMessag
 
         entry->api = api;
         entry->info.id = QString::fromUtf8(api->id);
-        entry->info.name = QString::fromUtf8(api->name);
+        entry->info.rawName = QString::fromUtf8(api->name);
+        entry->info.name = Localization::pluginText(entry->info.rawName);
         entry->info.version = QString::fromUtf8(api->version ? api->version : "");
-        entry->info.description = QString::fromUtf8(api->description ? api->description : "");
+        entry->info.rawDescription = QString::fromUtf8(api->description ? api->description : "");
+        entry->info.description = Localization::pluginText(entry->info.rawDescription);
         entry->info.defaultHotkey = QString::fromUtf8(api->defaultHotkey ? api->defaultHotkey : "");
         entry->info.hotkey = entry->info.defaultHotkey;
         entry->info.hasConfigUi = api->configure != nullptr;
@@ -365,6 +368,14 @@ QStringList PluginHost::registeredHotkeys() const
             keys.append(plugin->info.hotkey);
     }
     return keys;
+}
+
+void PluginHost::retranslate()
+{
+    for (auto &plugin : m_plugins) {
+        plugin->info.name = Localization::pluginText(plugin->info.rawName);
+        plugin->info.description = Localization::pluginText(plugin->info.rawDescription);
+    }
 }
 
 quint64 PluginHost::beginQuery(const QString &id, const QString &query, int maxResults)

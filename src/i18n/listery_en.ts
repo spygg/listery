@@ -182,6 +182,10 @@ You can open the search box from the tray menu.</translation>
         <source>插件管理…</source>
         <translation>Plugins…</translation>
     </message>
+    <message>
+        <source>%1（%2）</source>
+        <translation>%1 (%2)</translation>
+    </message>
 </context>
 <context>
     <name>LaunchService</name>
@@ -773,6 +777,33 @@ You can open the search box from the tray menu.</translation>
     <message>
         <source>%1 和 %2 都使用 %3，后一个将无法触发。请改成不同的组合，或留空表示不占用。</source>
         <translation>%1 and %2 both use %3; the latter will not trigger. Choose different combinations, or leave one empty.</translation>
+    </message>
+</context>
+<context>
+    <name>PluginMetadata</name>
+    <message>
+        <source>文件搜索</source>
+        <translation>File Search</translation>
+    </message>
+    <message>
+        <source>用 Alt+S 快速搜索本机文件；Everything 风格的多列结果（列可配置、表头点击排序），自建索引，不依赖 Everything。</source>
+        <translation>Quickly search local files with Alt+S; Everything-style multi-column results (configurable columns, click headers to sort), with a self-built index that does not depend on Everything.</translation>
+    </message>
+    <message>
+        <source>英汉翻译</source>
+        <translation>English-Chinese Translation</translation>
+    </message>
+    <message>
+        <source>输入英文给汉语，输入汉语给英文；回车把译文复制到剪贴板</source>
+        <translation>Enter English to translate to Chinese, or Chinese to English; press Enter to copy the translation to the clipboard.</translation>
+    </message>
+    <message>
+        <source>法汉翻译</source>
+        <translation>French-Chinese Translation</translation>
+    </message>
+    <message>
+        <source>输入法语给汉语，输入汉语给法语；回车把译文复制到剪贴板</source>
+        <translation>Enter French to translate to Chinese, or Chinese to French; press Enter to copy the translation to the clipboard.</translation>
     </message>
 </context>
 </TS>
