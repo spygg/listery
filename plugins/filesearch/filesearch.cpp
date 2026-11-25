@@ -3,6 +3,7 @@
  *
  *  - 后台线程扫描用户目录、Public 和非系统固定磁盘；
  *  - 内存索引按文件名排序，检索走“全名 → 前缀 → 子串 → 路径”；
+ *  - 目录和文件都是命中，结果先列文件夹再列文件夹里的内容（Everything 风格）；
  *  - 支持 ext: 扩展名、path: 目录、full: 完整路径、re: 正则等过滤条件；
  *  - 索引二进制快照保存在 %LOCALAPPDATA%\Listery\FileSearch\index.bin；
  *  - 结果区按 Everything 风格分列（名称/路径/大小/修改日期…），列由 columns= 选择；
@@ -1328,6 +1329,32 @@ std::string buildCells(const std::vector<ColumnId> &columns, const std::string &
     return out;
 }
 
+/** 目录没有大小/时间/扩展名，这些列统一显示 “-”。 */
+std::string buildDirCells(const std::vector<ColumnId> &columns, const std::string &name,
+                          const std::string &path)
+{
+    std::string out;
+    for (ColumnId id : columns) {
+        if (!out.empty())
+            out.push_back('\x1F');
+        switch (id) {
+        case ColName:
+            out += name;
+            break;
+        case ColPath:
+            out += path;
+            break;
+        case ColDir:
+            out += directoryOf(path);
+            break;
+        default:
+            out.push_back('-');
+            break;
+        }
+    }
+    return out;
+}
+
 std::string fullFilePath(const Index &index, const FileEntry &file, const std::string &name)
 {
     std::string path;
@@ -1642,10 +1669,15 @@ void processQuery(const QueryRequest &request)
 
     // 排序模式下先拿回尽可能多的命中再重排：只排面板里那十几条没有意义。
     const bool sorted = sortMode != 0;
+    const int hitLimit = sorted ? static_cast<int>(kMaxResultsCap) : limit;
     const std::vector<uint32_t> found =
-        filesearch::searchIndex(*index, parsed, sorted ? static_cast<int>(kMaxResultsCap) : limit,
-                                g_matchPath.load(),
+        filesearch::searchIndex(*index, parsed, hitLimit, g_matchPath.load(),
                                 [&request]() { return takeCancelled(request.id); });
+
+    // Everything 风格：目录也是命中，而且排在文件前面（目录里的内容紧跟其后）。
+    const std::vector<uint32_t> dirHits =
+        filesearch::searchDirectories(*index, parsed, hitLimit, g_matchPath.load(),
+                                      [&request]() { return takeCancelled(request.id); });
 
     if (takeCancelled(request.id)) {
         finishQuery(request.id, nullptr);
@@ -1723,6 +1755,37 @@ void processQuery(const QueryRequest &request)
             out.resize(static_cast<size_t>(limit));
         return out;
     }() : found;
+
+    // 目录排在文件前面；显式排序时目录按名字排（没有大小/时间元数据可用）。
+    std::vector<uint32_t> dirs = dirHits;
+    if (sorted) {
+        const bool dirsDescending = effectiveDirection(sortMode, g_sortDesc.load()) == 1;
+        std::sort(dirs.begin(), dirs.end(), [&index, dirsDescending](uint32_t a, uint32_t b) {
+            const std::string nameA =
+                lowerAscii(std::string(index->dirName(a), index->dirNameLen(a)));
+            const std::string nameB =
+                lowerAscii(std::string(index->dirName(b), index->dirNameLen(b)));
+            return dirsDescending ? nameA > nameB : nameA < nameB;
+        });
+    }
+    if (dirs.size() > static_cast<size_t>(limit))
+        dirs.resize(static_cast<size_t>(limit));
+
+    for (size_t i = 0; i < dirs.size(); ++i) {
+        if ((i & 0x0F) == 0 && takeCancelled(request.id)) {
+            finishQuery(request.id, nullptr);
+            return;
+        }
+        const std::string name(index->dirName(dirs[i]), index->dirNameLen(dirs[i]));
+        std::string path;
+        if (!filesearch::buildDirPath(*index, dirs[i], path))
+            continue;
+        std::string cells;
+        if (!g_activeColumns.empty())
+            cells = buildDirCells(g_activeColumns, name, path);
+        // run: 走系统默认打开方式，目录路径由宿主 QDesktopServices 打开资源管理器
+        addRow(request.id, name, path, "目录", "run:" + path, cells);
+    }
 
     const bool showMtime = sortMode == 3;
     const bool showCtime = sortMode == 4;

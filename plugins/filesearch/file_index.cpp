@@ -1699,4 +1699,231 @@ std::vector<uint32_t> searchIndex(const Index &index, const ParsedQuery &query,
     return results;
 }
 
+std::vector<uint32_t> searchDirectories(const Index &index, const ParsedQuery &query,
+                                        int maxResults, bool matchPath,
+                                        const std::function<bool()> &cancelled)
+{
+    std::vector<uint32_t> results;
+    if (maxResults <= 0 || index.dirs.empty() || query.empty() || !query.regexError.empty()
+        || !query.exts.empty())
+        return results;
+
+    auto isCancelled = [&cancelled]() { return cancelled && cancelled(); };
+    const size_t limit = static_cast<size_t>((std::min)(maxResults, 20000));
+    const uint32_t count = static_cast<uint32_t>(index.dirs.size());
+
+    // 通配符没有固定的 bigram，不能参与签名预筛（空掩码表示“跳过这一项”）
+    std::vector<Signature256> plainMasks;
+    plainMasks.reserve(query.plain.size());
+    for (const std::string &token : query.plain)
+        plainMasks.push_back(hasPathWildcard(token)
+                                 ? Signature256()
+                                 : nameSignature256(token.data(), token.size()));
+    std::vector<Signature256> regexMasks;
+    regexMasks.reserve(query.regexKeys.size());
+    for (const std::string &key : query.regexKeys)
+        regexMasks.push_back(nameSignature256(key.data(), key.size()));
+    Signature256 pathMask = querySignature256(query.path);
+    pathMask.merge(querySignature256(query.fullPath));
+
+    // 全库粗筛：连目录完整路径的签名都不包含关键字 bigram，就不可能命中
+    for (size_t k = 0; k < query.plain.size(); ++k) {
+        if (!plainMasks[k].empty() && !index.dirSigUnion.contains(plainMasks[k]))
+            return results;
+    }
+    for (const std::string &token : query.path) {
+        if (!hasPathWildcard(token) && !signaturePossible(index.dirSigUnion, token))
+            return results;
+    }
+    for (const std::string &token : query.fullPath) {
+        if (!hasPathWildcard(token) && !signaturePossible(index.dirSigUnion, token))
+            return results;
+    }
+    for (const std::string &key : query.regexKeys) {
+        if (!signaturePossible(index.dirSigUnion, key))
+            return results;
+    }
+
+    // 和 searchIndex 一致：用最长的裸词做前缀判断和命中位置排序
+    const std::string *primary = nullptr;
+    for (const std::string &token : query.plain) {
+        if (hasPathWildcard(token))
+            continue;
+        if (primary == nullptr || token.size() > primary->size())
+            primary = &token;
+    }
+    const std::string primaryLiteral = primary == nullptr ? std::string() : longestLiteralRun(*primary);
+
+    struct Candidate
+    {
+        uint32_t id = 0;
+        uint32_t position = 0;
+    };
+    std::vector<Candidate> exact;
+    std::vector<Candidate> prefix;
+    std::vector<Candidate> substring;
+    std::vector<Candidate> pathOnly;
+    const size_t bucketCap = (std::min)(limit, size_t(20000));
+    exact.reserve((std::min)(bucketCap, size_t(256)));
+    prefix.reserve((std::min)(bucketCap, size_t(256)));
+    substring.reserve((std::min)(bucketCap, size_t(256)));
+    pathOnly.reserve((std::min)(bucketCap, size_t(256)));
+
+    auto push = [bucketCap](std::vector<Candidate> &bucket, uint32_t id, uint32_t position) {
+        if (bucket.size() < bucketCap)
+            bucket.push_back(Candidate{id, position});
+    };
+
+    std::string dirPath;
+    std::vector<uint32_t> ancestors;
+    const bool explicitPath = !query.path.empty() || !query.fullPath.empty();
+
+    for (uint32_t d = 0; d < count; ++d) {
+        if ((d & 0x3FFF) == 0 && isCancelled())
+            break;
+        // 四个桶加起来已经够数就不必再扫剩下的目录
+        if (exact.size() + prefix.size() + substring.size() + pathOnly.size() >= limit)
+            break;
+        const DirEntry &dir = index.dirs[d];
+        const char *leaf = index.dirNames.data() + dir.nameOff;
+        const size_t leafLen = dir.nameLen;
+        if (leafLen == 0)
+            continue;
+
+        const Signature256 &dirSig = index.dirSigs[d];
+        // 路径签名字段对整条完整路径生成，叶子名的 bigram 必然也在里面，
+        // 因此这里既能挡掉名字不可能命中的目录，也能挡掉路径不可能命中的目录。
+        bool impossible = !pathMask.empty() && !dirSig.contains(pathMask);
+        for (size_t k = 0; !impossible && k < plainMasks.size(); ++k) {
+            if (!plainMasks[k].empty() && !dirSig.contains(plainMasks[k]))
+                impossible = true;
+        }
+        if (impossible)
+            continue;
+
+        bool regexPossible = true;
+        for (const Signature256 &mask : regexMasks) {
+            if (!mask.empty() && !dirSig.contains(mask)) {
+                regexPossible = false;
+                break;
+            }
+        }
+
+        // 1. 叶子名命中：完全匹配 → 前缀 → 子串；正则只匹配叶子名（和文件一致）
+        bool nameMatched = false;
+        const bool hasNameQuery = !query.plain.empty() || !query.regex.empty();
+        if (hasNameQuery) {
+            bool leafCouldMatch = regexPossible;
+            for (const Signature256 &mask : plainMasks) {
+                if (!mask.empty() && !dirSig.contains(mask)) {
+                    leafCouldMatch = false;
+                    break;
+                }
+            }
+            if (leafCouldMatch) {
+                // 叶子名自己的签名：路径签名太宽，单独过一遍才不会误判
+                const Signature256 leafSig = nameSignature256(leaf, leafLen);
+                leafCouldMatch = true;
+                for (const Signature256 &mask : plainMasks) {
+                    if (!mask.empty() && !leafSig.contains(mask)) {
+                        leafCouldMatch = false;
+                        break;
+                    }
+                }
+            }
+            if (leafCouldMatch) {
+                nameMatched = true;
+                for (const std::string &token : query.plain) {
+                    if (!pathTextMatches(leaf, leafLen, token.data(), token.size())) {
+                        nameMatched = false;
+                        break;
+                    }
+                }
+                if (nameMatched) {
+                    for (const std::regex &pattern : query.regex) {
+                        if (!std::regex_search(leaf, leaf + leafLen, pattern)) {
+                            nameMatched = false;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. path:/full: 必须匹配完整路径；裸词只在 matchPath 时做路径兜底
+        bool pathMatched = false;
+        if (explicitPath || (!nameMatched && matchPath && !query.plain.empty())) {
+            pathMatched = true;
+            if (!buildDirPathInto(index, d, dirPath, ancestors))
+                continue;
+            for (const std::string &token : query.path) {
+                if (!pathTokenMatches(dirPath.data(), dirPath.size(), token)) {
+                    pathMatched = false;
+                    break;
+                }
+            }
+            for (size_t k = 0; pathMatched && k < query.fullPath.size(); ++k) {
+                const std::string &token = query.fullPath[k];
+                if (!pathTokenMatches(dirPath.data(), dirPath.size(), token))
+                    pathMatched = false;
+            }
+            if (pathMatched && !nameMatched && !query.plain.empty()) {
+                for (const std::string &token : query.plain) {
+                    if (!pathTokenMatches(dirPath.data(), dirPath.size(), token)) {
+                        pathMatched = false;
+                        break;
+                    }
+                }
+            }
+        }
+        if (!nameMatched && !pathMatched)
+            continue;
+
+        if (!nameMatched) {
+            push(pathOnly, d, 0);
+            continue;
+        }
+        if (primary != nullptr && equalsNoCase(leaf, leafLen, *primary)) {
+            push(exact, d, 0);
+        } else if (primary != nullptr && startsWithNoCase(leaf, leafLen, *primary)) {
+            push(prefix, d, 0);
+        } else {
+            const uint32_t position = primaryLiteral.empty()
+                                          ? 0
+                                          : literalPositionNoCase(leaf, leafLen, primaryLiteral);
+            push(substring, d, position);
+        }
+    }
+
+    auto nameLess = [&index](uint32_t a, uint32_t b) {
+        return compareNameToNeedle(std::string(index.dirName(a), index.dirNameLen(a)),
+                                  std::string(index.dirName(b), index.dirNameLen(b))) < 0;
+    };
+    std::sort(exact.begin(), exact.end(), [nameLess](const Candidate &a, const Candidate &b) {
+        return nameLess(a.id, b.id);
+    });
+    std::sort(prefix.begin(), prefix.end(), [nameLess](const Candidate &a, const Candidate &b) {
+        return nameLess(a.id, b.id);
+    });
+    std::sort(substring.begin(), substring.end(),
+              [nameLess](const Candidate &a, const Candidate &b) {
+                  if (a.position != b.position)
+                      return a.position < b.position;
+                  return nameLess(a.id, b.id);
+              });
+    std::sort(pathOnly.begin(), pathOnly.end(), [nameLess](const Candidate &a, const Candidate &b) {
+        return nameLess(a.id, b.id);
+    });
+
+    const std::vector<Candidate> *buckets[] = {&exact, &prefix, &substring, &pathOnly};
+    for (const std::vector<Candidate> *bucket : buckets) {
+        for (const Candidate &candidate : *bucket) {
+            if (results.size() >= limit || isCancelled())
+                return results;
+            results.push_back(candidate.id);
+        }
+    }
+    return results;
+}
+
 } // namespace filesearch

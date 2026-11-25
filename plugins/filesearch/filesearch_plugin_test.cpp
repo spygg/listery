@@ -422,10 +422,10 @@ int main()
         {"测", "测试报告"},
         {"测试", "测试报告"},
         {"ext:cpp", ""},
-        {"path:子目录", "嵌套文件"},
+        {"path:子目录", "子目录"},
         {"appcontroller", ""},
         // 隐藏的 AppData 里用户级应用目录必须能靠中文名命中（path 匹配）
-        {"福瑞音乐", "probe_furui.txt"},
+        {"福瑞音乐", "福瑞音乐"},
     };
 
     int failures = 0;
@@ -489,10 +489,11 @@ int main()
         // 裸通配符（不带路径分隔符）应直接匹配文件名，* 和扩展名都要生效
         {"*chrome*.json", "chrome-settings.json"},
         {"*嵌套*.md", "嵌套文件"},
-        {"*子目录*", "嵌套文件"},
-        {"path:*子目录*", "嵌套文件"},
+        // Everything 风格：目录命中排在目录内容（文件）前面
+        {"*子目录*", "子目录"},
+        {"path:*子目录*", "子目录"},
         {fullPathQuery, "嵌套文件"},
-        {"full:" + rootText + "\\子目录", "嵌套文件"},
+        {"full:" + rootText + "\\子目录", "子目录"},
     };
     for (const ExtraCase &item : extra) {
         if (!query(plugin, item.queryText, rows, error)) {
@@ -504,6 +505,24 @@ int main()
             std::printf("  [FAIL] 期望首条包含 %s\n", item.expect);
             ++failures;
         }
+    }
+
+    // 文件夹本身也是命中：首行必须是目录（徽标/打开动作都指向目录），
+    // 紧随其后才是目录里的文件，和 Everything 的顺序一致。
+    {
+        std::vector<Row> folderRows;
+        std::string folderError;
+        const bool issued = query(plugin, "*子目录*", folderRows, folderError);
+        const std::string dirPath = fromWide(root + L"\\子目录");
+        const bool folderFirst = issued && folderRows.size() >= 2
+                                 && folderRows[0].title == "子目录"
+                                 && folderRows[0].badge == "目录"
+                                 && folderRows[0].action == "run:" + dirPath
+                                 && folderRows[1].title.find("嵌套文件") != std::string::npos;
+        std::printf("文件夹优先：%s（%zu 条）\n", folderFirst ? "通过" : "失败",
+                    folderRows.size());
+        if (!folderFirst)
+            ++failures;
     }
 
     // 宿主要求一次取回全部命中：命中数超过面板可见行数时不能只给 12 条，
@@ -721,6 +740,21 @@ int main()
             if (!specOk || !cellsOk)
                 ++failures;
         }
+    }
+
+    // 目录行在列视图里也要有完整单元格：没有的大小/时间显示 “-”
+    {
+        std::vector<Row> dirRows;
+        std::string dirError;
+        const bool issued = query(plugin, "*子目录*", dirRows, dirError);
+        const std::vector<std::string> cells =
+            dirRows.empty() ? std::vector<std::string>() : splitCells(dirRows.front().cells);
+        const bool dirCellsOk = issued && !dirRows.empty()
+                                && dirRows.front().title == "子目录" && cells.size() == 4
+                                && cells[0] == "子目录" && cells[2] == "-" && cells[3] == "-";
+        std::printf("目录行列单元格：%s\n", dirCellsOk ? "通过" : "失败");
+        if (!dirCellsOk)
+            ++failures;
     }
 
     // 配置里换列：!columns name,size 应该立刻生效并写入 ini

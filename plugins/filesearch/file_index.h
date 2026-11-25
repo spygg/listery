@@ -179,6 +179,16 @@ std::vector<uint32_t> searchIndex(const Index &index, const ParsedQuery &query,
                                   int maxResults, bool matchPath,
                                   const std::function<bool()> &cancelled = std::function<bool()>());
 
+/**
+ * 检索目录（Everything 风格：结果里也要有文件夹本身）。
+ * 返回的是 dirId，不是 files 下标；排序同 searchIndex：完全匹配 → 前缀 → 子串 → 路径命中。
+ * matchPath=false 时裸词只匹配目录名，不匹配目录的完整路径；path:/full: 不受影响。
+ * ext: 过滤对目录没有意义，会直接返回空。
+ */
+std::vector<uint32_t> searchDirectories(const Index &index, const ParsedQuery &query,
+                                        int maxResults, bool matchPath,
+                                        const std::function<bool()> &cancelled = std::function<bool()>());
+
 /** 计算一段文本（文件名或路径）的 64 位 bigram 签名。 */
 uint64_t textSignature(const char *text, size_t len);
 
