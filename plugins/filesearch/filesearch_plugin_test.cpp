@@ -291,6 +291,13 @@ int main()
     writeFile(hiddenFile, "hidden");
     SetFileAttributesW(hiddenFile.c_str(), FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM);
 
+    // AppData 带隐藏属性、名字又在默认排除表里，从 USERPROFILE 往下遍历进不去。
+    // 这里在沙盒里复刻「Furui\福瑞音乐」这类用户级应用数据目录，验证它作为显式
+    // 补充根被单独索引（否则搜「福瑞音乐」一条都拿不到）。
+    const std::wstring appDataDir = base + L"\\AppData\\Local\\Furui\\福瑞音乐";
+    SHCreateDirectoryExW(nullptr, appDataDir.c_str(), nullptr);
+    writeFile(appDataDir + L"\\probe_furui.txt", "probe");
+
     // 排序用例的固定数据：三个共享关键字 sortest 的 ASCII 文件名，
     // 名字顺序 a1 < b2 < c3，大小顺序 c3(17MB) > b2(200B) > a1(1B)。
     // 17MB 用来验证大文件排序与「大小」列的精确显示（旧版 24 位上限会显示 ≥16 MB）。
@@ -348,7 +355,13 @@ int main()
     writeFile(dataDir + L"\\filesearch.ini", config);
 
     std::printf("数据目录：%s\n", fromWide(dataDir).c_str());
-    SetEnvironmentVariableW(L"LOCALAPPDATA", (base + L"\\AppData\\Local").c_str());
+    // 两个 AppData 环境都要指向沙盒：插件会把 Local/Roaming 作为显式补充根扫描，
+    // 只改 LOCALAPPDATA 会把真实 Roaming 的数万文件带进来，污染排序等断言。
+    const std::wstring sandboxLocal = base + L"\\AppData\\Local";
+    const std::wstring sandboxRoaming = base + L"\\AppData\\Roaming";
+    SHCreateDirectoryExW(nullptr, sandboxRoaming.c_str(), nullptr);
+    SetEnvironmentVariableW(L"LOCALAPPDATA", sandboxLocal.c_str());
+    SetEnvironmentVariableW(L"APPDATA", sandboxRoaming.c_str());
 
     HMODULE library = LoadLibraryW(dll.c_str());
     if (library == nullptr) {
@@ -411,6 +424,8 @@ int main()
         {"ext:cpp", ""},
         {"path:子目录", "嵌套文件"},
         {"appcontroller", ""},
+        // 隐藏的 AppData 里用户级应用目录必须能靠中文名命中（path 匹配）
+        {"福瑞音乐", "probe_furui.txt"},
     };
 
     int failures = 0;

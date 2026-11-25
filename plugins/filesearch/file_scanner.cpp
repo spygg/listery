@@ -203,12 +203,30 @@ bool scanFileSystem(const ScanConfig &config, Index &out, std::atomic<bool> &sto
         effectiveRoots.push_back(root);
     }
 
+    // 补充根不参与“被上层根覆盖”的去重：AppData 正是被 USERPROFILE 覆盖、
+    // 却又因为隐藏属性/排除名无法从 USERPROFILE 遍历到的典型。只按完整路径
+    // 去重，避免用户把它也写进 roots 时扫两遍。
+    std::vector<std::wstring> scanRoots = effectiveRoots;
+    std::vector<std::wstring> scanKeys;
+    scanKeys.reserve(scanRoots.size());
+    for (const std::wstring &root : scanRoots)
+        scanKeys.push_back(lowerWide(root));
+    for (const std::wstring &root : config.extraRoots) {
+        if (root.empty() || isExcludedPath(root, excludePrefixes))
+            continue;
+        const std::wstring key = lowerWide(root);
+        if (std::find(scanKeys.begin(), scanKeys.end(), key) != scanKeys.end())
+            continue;
+        scanKeys.push_back(key);
+        scanRoots.push_back(root);
+    }
+
     uint64_t scannedFiles = 0;
     uint64_t scannedDirs = 0;
     uint64_t accessErrors = 0;
     auto lastLog = std::chrono::steady_clock::now();
 
-    for (const std::wstring &root : effectiveRoots) {
+    for (const std::wstring &root : scanRoots) {
         if (stop.load())
             return false;
         const std::wstring longRoot = toLongPath(root);

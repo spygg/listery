@@ -620,6 +620,7 @@ void writeDefaultConfigIfMissing()
     text += "; 修改后回到搜索框输入 !reindex 重新扫描（或用托盘菜单重启 Listery）。\r\n";
     text += ";\r\n";
     text += "; roots：要索引的根目录，用英文分号分隔；留空 = 用户目录 + Public + 所有非系统固定磁盘\r\n";
+    text += ";   当前用户的 AppData\\Local 与 AppData\\Roaming 在 documents 范围也会单独索引（隐藏目录，装了大量用户级应用）\r\n";
     text += ";   例如：roots=C:\\Users;D:\\Projects;E:\\\r\n";
     text += "; exclude_names：额外排除的目录名（只写目录名，不区分大小写）\r\n";
     text += "; exclude_prefixes：额外排除的完整路径前缀，例如 D:\\临时\r\n";
@@ -690,6 +691,23 @@ std::vector<std::wstring> defaultRoots()
     addUniquePath(roots, keys, getEnv(L"PUBLIC"));
     for (const std::wstring &root : fixedDriveRoots(false))
         addUniquePath(roots, keys, root);
+    return roots;
+}
+
+/**
+ * 当前用户的 AppData\Local 与 AppData\Roaming。
+ *
+ * 这两层带隐藏属性、名字又在默认排除表里，从 USERPROFILE 往下遍历会被跳过；
+ * 里面的用户级应用（豆包、福瑞音乐等）通常又没有开始菜单快捷方式，于是整个
+ * 应用在文件插件里搜不到。作为显式补充根单独扫，主程序 Scanner 也是这么做的。
+ * 不能塞进 roots：扫描器会把“被 USERPROFILE 包含”的根当成重复项丢掉。
+ */
+std::vector<std::wstring> userAppDataRoots()
+{
+    std::vector<std::wstring> roots;
+    std::vector<std::wstring> keys;
+    addUniquePath(roots, keys, getEnv(L"LOCALAPPDATA"));
+    addUniquePath(roots, keys, getEnv(L"APPDATA"));
     return roots;
 }
 
@@ -1021,6 +1039,13 @@ bool loadConfig()
         if (!includeHiddenExplicit)
             config.scan.includeHidden = true;
     }
+
+    // documents 范围从 USERPROFILE 往下走不进隐藏的 AppData，必须单列补充根。
+    // all 范围已经包含隐藏文件、也不排除 appdata，正常遍历就能覆盖，别重复扫。
+    config.scan.extraRoots.clear();
+    if (config.scope == IndexScope::Documents)
+        config.scan.extraRoots = userAppDataRoots();
+
     appendExcludeNames(config.scan.excludeNames, userExcludeNames);
     for (const std::wstring &prefix : userExcludePrefixes)
         config.scan.excludePrefixes.push_back(lowerWide(prefix));
